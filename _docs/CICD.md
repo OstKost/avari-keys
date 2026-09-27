@@ -1,4 +1,4 @@
-# 🚀 Безопасный CI/CD пайплайн (GitHub Actions -> VPS 157.22.252.225)
+# 🚀 Безопасный CI/CD пайплайн (GitHub Actions -> VPS 176.53.174.118 / keys.avari.dev)
 
 Настроен автоматический, безопасный и атомарный процесс непрерывной интеграции и доставки (CI/CD) на базе **GitHub Actions**.
 
@@ -18,8 +18,8 @@ flowchart TD
 
     subgraph CD_Auto["2. Автоматический деплой на push в main"]
         D --> E{"Push в main / master?"}
-        E -- Да --> F["Деплой Frontend SPA на Master VPS 157.22.252.225"]
-        E -- Да --> G["Деплой avari-master на Master VPS 157.22.252.225"]
+        E -- Да --> F["Деплой Frontend SPA на Master VPS (176.53.174.118)"]
+        E -- Да --> G["Деплой avari-master на Master VPS (176.53.174.118)"]
         E -- Да --> H["Атомарный деплой avari-slave на ВСЕ Slave-ноды"]
     end
 
@@ -33,9 +33,9 @@ flowchart TD
 
 | Компонент | Как обновляется | Описание |
 |---|---|---|
-| **Frontend Web SPA** | **Автоматически** при каждом push/merge в `main` | Атомарный swap статики на Master сервере. |
-| **Master API (`avari-master`)** | **Автоматически** при push в `main` (или вручную) | Обновляет бинарник и перезапускает systemd сервис `avari-master`. |
-| **Slave API (`avari-slave`)** | **Автоматически** при push в `main` (или вручную) | Атомарно обновляет бинарник и перезапускает `avari-slave` на всех нодах сети (`157.22.252.225`, `185.213.240.136`, `157.228.142.20`, `157.228.130.7`). |
+| **Frontend Web SPA** | **Автоматически** при каждом push/merge в `main` | Атомарный swap статики в `/var/www/avari-keys/frontend` на Master сервере. |
+| **Master API (`avari-master`)** | **Автоматически** при push в `main` (или вручную) | Обновляет бинарник в `/usr/local/bin/avari-master` и перезапускает systemd сервис `avari-master`. |
+| **Slave API (`avari-slave`)** | **Автоматически** при push в `main` (или вручную) | Атомарно обновляет бинарник и перезапускает `avari-slave` на всех нодах сети (`176.53.174.118`, `185.213.240.136`, `157.228.142.20`, `157.228.130.7`). |
 
 ---
 
@@ -51,70 +51,81 @@ flowchart TD
 
 ---
 
-## 📋 Инструкция по настройке за 3 шага
+## 📋 Первоначальная настройка сервера (176.53.174.118)
 
-### Шаг 1. Генерация выделенного SSH-ключа
+### Шаг 1. Настройка SSH-доступа для GitHub Actions
 
-На вашем локальном компьютере выполните команду:
+На локальном компьютере или сервере:
+```bash
+# Скопировать публичный ключ на сервер:
+ssh-copy-id -i ~/.ssh/github_deploy_key.pub root@176.53.174.118
 
+# Проверить подключение:
+ssh -i ~/.ssh/github_deploy_key root@176.53.174.118 "echo 'SSH доступ успешно настроен!'"
+```
+
+*Если ключ создается с нуля:*
 ```bash
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_deploy_key -N ""
 ```
 
-Будут созданы два файла:
-- `~/.ssh/github_deploy_key` — **Приватный ключ** (нужен для GitHub Secrets).
-- `~/.ssh/github_deploy_key.pub` — **Публичный ключ** (нужен для сервера).
-
 ---
 
-### Шаг 2. Добавление публичного ключа на VPS (`157.22.252.225`)
+### Шаг 2. Создание директорий и Systemd-сервиса на VPS
 
-Скопируйте публичный ключ на ваш сервер:
-
+Выполните на сервере `176.53.174.118`:
 ```bash
-ssh-copy-id -i ~/.ssh/github_deploy_key.pub root@157.22.252.225
-```
+# Создание рабочих директорий
+mkdir -p /opt/avari-keys/data /var/www/avari-keys/frontend
 
-*Либо вручную добавьте содержимое файла `~/.ssh/github_deploy_key.pub` в конец файла `/root/.ssh/authorized_keys` на сервере `157.22.252.225`.*
-
-Проверьте подключение:
-```bash
-ssh -i ~/.ssh/github_deploy_key root@157.22.252.225 "echo 'SSH доступ успешно настроен!'"
+# Скопировать сервис deploy/systemd/avari-master.service в /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable avari-master
 ```
 
 ---
 
-### Шаг 3. Добавление Секрета в GitHub
+### Шаг 3. Настройка OpenResty Manager / Nginx для keys.avari.dev
+
+В OpenResty Manager (или конфигурационном файле `/etc/nginx/conf.d/keys.avari.dev.conf`):
+
+1. **Статика фронтенда**:
+   - `root`: `/var/www/avari-keys/frontend`
+   - `index`: `index.html`
+   - `try_files`: `$uri $uri/ /index.html;`
+2. **Reverse Proxy для Master API**:
+   - `location /api/` $\to$ `http://127.0.0.1:8080` (с поддержкой WebSocket и передачей заголовков `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`).
+3. Шаблон готовой конфигурации находится в [`deploy/openresty/keys.avari.dev.conf`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/deploy/openresty/keys.avari.dev.conf).
+
+---
+
+### Шаг 4. Добавление Секрета в GitHub
 
 1. Откройте репозиторий на GitHub: **`https://github.com/OstKost/avari-keys-mvp`**.
 2. Перейдите в **Settings** $\to$ **Secrets and variables** $\to$ **Actions**.
-3. Нажмите **New repository secret** и добавьте:
+3. Обновите / добавьте секреты:
 
 | Название секрета | Обязательно? | Значение по умолчанию | Описание |
 |---|---|---|---|
 | **`SSH_PRIVATE_KEY`** | **Да (Критично)** | *(нет)* | Полное содержимое приватного ключа `~/.ssh/github_deploy_key` (включая строки `-----BEGIN OPENSSH PRIVATE KEY-----` и `-----END OPENSSH PRIVATE KEY-----`). |
-| `SSH_HOST` | Нет | `157.22.252.225` | IP-адрес или домен вашего VPS. |
+| `SSH_HOST` | Нет | `176.53.174.118` | IP-адрес или домен (`keys.avari.dev`). |
 | `SSH_USER` | Нет | `root` | Пользователь на сервере. |
-| `SSH_PORT` | Нет | `22` | Порт SSH (если меняли стандартный порт). |
+| `SSH_PORT` | Нет | `22` | Порт SSH. |
 
 ---
 
 ## 🎯 Как запускать обновления
 
-### 1. Обновление Frontend SPA (Веб-интерфейс):
+### 1. Автоматический деплой Frontend & Backend:
 - Происходит **полностью автоматически** при любом коммите или merge в ветку `main` / `master`.
 
-### 2. Обновление Master API или Slave узлов (Вручную):
+### 2. Ручной деплой (On-Demand):
 1. Перейдите на вкладку **Actions** в репозитории на GitHub.
 2. В левой колонке выберите **CI/CD Pipeline**.
 3. Нажмите синюю кнопку **Run workflow**:
-   - **Branch**: выберите `main` (или нужную ветку).
-   - **Компонент для деплоя**:
-     - `all` — обновить всё (Frontend + Master API + Slave API).
-     - `master-api` — обновить только Master Backend API (`avari-master`).
-     - `slave-api` — обновить только Slave API (`avari-slave`).
-     - `frontend-only` — принудительно обновить только Frontend.
-   - **IP/Хост целевого VPS**: по умолчанию `157.22.252.225` (если нужно обновить Slave API на зарубежной ноде S2, укажите IP-адрес S2).
+   - **Branch**: `main` (или нужная ветка).
+   - **Компонент для деплоя**: `all`, `master-api`, `frontend-only`, `slave-api`.
+   - **IP/Хост целевого VPS**: по умолчанию `176.53.174.118`.
 4. Нажмите зеленую кнопку **Run workflow**.
 
 ---
@@ -122,12 +133,12 @@ ssh -i ~/.ssh/github_deploy_key root@157.22.252.225 "echo 'SSH доступ ус
 ## 🛠 Полезные команды на VPS для проверки:
 
 ```bash
-# Проверить статус сервисов
-systemctl status avari-master avari-slave caddy --no-pager
+# Проверить статус Master API и веб-сервера
+systemctl status avari-master openresty --no-pager
 
 # Просмотр логов бэкенда в реальном времени
 journalctl -u avari-master -f
 
-# Проверить версию/дату установленного бинарника
+# Проверить версию бинарника
 ls -la /usr/local/bin/avari-master
 ```
