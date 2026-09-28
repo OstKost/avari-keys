@@ -21,6 +21,7 @@
 | | | | | [TASK-022](./tasks/TASK-022-stats-telemetry-redesign.md) |
 | | | | | [TASK-023](./tasks/TASK-023-telegram-user-approval-inline-buttons.md) |
 | | | | | [TASK-024](./tasks/TASK-024-healthcheck-resilience-and-lightweight-probe.md) |
+| | | | | [TASK-026](./tasks/TASK-026-onboarding-tour-layout-fix.md) |
 | | | | | [TASK-025](./tasks/TASK-025-cicd-server-migration.md) |
 
 ---
@@ -45,6 +46,7 @@
 - **[TASK-023](./tasks/TASK-023-telegram-user-approval-inline-buttons.md)**: ✅ Модерация и одобрение новых пользователей через Inline-кнопки в Telegram-боте.
 - **[TASK-024](./tasks/TASK-024-healthcheck-resilience-and-lightweight-probe.md)**: ✅ Устойчивость HealthChecker к сетевым задержкам и легковесный опрос Slave API.
 - **[TASK-025](./tasks/TASK-025-cicd-server-migration.md)**: ✅ Перенастройка CI/CD пайплайна на VPS 176.53.174.118 (keys.avari.dev / OpenResty Manager).
+- **[TASK-026](./tasks/TASK-026-onboarding-tour-layout-fix.md)**: ⚙️ Исправление разметки и мобильной адаптивности окна обучения (OnboardingTour).
 
 
 
