@@ -27,7 +27,7 @@ on:
       target_host:
         description: 'IP/Хост целевого VPS (для одиночного slave-api или master-api)'
         required: false
-        default: '157.22.252.225'
+        default: '176.53.174.118'
         type: string
 
 concurrency:
@@ -113,7 +113,7 @@ jobs:
       - name: 🔑 Configure SSH Key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST || '157.22.252.225' }}
+          SSH_HOST: ${{ secrets.SSH_HOST || '176.53.174.118' }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |
           if [ -z "$SSH_PRIVATE_KEY" ]; then
@@ -127,7 +127,7 @@ jobs:
 
       - name: 📦 Sync Frontend Static Files (Atomic Swap)
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST || '157.22.252.225' }}
+          SSH_HOST: ${{ secrets.SSH_HOST || '176.53.174.118' }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           RUN_ID: ${{ github.run_id }}
@@ -143,7 +143,7 @@ jobs:
           eval $RSYNC_CMD deploy-artifacts/apps/frontend/dist/ ${SSH_USER}@${SSH_HOST}:${DEPLOY_TMP}/
 
           echo "==> Applying frontend update..."
-          $SSH_CMD "rsync -av --delete ${DEPLOY_TMP}/ /var/www/avari-keys/frontend/ && rm -rf ${DEPLOY_TMP} && systemctl reload caddy 2>/dev/null || true"
+          $SSH_CMD "rsync -av --delete ${DEPLOY_TMP}/ /var/www/avari-keys/frontend/ && rm -rf ${DEPLOY_TMP} && (/usr/bin/openresty -p /opt/om/nginx/ -s reload 2>/dev/null || systemctl reload openresty 2>/dev/null || systemctl reload nginx 2>/dev/null || systemctl reload caddy 2>/dev/null || true)"
           echo "✅ Frontend successfully updated!"
 
       - name: 🧹 Cleanup SSH Credentials
@@ -174,7 +174,7 @@ jobs:
       - name: 🔑 Configure SSH Key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST || '157.22.252.225' }}
+          SSH_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST || '176.53.174.118' }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |
           if [ -z "$SSH_PRIVATE_KEY" ]; then
@@ -188,7 +188,7 @@ jobs:
 
       - name: 🚀 Deploy avari-master Binary & Restart
         env:
-          TARGET_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST || '157.22.252.225' }}
+          TARGET_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST || '176.53.174.118' }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           RUN_ID: ${{ github.run_id }}
@@ -247,7 +247,7 @@ jobs:
 
       - name: 🚀 Deploy avari-slave to All Nodes & Restart
         env:
-          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS || '157.22.252.225 185.213.240.136 157.228.142.20 157.228.130.7' }}
+          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS || '176.53.174.118 185.213.240.136 157.228.142.20 157.228.130.7' }}
           SINGLE_TARGET_HOST: ${{ github.event.inputs.target_host }}
           TARGET_MODE: ${{ github.event.inputs.target }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
