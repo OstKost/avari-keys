@@ -241,7 +241,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v0.4.3",
+		Version: "v0.4.4",
 	})
 }
 
