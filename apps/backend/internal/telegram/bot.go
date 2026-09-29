@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -1236,3 +1237,61 @@ func (b *Bot) BroadcastBillingReminders(ctx context.Context) error {
 
 	return nil
 }
+
+// BroadcastNews sends a published announcement to all registered subscribers with alerts enabled.
+func (b *Bot) BroadcastNews(item models.NewsItem) error {
+	if !b.IsEnabled() || b.storage == nil {
+		return nil
+	}
+
+	emoji := "📢"
+	categoryLabel := "Новости сети"
+	switch item.Category {
+	case models.NewsCategoryMaintenance:
+		emoji = "🛠️"
+		categoryLabel = "Технические работы"
+	case models.NewsCategoryIncident:
+		emoji = "🚨"
+		categoryLabel = "Важное / Сбой"
+	case models.NewsCategoryBilling:
+		emoji = "💳"
+		categoryLabel = "Оплата и взносы"
+	case models.NewsCategoryKeys:
+		emoji = "🔑"
+		categoryLabel = "Обновление ключей"
+	case models.NewsCategoryGeneral:
+		emoji = "📢"
+		categoryLabel = "Новости сети"
+	}
+
+	pinBadge := ""
+	if item.IsPinned {
+		pinBadge = " 📌 [ЗАКРЕПЛЕНО]"
+	}
+
+	author := item.AuthorName
+	if author == "" {
+		author = "Администрация"
+	}
+
+	escapedTitle := html.EscapeString(item.Title)
+	escapedContent := html.EscapeString(item.Content)
+	createdAtStr := item.CreatedAt.Format("02.01.2006 15:04")
+	if item.CreatedAt.IsZero() {
+		createdAtStr = time.Now().Format("02.01.2006 15:04")
+	}
+
+	msg := fmt.Sprintf(
+		"%s <b>[Avari Новости]%s %s</b>\n"+
+			"━━━━━━━━━━━━━━━━━━━━━\n\n"+
+			"%s\n\n"+
+			"━━━━━━━━━━━━━━━━━━━━━\n"+
+			"🏷️ <i>Категория: %s • Автор: @%s • %s</i>",
+		emoji, pinBadge, escapedTitle,
+		escapedContent,
+		categoryLabel, author, createdAtStr,
+	)
+
+	return b.BroadcastAlert(msg)
+}
+

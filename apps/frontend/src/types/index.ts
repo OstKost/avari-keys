@@ -232,6 +232,36 @@ export interface UserTelegramStatus {
   deep_link: string;
 }
 
+export type NewsCategory = 'general' | 'maintenance' | 'incident' | 'billing' | 'keys';
+
+export interface NewsItem {
+  id: number;
+  title: string;
+  content: string;
+  category: NewsCategory;
+  is_pinned: boolean;
+  author_name: string;
+  notify_telegram?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateNewsPayload {
+  title: string;
+  content: string;
+  category: NewsCategory;
+  is_pinned: boolean;
+  notify_telegram: boolean;
+}
+
+export interface UpdateNewsPayload {
+  title: string;
+  content: string;
+  category: NewsCategory;
+  is_pinned: boolean;
+}
+
+
 
 
 

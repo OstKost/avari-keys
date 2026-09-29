@@ -601,3 +601,80 @@ func TestSchemaUpgradeFromLegacyDatabase(t *testing.T) {
 	}
 	defer store.Close()
 }
+
+func TestAnnouncementsStorage(t *testing.T) {
+	store, cleanup := createTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// 1. Create first announcement
+	item1, err := store.CreateNews(ctx, &models.NewsItem{
+		Title:      "Обычная новость",
+		Content:    "Текст обычной новости",
+		Category:   models.NewsCategoryGeneral,
+		IsPinned:   false,
+		AuthorName: "Forve",
+	})
+	if err != nil {
+		t.Fatalf("failed to create news 1: %v", err)
+	}
+	if item1.ID == 0 || item1.Title != "Обычная новость" || item1.IsPinned {
+		t.Fatalf("invalid item1: %+v", item1)
+	}
+
+	// 2. Create second announcement (pinned)
+	item2, err := store.CreateNews(ctx, &models.NewsItem{
+		Title:      "Важное объявление",
+		Content:    "Сервер перезагружается",
+		Category:   models.NewsCategoryIncident,
+		IsPinned:   true,
+		AuthorName: "Admin",
+	})
+	if err != nil {
+		t.Fatalf("failed to create news 2: %v", err)
+	}
+	if !item2.IsPinned {
+		t.Fatalf("expected item2 to be pinned")
+	}
+
+	// 3. List announcements -> pinned should be first
+	list, err := store.ListNews(ctx)
+	if err != nil {
+		t.Fatalf("failed to list news: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(list))
+	}
+	if list[0].ID != item2.ID {
+		t.Fatalf("expected pinned item2 to be first in list, got ID %d", list[0].ID)
+	}
+
+	// 4. Update announcement
+	updated, err := store.UpdateNews(ctx, item1.ID, models.UpdateNewsRequest{
+		Title:    "Отредактированная новость",
+		Content:  "Новый текст",
+		Category: models.NewsCategoryBilling,
+		IsPinned: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to update news: %v", err)
+	}
+	if updated.Title != "Отредактированная новость" || updated.Category != models.NewsCategoryBilling || !updated.IsPinned {
+		t.Fatalf("unexpected updated news: %+v", updated)
+	}
+
+	// 5. Delete announcement
+	if err := store.DeleteNews(ctx, item2.ID); err != nil {
+		t.Fatalf("failed to delete news: %v", err)
+	}
+
+	afterDelete, err := store.ListNews(ctx)
+	if err != nil {
+		t.Fatalf("failed to list news after delete: %v", err)
+	}
+	if len(afterDelete) != 1 || afterDelete[0].ID != item1.ID {
+		t.Fatalf("expected 1 item remaining, got %d", len(afterDelete))
+	}
+}
+

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Key, Server, Users, LogOut, Plus, QrCode as QrIcon, Trash2, Smartphone, Laptop, AlertCircle, Sparkles, ShieldCheck, User as UserIcon, ScrollText, Radio, CreditCard, Settings } from 'lucide-react';
+import { Key, Server, Users, LogOut, Plus, QrCode as QrIcon, Trash2, Smartphone, Laptop, AlertCircle, Sparkles, ShieldCheck, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper } from 'lucide-react';
 import { api, isMockMode, setMockMode } from './api/client';
-import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus } from './types';
+import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem } from './types';
 import { AuthModal } from './components/AuthModal';
 import { KeyModal } from './components/KeyModal';
 import { CreateKeyModal } from './components/CreateKeyModal';
@@ -18,6 +18,8 @@ import { UserProfile } from './components/UserProfile';
 import { BillingPage } from './components/BillingPage';
 import { BillingReminderModal } from './components/BillingReminderModal';
 import { TelegramBanner } from './components/TelegramBanner';
+import { NewsBanner } from './components/NewsBanner';
+import { NewsPage } from './components/NewsPage';
 import { Tooltip } from './components/Tooltip';
 import { formatNodeRouting } from './utils/country';
 import { FloatingMascot, MascotFaqModal } from './components/MascotAssistant';
@@ -27,7 +29,11 @@ export default function App() {
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'keys' | 'dashboard' | 'nodes' | 'users' | 'all-keys' | 'logs' | 'profile' | 'billing' | 'settings'>('keys');
+  const [activeTab, setActiveTab] = useState<'keys' | 'dashboard' | 'news' | 'nodes' | 'users' | 'all-keys' | 'logs' | 'profile' | 'billing' | 'settings'>('keys');
+
+  // News State
+  const [newsList, setNewsList] = useState<NewsItem[]>([]);
+  const [hasUnreadNews, setHasUnreadNews] = useState(false);
 
   // Keys State
   const [keys, setKeys] = useState<ClientConfigSummary[]>([]);
@@ -82,7 +88,7 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Load keys & nodes when user logs in
+  // Load keys & nodes & news when user logs in
   const loadDashboardData = async (silent = false) => {
     if (!currentUser) return;
     try {
@@ -105,6 +111,35 @@ export default function App() {
       setError(err.message || 'Ошибка загрузки данных');
     } finally {
       if (!silent) setKeysLoading(false);
+    }
+
+    // Load news and check unread status
+    loadNewsData();
+  };
+
+  const loadNewsData = async () => {
+    try {
+      const data = await api.getNews();
+      const safeNews = Array.isArray(data) ? data : [];
+      setNewsList(safeNews);
+      if (safeNews.length > 0) {
+        const lastViewed = parseInt(localStorage.getItem('avari_last_viewed_news_id') || '0', 10);
+        const maxId = Math.max(...safeNews.map((n) => n.id));
+        if (maxId > lastViewed) {
+          setHasUnreadNews(true);
+        }
+      }
+    } catch {
+      // Ignore background fetch error
+    }
+  };
+
+  const handleOpenNewsTab = () => {
+    setActiveTab('news');
+    setHasUnreadNews(false);
+    if (newsList.length > 0) {
+      const maxId = Math.max(...newsList.map((n) => n.id));
+      localStorage.setItem('avari_last_viewed_news_id', maxId.toString());
     }
   };
 
@@ -303,6 +338,21 @@ export default function App() {
             <span>Статус сети</span>
           </button>
 
+          <button
+            onClick={handleOpenNewsTab}
+            className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+              activeTab === 'news'
+                ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+            }`}
+          >
+            <Newspaper className="w-4 h-4" />
+            <span>Новости</span>
+            {hasUnreadNews && (
+              <span className="w-2 h-2 rounded-full bg-[#F0D48D] shadow-sm shadow-[#F0D48D] animate-pulse ml-0.5" />
+            )}
+          </button>
+
           {currentUser.role === 'admin' && (
             <>
               <button
@@ -422,6 +472,9 @@ export default function App() {
                   <span>Создать новый ключ</span>
                 </button>
               </div>
+
+              {/* Top News Announcement Banner */}
+              <NewsBanner news={newsList} onNavigateToNews={handleOpenNewsTab} />
 
               {/* Telegram Bot Alerts Invitation Banner */}
               <TelegramBanner currentUser={currentUser} />
@@ -578,6 +631,7 @@ export default function App() {
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}
+          {activeTab === 'news' && <NewsPage currentUser={currentUser} />}
           {activeTab === 'nodes' && <AdminNodes />}
           {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'all-keys' && <AdminAllKeys />}

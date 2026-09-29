@@ -937,6 +937,144 @@ func TestAdminAllKeysPagination(t *testing.T) {
 	}
 }
 
+func TestNewsEndpointsFlow(t *testing.T) {
+	masterSrv, _, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// Admin login
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var loginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+	adminToken := loginResp.Token
+
+	// Register & activate regular user
+	user, err := store.CreateUser(context.Background(), "bob", "bobPass123!")
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	_ = store.SetUserActive(context.Background(), user.ID, true)
+
+	bobLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "bob",
+		Password: "bobPass123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(bobLoginBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var bobLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&bobLoginResp)
+	bobToken := bobLoginResp.Token
+
+	// 1. Regular user creates news -> 403 Forbidden
+	createPayload, _ := json.Marshal(models.CreateNewsRequest{
+		Title:          "Unauthorized News",
+		Content:        "Should fail",
+		Category:       models.NewsCategoryGeneral,
+		IsPinned:       false,
+		NotifyTelegram: false,
+	})
+	req = httptest.NewRequest("POST", "/api/v1/admin/news", bytes.NewReader(createPayload))
+	req.Header.Set("Authorization", "Bearer "+bobToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for non-admin create news, got %d", rec.Code)
+	}
+
+	// 2. Admin creates a news item
+	validCreatePayload, _ := json.Marshal(models.CreateNewsRequest{
+		Title:          "Плановые техработы на сервере Германия",
+		Content:        "В субботу с 02:00 до 04:00 МСК будут проводиться технические работы.",
+		Category:       models.NewsCategoryMaintenance,
+		IsPinned:       true,
+		NotifyTelegram: false,
+	})
+	req = httptest.NewRequest("POST", "/api/v1/admin/news", bytes.NewReader(validCreatePayload))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for admin create news, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var createdNews models.NewsItem
+	if err := json.NewDecoder(rec.Body).Decode(&createdNews); err != nil {
+		t.Fatalf("failed to decode created news: %v", err)
+	}
+	if createdNews.ID == 0 || createdNews.Title != "Плановые техработы на сервере Германия" || !createdNews.IsPinned {
+		t.Fatalf("unexpected news data: %+v", createdNews)
+	}
+
+	// 3. User lists news -> 200 OK with news item
+	req = httptest.NewRequest("GET", "/api/v1/news", nil)
+	req.Header.Set("Authorization", "Bearer "+bobToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for list news, got %d", rec.Code)
+	}
+	var newsList []models.NewsItem
+	if err := json.NewDecoder(rec.Body).Decode(&newsList); err != nil {
+		t.Fatalf("failed to decode news list: %v", err)
+	}
+	if len(newsList) != 1 || newsList[0].ID != createdNews.ID {
+		t.Fatalf("expected 1 news item, got %d", len(newsList))
+	}
+
+	// 4. Admin updates news item
+	updatePayload, _ := json.Marshal(models.UpdateNewsRequest{
+		Title:    "Обновлено: Плановые техработы завершены",
+		Content:  "Техработы успешно завершены.",
+		Category: models.NewsCategoryMaintenance,
+		IsPinned: false,
+	})
+	req = httptest.NewRequest("PUT", fmt.Sprintf("/api/v1/admin/news/%d", createdNews.ID), bytes.NewReader(updatePayload))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for update news, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var updatedNews models.NewsItem
+	_ = json.NewDecoder(rec.Body).Decode(&updatedNews)
+	if updatedNews.Title != "Обновлено: Плановые техработы завершены" || updatedNews.IsPinned != false {
+		t.Fatalf("unexpected updated news: %+v", updatedNews)
+	}
+
+	// 5. Admin deletes news item
+	req = httptest.NewRequest("DELETE", fmt.Sprintf("/api/v1/admin/news/%d", createdNews.ID), nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for delete news, got %d", rec.Code)
+	}
+
+	// 6. User lists news -> now empty
+	req = httptest.NewRequest("GET", "/api/v1/news", nil)
+	req.Header.Set("Authorization", "Bearer "+bobToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var emptyNews []models.NewsItem
+	_ = json.NewDecoder(rec.Body).Decode(&emptyNews)
+	if len(emptyNews) != 0 {
+		t.Fatalf("expected 0 news items after delete, got %d", len(emptyNews))
+	}
+}
+
+
 
 
 

@@ -23,6 +23,7 @@
 | | | | | [TASK-024](./tasks/TASK-024-healthcheck-resilience-and-lightweight-probe.md) |
 | | | | | [TASK-026](./tasks/TASK-026-onboarding-tour-layout-fix.md) |
 | | | | | [TASK-025](./tasks/TASK-025-cicd-server-migration.md) |
+| | | | | [TASK-027](./tasks/TASK-027-news-and-announcements-system.md) |
 
 ---
 
@@ -47,6 +48,8 @@
 - **[TASK-024](./tasks/TASK-024-healthcheck-resilience-and-lightweight-probe.md)**: ✅ Устойчивость HealthChecker к сетевым задержкам и легковесный опрос Slave API.
 - **[TASK-025](./tasks/TASK-025-cicd-server-migration.md)**: ✅ Перенастройка CI/CD пайплайна на VPS 176.53.174.118 (keys.avari.dev / OpenResty Manager).
 - **[TASK-026](./tasks/TASK-026-onboarding-tour-layout-fix.md)**: ⚙️ Исправление разметки и мобильной адаптивности окна обучения (OnboardingTour).
+- **[TASK-027](./tasks/TASK-027-news-and-announcements-system.md)**: ✅ Страница «Новости» с публикацией, категориями, рассылкой в Telegram-бота и баннером.
+
 
 
 

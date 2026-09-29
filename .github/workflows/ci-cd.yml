@@ -247,7 +247,7 @@ jobs:
 
       - name: 🚀 Deploy avari-slave to All Nodes & Restart
         env:
-          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS || '176.53.174.118 185.213.240.136 157.228.142.20 157.228.130.7' }}
+          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS || '157.22.252.225 185.213.240.136 157.228.142.20 157.228.130.7' }}
           SINGLE_TARGET_HOST: ${{ github.event.inputs.target_host }}
           TARGET_MODE: ${{ github.event.inputs.target }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
@@ -255,6 +255,8 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           DEPLOY_TMP="/tmp/avari-slave-${RUN_ID}"
+          SSH_OPTS="-i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
+          SCP_OPTS="-i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
           # Determine which hosts to deploy to
           if [ "${TARGET_MODE}" = "slave-api" ] && [ -n "${SINGLE_TARGET_HOST}" ]; then
@@ -272,14 +274,14 @@ jobs:
             echo "=================================================="
             ssh-keyscan -p "${SSH_PORT}" -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-            ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${SSH_USER}@${HOST} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || {
+            ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || {
               echo "⚠️ Warning: Failed to connect to ${HOST}, skipping..."
               continue
             }
 
-            scp -i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${HOST}:${DEPLOY_TMP}/avari-slave
+            scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${HOST}:${DEPLOY_TMP}/avari-slave
             
-            ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new ${SSH_USER}@${HOST} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave && rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && (systemctl is-active --quiet avari-slave && systemctl restart avari-slave && echo '✅ avari-slave restarted successfully on ${HOST}!' || echo 'ℹ️ avari-slave is not active on ${HOST}')"
+            ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave && rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && (systemctl is-active --quiet avari-slave && systemctl restart avari-slave && echo '✅ avari-slave restarted successfully on ${HOST}!' || echo 'ℹ️ avari-slave is not active on ${HOST}')"
           done
 
           echo ""

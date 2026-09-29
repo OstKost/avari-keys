@@ -16,6 +16,9 @@ import {
   TelegramStatusResponse,
   TelegramSettings,
   UserTelegramStatus,
+  NewsItem,
+  CreateNewsPayload,
+  UpdateNewsPayload,
 } from '../types';
 
 import { mockApi } from './mockClient';
@@ -505,6 +508,40 @@ const realApi = {
   async unlinkUserTelegram(): Promise<{ success: boolean; message: string }> {
     const res = await fetch(`${API_BASE}/user/telegram/unlink`, {
       method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  // News & Announcements
+  async getNews(): Promise<NewsItem[]> {
+    const res = await fetch(`${API_BASE}/news`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<NewsItem[]>(res);
+  },
+
+  async createNews(data: CreateNewsPayload): Promise<NewsItem> {
+    const res = await fetch(`${API_BASE}/admin/news`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<NewsItem>(res);
+  },
+
+  async updateNews(id: number, data: UpdateNewsPayload): Promise<NewsItem> {
+    const res = await fetch(`${API_BASE}/admin/news/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return handleResponse<NewsItem>(res);
+  },
+
+  async deleteNews(id: number): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/admin/news/${id}`, {
+      method: 'DELETE',
       headers: getAuthHeaders(),
     });
     return handleResponse<{ success: boolean; message: string }>(res);
