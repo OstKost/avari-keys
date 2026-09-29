@@ -46,7 +46,7 @@ func setupTestEnvironment(t *testing.T) (*master.Server, *httptest.Server, *stor
 	slaveHttpSrv := httptest.NewServer(slaveSrv.Handler())
 
 	// Add mock slave node to DB
-	_, err = store.CreateNode(context.Background(), "Mock Cascade Node", "cascade", "NLD", "https://aeza.net", slaveHttpSrv.URL, slaveToken, true)
+	_, err = store.CreateNode(context.Background(), "Mock Cascade Node", "cascade", "NLD", "https://aeza.net", slaveHttpSrv.URL, slaveToken, true, false)
 	if err != nil {
 		t.Fatalf("failed to create mock node: %v", err)
 	}
@@ -1071,6 +1071,175 @@ func TestNewsEndpointsFlow(t *testing.T) {
 	_ = json.NewDecoder(rec.Body).Decode(&emptyNews)
 	if len(emptyNews) != 0 {
 		t.Fatalf("expected 0 news items after delete, got %d", len(emptyNews))
+	}
+}
+
+func TestBackupServersAndPROTierFlow(t *testing.T) {
+	masterSrv, slaveHttpSrv, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Login as Admin
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var adminLogin models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminLogin)
+	adminToken := adminLogin.Token
+
+	// 2. Admin creates a backup server node (is_backup: true)
+	addNodeBody, _ := json.Marshal(models.AddNodeRequest{
+		Name:              "Backup Frankfurt 01",
+		Type:              "direct",
+		CountryCode:       "DEU",
+		ProviderURL:       "https://aeza.net",
+		APIURL:            slaveHttpSrv.URL,
+		APIKey:            "slave-secret-123",
+		IsMobileOptimized: true,
+		IsBackup:          true,
+	})
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes", bytes.NewReader(addNodeBody))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for add backup node, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var backupNode models.Node
+	_ = json.NewDecoder(rec.Body).Decode(&backupNode)
+	if !backupNode.IsBackup {
+		t.Fatalf("expected backupNode.IsBackup to be true, got false")
+	}
+
+	// 3. Register and activate a regular user 'dave'
+	regBody, _ := json.Marshal(models.RegisterRequest{
+		Username: "dave",
+		Password: "DavePassword123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(regBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	daveUser, _ := store.GetUserByUsername(context.Background(), "dave")
+	_ = store.SetUserActive(context.Background(), daveUser.ID, true)
+
+	// Login as dave
+	daveLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "dave",
+		Password: "DavePassword123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(daveLoginBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var daveLogin models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&daveLogin)
+	daveToken := daveLogin.Token
+
+	if daveLogin.User.IsPro {
+		t.Fatalf("expected dave.IsPro to be false initially")
+	}
+
+	// 4. Non-PRO user tries to create key on backup server -> 403 Forbidden
+	createKeyBody, _ := json.Marshal(models.CreateKeyRequest{
+		NodeID:     backupNode.ID,
+		DeviceName: "Dave iPhone",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(createKeyBody))
+	req.Header.Set("Authorization", "Bearer "+daveToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden when non-PRO creates key on backup server, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	expectedErrMsg := "Данный сервер является запасным и доступен только для пользователей с тарифом PRO. Обратитесь к администратору для подключения."
+	if !strings.Contains(rec.Body.String(), expectedErrMsg) {
+		t.Fatalf("expected error message %q, got %q", expectedErrMsg, rec.Body.String())
+	}
+
+	// 5. Admin enables PRO tier for dave: POST /api/v1/admin/users/{id}/pro
+	setProBody, _ := json.Marshal(models.SetUserProRequest{
+		IsPro: true,
+	})
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/v1/admin/users/%d/pro", daveUser.ID), bytes.NewReader(setProBody))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin set pro, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	// Verify dave profile now has is_pro: true via /api/v1/auth/me
+	req = httptest.NewRequest("GET", "/api/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+daveToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var daveMe models.UserPublic
+	_ = json.NewDecoder(rec.Body).Decode(&daveMe)
+	if !daveMe.IsPro {
+		t.Fatalf("expected daveMe.IsPro to be true")
+	}
+
+	// Verify billing status for PRO user shows recommended_amount: 300.0 and is_pro: true
+	req = httptest.NewRequest("GET", "/api/v1/billing/status", nil)
+	req.Header.Set("Authorization", "Bearer "+daveToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var billStatus models.BillingStatusResponse
+	_ = json.NewDecoder(rec.Body).Decode(&billStatus)
+	if !billStatus.IsPro || billStatus.RecommendedAmount != 300.0 {
+		t.Fatalf("expected PRO billing status (is_pro=true, amount=300.0), got is_pro=%v, amount=%.1f", billStatus.IsPro, billStatus.RecommendedAmount)
+	}
+
+	// 6. PRO user creates key on backup server -> 201 Created!
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(createKeyBody))
+	req.Header.Set("Authorization", "Bearer "+daveToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for PRO user creating key on backup server, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	// 7. Admin creates key on backup server (Admin bypass test) -> 201 Created
+	adminKeyBody, _ := json.Marshal(models.CreateKeyRequest{
+		NodeID:     backupNode.ID,
+		DeviceName: "Admin Laptop",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(adminKeyBody))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for admin creating key on backup server, got %d", rec.Code)
+	}
+
+	// 8. Admin disables PRO tier for dave: POST /api/v1/admin/users/{id}/pro with is_pro: false
+	disableProBody, _ := json.Marshal(models.SetUserProRequest{
+		IsPro: false,
+	})
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/v1/admin/users/%d/pro", daveUser.ID), bytes.NewReader(disableProBody))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for disabling pro, got %d", rec.Code)
+	}
+
+	// 9. Dave attempts to create another key on backup server -> 403 Forbidden
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(createKeyBody))
+	req.Header.Set("Authorization", "Bearer "+daveToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden after disabling PRO, got %d", rec.Code)
 	}
 }
 

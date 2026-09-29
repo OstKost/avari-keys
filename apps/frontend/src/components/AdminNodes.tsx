@@ -20,6 +20,7 @@ import {
   Bot,
   BellRing,
   Settings,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { AdminNode, EgressStatusResponse, TelegramStatusResponse } from '../types';
@@ -51,6 +52,7 @@ export function AdminNodes() {
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [isMobileOptimized, setIsMobileOptimized] = useState(false);
+  const [isBackup, setIsBackup] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Edit node modal state
@@ -62,6 +64,7 @@ export function AdminNodes() {
   const [editApiUrl, setEditApiUrl] = useState('');
   const [editApiKey, setEditApiKey] = useState('');
   const [editIsMobileOptimized, setEditIsMobileOptimized] = useState(false);
+  const [editIsBackup, setEditIsBackup] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
 
   // Action modals state
@@ -177,6 +180,7 @@ export function AdminNodes() {
     const nodeApi = apiUrl.trim();
     const nodeKey = apiKey.trim();
     const nodeMobile = isMobileOptimized;
+    const nodeBackup = isBackup;
     try {
       setSubmitting(true);
       const res = await api.addAdminNode(
@@ -186,7 +190,8 @@ export function AdminNodes() {
         nodeKey,
         nodeMobile,
         nodeCountry,
-        nodeProvider
+        nodeProvider,
+        nodeBackup
       );
       setName('');
       setCountryCode('NLD');
@@ -194,6 +199,7 @@ export function AdminNodes() {
       setApiUrl('');
       setApiKey('');
       setIsMobileOptimized(false);
+      setIsBackup(false);
       setShowAddForm(false);
       toast.success(`Сервер «${nodeName}» успешно подключен`);
       if (res && res.id) {
@@ -216,6 +222,7 @@ export function AdminNodes() {
     setEditApiUrl(node.api_url);
     setEditApiKey('');
     setEditIsMobileOptimized(Boolean(node.is_mobile_optimized));
+    setEditIsBackup(Boolean(node.is_backup));
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -229,6 +236,7 @@ export function AdminNodes() {
     const updatedApiUrl = editApiUrl.trim();
     const updatedApiKey = editApiKey.trim();
     const updatedMobile = editIsMobileOptimized;
+    const updatedBackup = editIsBackup;
 
     // Optimistic local state update
     const previousNodes = [...nodes];
@@ -243,6 +251,7 @@ export function AdminNodes() {
               provider_url: updatedProvider,
               api_url: updatedApiUrl,
               is_mobile_optimized: updatedMobile,
+              is_backup: updatedBackup,
             }
           : n
       )
@@ -257,6 +266,7 @@ export function AdminNodes() {
         apiUrl: updatedApiUrl,
         apiKey: updatedApiKey || undefined,
         isMobileOptimized: updatedMobile,
+        isBackup: updatedBackup,
         countryCode: updatedCountry,
         providerUrl: updatedProvider,
       });
@@ -631,6 +641,39 @@ export function AdminNodes() {
             </div>
           </div>
 
+          {/* Backup / Reserve PRO Server Checkbox */}
+          <div
+            onClick={() => setIsBackup(!isBackup)}
+            className={`p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
+              isBackup
+                ? 'border-[#D9B96E] bg-[#06141B] shadow-lg shadow-[#D9B96E]/10'
+                : 'border-[#1C3945] bg-[#06141B]/60 hover:border-[#1C3945]/80'
+            }`}
+          >
+            <div className="flex items-start">
+              <input
+                type="checkbox"
+                checked={isBackup}
+                onChange={(e) => setIsBackup(e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1 w-4 h-4 rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945] focus:ring-[#D9B96E] accent-[#D9B96E] cursor-pointer"
+              />
+              <div className="ml-3 flex-1">
+                <div className="flex items-center space-x-2">
+                  <span className="font-serif font-bold text-sm text-[#F2F0E8]">
+                    Запасной сервер (доступен только для тарифа PRO)
+                  </span>
+                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40">
+                    PRO
+                  </span>
+                </div>
+                <p className="text-sm text-[#A8B4B7] mt-1 font-sans leading-relaxed">
+                  Отмечает данный сервер как резервный. Ключи на этом сервере смогут выпускать только пользователи с активным тарифом PRO.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="flex justify-end space-x-3 pt-2">
             <button
               type="button"
@@ -712,13 +755,22 @@ export function AdminNodes() {
                     </div>
                   </td>
 
-                  {/* Name & Mobile Tag */}
+                  {/* Name & Mobile / Backup Tags */}
                   <td className="px-5 py-3.5 font-medium text-[#F2F0E8]">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                       <span className="font-semibold text-sm">{node.name}</span>
+                      {node.is_backup && (
+                        <span
+                          className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm"
+                          title="Запасной сервер — доступен только для тарифа PRO"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                          <span>Запасной (PRO)</span>
+                        </span>
+                      )}
                       {node.is_mobile_optimized && (
                         <span
-                          className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-sm font-mono px-2 py-0.5 rounded-full font-bold"
+                          className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold"
                           title="Оптимизирован для мобильных сетей (--mobile 443/UDP)"
                         >
                           <Smartphone className="w-3.5 h-3.5" />
@@ -984,6 +1036,39 @@ export function AdminNodes() {
                     </div>
                     <p className="text-sm text-[#A8B4B7] mt-1 font-sans leading-relaxed">
                       Отмечает данный сервер как использующий порт <code className="text-[#D9B96E] font-mono text-sm">443/UDP</code>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Backup / Reserve PRO Server Checkbox */}
+              <div
+                onClick={() => setEditIsBackup(!editIsBackup)}
+                className={`p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
+                  editIsBackup
+                    ? 'border-[#D9B96E] bg-[#06141B] shadow-lg shadow-[#D9B96E]/10'
+                    : 'border-[#1C3945] bg-[#06141B]/60 hover:border-[#1C3945]/80'
+                }`}
+              >
+                <div className="flex items-start">
+                  <input
+                    type="checkbox"
+                    checked={editIsBackup}
+                    onChange={(e) => setEditIsBackup(e.target.checked)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1 w-4 h-4 rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945] focus:ring-[#D9B96E] accent-[#D9B96E] cursor-pointer"
+                  />
+                  <div className="ml-3 flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-serif font-bold text-sm text-[#F2F0E8]">
+                        Запасной сервер (доступен только для тарифа PRO)
+                      </span>
+                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40">
+                        PRO
+                      </span>
+                    </div>
+                    <p className="text-sm text-[#A8B4B7] mt-1 font-sans leading-relaxed">
+                      Резервный сервер для повышенной отказоустойчивости (только для тарифа PRO).
                     </p>
                   </div>
                 </div>

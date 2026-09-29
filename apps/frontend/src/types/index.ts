@@ -5,6 +5,7 @@ export interface User {
   username: string;
   role: UserRole;
   is_active: boolean;
+  is_pro: boolean;
   created_at: string;
 }
 
@@ -14,6 +15,7 @@ export interface NodePublic {
   type: 'cascade' | 'direct';
   country_code?: string;
   is_mobile_optimized?: boolean;
+  is_backup?: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -26,6 +28,7 @@ export interface AdminNode {
   provider_url?: string;
   api_url: string;
   is_mobile_optimized?: boolean;
+  is_backup: boolean;
   is_active: boolean;
   online: boolean;
   latency_ms?: number;
@@ -126,6 +129,7 @@ export interface NodeDashboardInfo {
   name: string;
   type: 'cascade' | 'direct';
   country_code?: string;
+  is_backup?: boolean;
   online: boolean;
   latency_ms: number;
   peer_count: number;
@@ -176,6 +180,7 @@ export interface BillingStatus {
   last_paid_at?: string;
   snoozed_until?: string;
   status: 'paid' | 'due' | 'snoozed';
+  is_pro?: boolean;
   key_count?: number;
   recommended_amount?: number;
   history: BillingRecord[];

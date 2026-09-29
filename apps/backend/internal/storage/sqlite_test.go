@@ -3,6 +3,7 @@ package storage_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,13 +56,16 @@ func TestUserRegistrationAndModeration(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. Create user -> is_active should be false (0)
+	// 1. Create user -> is_active should be false (0), is_pro should be false
 	user, err := store.CreateUser(ctx, "bob", "secretpassword")
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
 	if user.IsActive {
 		t.Fatalf("newly registered user must have is_active=false")
+	}
+	if user.IsPro {
+		t.Fatalf("newly registered user must have is_pro=false")
 	}
 
 	// 2. Activate user
@@ -72,6 +76,24 @@ func TestUserRegistrationAndModeration(t *testing.T) {
 	updated, err := store.GetUserByID(ctx, user.ID)
 	if err != nil || !updated.IsActive {
 		t.Fatalf("expected user to be active after update")
+	}
+
+	// Set user PRO
+	if err := store.SetUserPro(ctx, user.ID, true); err != nil {
+		t.Fatalf("failed to set user pro: %v", err)
+	}
+	proUser, err := store.GetUserByID(ctx, user.ID)
+	if err != nil || !proUser.IsPro {
+		t.Fatalf("expected user to have is_pro=true")
+	}
+
+	// Disable user PRO
+	if err := store.SetUserPro(ctx, user.ID, false); err != nil {
+		t.Fatalf("failed to disable user pro: %v", err)
+	}
+	nonProUser, err := store.GetUserByID(ctx, user.ID)
+	if err != nil || nonProUser.IsPro {
+		t.Fatalf("expected user to have is_pro=false")
 	}
 
 	// 3. Deactivate user
@@ -91,28 +113,28 @@ func TestNodesAndConfigsStorage(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. Create nodes
-	node1, err := store.CreateNode(ctx, "Cascade Node", "cascade", "NLD", "https://aeza.net", "http://127.0.0.1:8081", "token1", true)
+	// 1. Create nodes (node1: normal, node2: backup)
+	node1, err := store.CreateNode(ctx, "Cascade Node", "cascade", "NLD", "https://aeza.net", "http://127.0.0.1:8081", "token1", true, false)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}
-	if !node1.IsMobileOptimized || node1.CountryCode != "NLD" || node1.ProviderURL != "https://aeza.net" {
+	if !node1.IsMobileOptimized || node1.CountryCode != "NLD" || node1.ProviderURL != "https://aeza.net" || node1.IsBackup {
 		t.Fatalf("invalid node1 attributes: %+v", node1)
 	}
-	node2, err := store.CreateNode(ctx, "Direct Node", "direct", "DEU", "https://hetzner.com", "http://127.0.0.1:8082", "token2", false)
+	node2, err := store.CreateNode(ctx, "Direct Node", "direct", "DEU", "https://hetzner.com", "http://127.0.0.1:8082", "token2", false, true)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}
-	if node2.IsMobileOptimized || node2.CountryCode != "DEU" || node2.ProviderURL != "https://hetzner.com" {
+	if node2.IsMobileOptimized || node2.CountryCode != "DEU" || node2.ProviderURL != "https://hetzner.com" || !node2.IsBackup {
 		t.Fatalf("invalid node2 attributes: %+v", node2)
 	}
 
-	// Update node test
-	updatedNode2, err := store.UpdateNode(ctx, node2.ID, "Direct Node Updated", "direct", "FIN", "https://hetzner.com/vps", "http://127.0.0.1:8085", "", true)
+	// Update node test: change is_backup to false
+	updatedNode2, err := store.UpdateNode(ctx, node2.ID, "Direct Node Updated", "direct", "FIN", "https://hetzner.com/vps", "http://127.0.0.1:8085", "", true, false)
 	if err != nil {
 		t.Fatalf("failed to update node: %v", err)
 	}
-	if updatedNode2.Name != "Direct Node Updated" || updatedNode2.CountryCode != "FIN" || updatedNode2.APIURL != "http://127.0.0.1:8085" || !updatedNode2.IsMobileOptimized {
+	if updatedNode2.Name != "Direct Node Updated" || updatedNode2.CountryCode != "FIN" || updatedNode2.APIURL != "http://127.0.0.1:8085" || !updatedNode2.IsMobileOptimized || updatedNode2.IsBackup {
 		t.Fatalf("invalid updated node attributes: %+v", updatedNode2)
 	}
 	if updatedNode2.APIKey != "token2" {
@@ -302,6 +324,39 @@ func TestBillingStorage(t *testing.T) {
 	if adminSummary.TotalPayments != 1 {
 		t.Fatalf("expected 1 total payment, got %d", adminSummary.TotalPayments)
 	}
+
+	// 7. Verify pricing formulas: non-PRO vs PRO, keyCount <= 3 vs keyCount > 3
+	// Initially non-PRO with 0 keys -> 200.0
+	statusNonPro0, err := store.GetBillingStatus(ctx, user.ID)
+	if err != nil || statusNonPro0.RecommendedAmount != 200.0 || statusNonPro0.IsPro {
+		t.Fatalf("expected 200.0 for non-pro with 0 keys, got %.1f (is_pro=%v)", statusNonPro0.RecommendedAmount, statusNonPro0.IsPro)
+	}
+
+	// Switch to PRO with 0 keys -> 300.0
+	_ = store.SetUserPro(ctx, user.ID, true)
+	statusPro0, err := store.GetBillingStatus(ctx, user.ID)
+	if err != nil || statusPro0.RecommendedAmount != 300.0 || !statusPro0.IsPro {
+		t.Fatalf("expected 300.0 for pro with 0 keys, got %.1f (is_pro=%v)", statusPro0.RecommendedAmount, statusPro0.IsPro)
+	}
+
+	// Add 5 keys to user (2 extra keys)
+	testNode, _ := store.CreateNode(ctx, "Billing Node", "direct", "NLD", "https://aeza.net", "http://127.0.0.1:8080", "secret", false, false)
+	for i := 1; i <= 5; i++ {
+		_, _ = store.CreateClientConfig(ctx, user.ID, testNode.ID, fmt.Sprintf("key_%d", i), fmt.Sprintf("Device %d", i))
+	}
+
+	// PRO with 5 keys -> 300 + 2 * 50 = 400.0
+	statusPro5, err := store.GetBillingStatus(ctx, user.ID)
+	if err != nil || statusPro5.RecommendedAmount != 400.0 {
+		t.Fatalf("expected 400.0 for pro with 5 keys, got %.1f", statusPro5.RecommendedAmount)
+	}
+
+	// Switch back to non-PRO with 5 keys -> 200 + 2 * 30 = 260.0
+	_ = store.SetUserPro(ctx, user.ID, false)
+	statusNonPro5, err := store.GetBillingStatus(ctx, user.ID)
+	if err != nil || statusNonPro5.RecommendedAmount != 260.0 {
+		t.Fatalf("expected 260.0 for non-pro with 5 keys, got %.1f", statusNonPro5.RecommendedAmount)
+	}
 }
 
 func TestTelegramChatsStorage(t *testing.T) {
@@ -480,7 +535,7 @@ func TestTelemetryStorageAndMonthlyDelta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
-	node, err := store.CreateNode(ctx, "Test Node S1", "direct", "NLD", "https://aeza.net", "http://127.0.0.1:8080", "secret", false)
+	node, err := store.CreateNode(ctx, "Test Node S1", "direct", "NLD", "https://aeza.net", "http://127.0.0.1:8080", "secret", false, false)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}

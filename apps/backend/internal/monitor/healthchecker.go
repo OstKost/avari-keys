@@ -438,6 +438,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 			Name:                  n.Name,
 			Type:                  n.Type,
 			CountryCode:           n.CountryCode,
+			IsBackup:              n.IsBackup,
 			Online:                isOnline,
 			LatencyMs:             latency,
 			PeerCount:             nodePeerCount,

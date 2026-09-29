@@ -479,6 +479,61 @@ export default function App() {
               {/* Telegram Bot Alerts Invitation Banner */}
               <TelegramBanner currentUser={currentUser} />
 
+              {/* Backup Servers / PRO Banner */}
+              {(() => {
+                const backupNodes = (nodes || []).filter((n) => n.is_backup);
+                if (backupNodes.length === 0) return null;
+                const isProUser = Boolean(currentUser?.is_pro || currentUser?.role === 'admin');
+
+                if (isProUser) {
+                  return (
+                    <div className="bg-gradient-to-r from-purple-950/30 via-[#102833] to-[#0A1D26] border border-purple-600/40 rounded-2xl p-4 sm:p-5 mb-6 flex items-start sm:items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-start sm:items-center space-x-3">
+                        <div className="p-2.5 rounded-xl bg-purple-950/80 text-purple-300 border border-purple-600/50 shrink-0">
+                          <Sparkles className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h4 className="font-serif font-bold text-sm sm:text-base text-[#F2F0E8]">
+                              Тариф PRO активен
+                            </h4>
+                            <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300 border border-purple-500/40">
+                              PRO
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-[#A8B4B7] mt-0.5 font-sans">
+                            Вам открыт доступ ко всем основным и запасным серверам ({backupNodes.map((n) => n.name).join(', ')}).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="bg-gradient-to-r from-[#102833] via-[#0D222C] to-[#0A1D26] border border-purple-800/40 rounded-2xl p-4 sm:p-5 mb-6 flex items-start sm:items-center justify-between gap-3 shadow-lg">
+                    <div className="flex items-start space-x-3">
+                      <div className="p-2.5 rounded-xl bg-purple-950/50 text-purple-300 border border-purple-800/40 shrink-0">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-serif font-bold text-sm sm:text-base text-[#F2F0E8]">
+                            Доступны запасные серверы высокой надежности
+                          </h4>
+                          <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-700/50">
+                            Тариф PRO
+                          </span>
+                        </div>
+                        <p className="text-xs sm:text-sm text-[#A8B4B7] mt-1 font-sans leading-relaxed">
+                          Резервные узлы: <strong className="text-[#F2F0E8]">{backupNodes.map((n) => n.name).join(', ')}</strong>. Они обеспечивают дополнительную надежность и доступны на тарифе PRO. Получить доступ можно у администратора.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {error && (
                 <div className="flex items-center space-x-2 bg-rose-950/60 border border-rose-800/80 text-rose-300 text-sm p-4 rounded-xl mb-6 shadow-lg">
                   <AlertCircle className="w-4 h-4" />
@@ -652,6 +707,7 @@ export default function App() {
       {showCreateModal && (
         <CreateKeyModal
           nodes={nodes}
+          currentUser={currentUser}
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateKey}
         />
