@@ -18,6 +18,9 @@ import {
   TelegramSettings,
   TelegramChat,
   UserTelegramStatus,
+  NewsItem,
+  CreateNewsPayload,
+  UpdateNewsPayload,
 } from '../types';
 
 // In-memory mock storage for standalone FE development
@@ -1262,7 +1265,94 @@ PersistentKeepalive = 25`;
     mockTelegramSubscribers = mockTelegramSubscribers.filter((s) => s.user_id !== mockCurrentUser.id && s.username !== mockCurrentUser.username);
     return { success: true, message: 'Telegram успешно отвязан от вашего аккаунта' };
   },
+
+  // News & Announcements
+  async getNews(): Promise<NewsItem[]> {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return [...mockNews].sort((a, b) => {
+      if (a.is_pinned !== b.is_pinned) {
+        return a.is_pinned ? -1 : 1;
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  },
+
+  async createNews(payload: CreateNewsPayload): Promise<NewsItem> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const newItem: NewsItem = {
+      id: Math.max(...mockNews.map((n) => n.id), 0) + 1,
+      title: payload.title,
+      content: payload.content,
+      category: payload.category,
+      is_pinned: payload.is_pinned,
+      author_name: mockCurrentUser.username,
+      notify_telegram: payload.notify_telegram,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    mockNews.unshift(newItem);
+    return newItem;
+  },
+
+  async updateNews(id: number, payload: UpdateNewsPayload): Promise<NewsItem> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const idx = mockNews.findIndex((n) => n.id === id);
+    if (idx === -1) {
+      throw new Error('Новость не найдена');
+    }
+    mockNews[idx] = {
+      ...mockNews[idx],
+      title: payload.title,
+      content: payload.content,
+      category: payload.category,
+      is_pinned: payload.is_pinned,
+      updated_at: new Date().toISOString(),
+    };
+    return mockNews[idx];
+  },
+
+  async deleteNews(id: number): Promise<{ success: boolean; message: string }> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    mockNews = mockNews.filter((n) => n.id !== id);
+    return { success: true, message: 'Новость успешно удалена' };
+  },
 };
+
+let mockNews: NewsItem[] = [
+  {
+    id: 1,
+    title: 'Плановые технические работы на сервере Германия S2',
+    content: 'В ночь на воскресенье с 02:00 до 04:00 МСК будут проводиться технические работы по обновлению ядра AmneziaWG и оптимизации сетевых маршрутов. Возможны кратковременные прерывания соединения до 5 минут.',
+    category: 'maintenance',
+    is_pinned: true,
+    author_name: 'Forve',
+    notify_telegram: true,
+    created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+    updated_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+  },
+  {
+    id: 2,
+    title: 'Обновление протоколов и оптимизация каскадных туннелей',
+    content: 'Мы завершили настройку автоматической балансировки и мониторинга каскада M0 -> S2. Задержка в европейском сегменте снизилась в среднем на 15-20 мс.',
+    category: 'general',
+    is_pinned: false,
+    author_name: 'Forve',
+    notify_telegram: true,
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 3,
+    title: 'Напоминание о кооперативных взносах за октябрь',
+    content: 'Напоминаем о своевременном внесении взносов за поддержание выделенных зарубежных серверов. Проверить статус взносов и реквизиты СБП можно во вкладке «Биллинг» или через Telegram-бота.',
+    category: 'billing',
+    is_pinned: false,
+    author_name: 'Forve',
+    notify_telegram: true,
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+  },
+];
 
 // Mock state helpers
 let mockTelegramSettings: TelegramSettings = {

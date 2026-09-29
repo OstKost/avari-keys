@@ -33,14 +33,14 @@ func main() {
 	tgAdminChatID := os.Getenv("TELEGRAM_ADMIN_CHAT_ID")
 	tgAdminSecret := os.Getenv("TELEGRAM_ADMIN_SECRET")
 
-	intervalSec := 30
+	intervalSec := 60
 	if secStr := os.Getenv("HEALTHCHECK_INTERVAL_SEC"); secStr != "" {
 		if s, err := strconv.Atoi(secStr); err == nil && s > 0 {
 			intervalSec = s
 		}
 	}
 
-	timeoutSec := 10
+	timeoutSec := 15
 	if secStr := os.Getenv("HEALTHCHECK_TIMEOUT_SEC"); secStr != "" {
 		if s, err := strconv.Atoi(secStr); err == nil && s > 0 {
 			timeoutSec = s
