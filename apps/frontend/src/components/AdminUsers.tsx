@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserCheck, UserX, Trash2, Users, ShieldPlus, ShieldMinus } from 'lucide-react';
+import { UserCheck, UserX, Trash2, Users, ShieldPlus, ShieldMinus, Sparkles } from 'lucide-react';
 import { api } from '../api/client';
 import { User } from '../types';
 import { ConfirmModal } from './ConfirmModal';
@@ -15,6 +15,8 @@ export function AdminUsers() {
   const [deleting, setDeleting] = useState(false);
   const [roleChangeTarget, setRoleChangeTarget] = useState<{ user: User; newRole: 'admin' | 'user' } | null>(null);
   const [changingRole, setChangingRole] = useState(false);
+  const [proChangeTarget, setProChangeTarget] = useState<{ user: User; newPro: boolean } | null>(null);
+  const [changingPro, setChangingPro] = useState(false);
 
   const fetchUsers = async (silent = false) => {
     try {
@@ -84,6 +86,32 @@ export function AdminUsers() {
     }
   };
 
+  const handleConfirmProChange = async () => {
+    if (!proChangeTarget) return;
+    const target = proChangeTarget;
+    const previousUsers = [...users];
+
+    // Optimistic pro change
+    setUsers((prev) =>
+      prev.map((u) => (u.id === target.user.id ? { ...u, is_pro: target.newPro } : u))
+    );
+    setProChangeTarget(null);
+
+    try {
+      setChangingPro(true);
+      await api.setUserPro(target.user.id, target.newPro);
+      toast.success(
+        `Статус PRO для «${target.user.username}» успешно ${target.newPro ? 'активирован' : 'отозван'}`
+      );
+      fetchUsers(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка изменения статуса PRO');
+      setUsers(previousUsers);
+    } finally {
+      setChangingPro(false);
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!userToDelete) return;
     const target = userToDelete;
@@ -131,6 +159,7 @@ export function AdminUsers() {
               <th className="px-5 py-3.5">ID</th>
               <th className="px-5 py-3.5">Имя пользователя</th>
               <th className="px-5 py-3.5">Роль</th>
+              <th className="px-5 py-3.5">Тариф</th>
               <th className="px-5 py-3.5">Статус</th>
               <th className="px-5 py-3.5">Дата регистрации</th>
               <th className="px-5 py-3.5 text-right">Действия</th>
@@ -140,7 +169,11 @@ export function AdminUsers() {
             {(users || []).map((u) => (
               <tr key={u.id} className="hover:bg-[#102833]/50 transition duration-150">
                 <td className="px-5 py-3.5 text-[#718187] font-mono text-sm">#{u.id}</td>
-                <td className="px-5 py-3.5 font-medium text-[#F2F0E8] text-sm">{u.username}</td>
+                <td className="px-5 py-3.5 font-medium text-[#F2F0E8] text-sm">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-semibold">{u.username}</span>
+                  </div>
+                </td>
                 <td className="px-5 py-3.5">
                   <span
                     className={`text-sm font-mono font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
@@ -151,6 +184,18 @@ export function AdminUsers() {
                   >
                     {u.role}
                   </span>
+                </td>
+                <td className="px-5 py-3.5">
+                  {u.is_pro ? (
+                    <span className="inline-flex items-center space-x-1 text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40 shadow-sm">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                      <span>PRO</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center text-xs font-mono text-[#718187] px-2 py-0.5 rounded-full bg-[#06141B] border border-[#1C3945]">
+                      Стандарт
+                    </span>
+                  )}
                 </td>
                 <td className="px-5 py-3.5">
                   <span
@@ -179,6 +224,21 @@ export function AdminUsers() {
                       }`}
                     >
                       {u.is_active ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                    </button>
+                  </Tooltip>
+
+                  {/* Toggle PRO Status */}
+                  <Tooltip content={u.is_pro ? 'Отозвать тариф PRO' : 'Предоставить тариф PRO'}>
+                    <button
+                      onClick={() => setProChangeTarget({ user: u, newPro: !u.is_pro })}
+                      aria-label={u.is_pro ? 'Отозвать тариф PRO' : 'Предоставить тариф PRO'}
+                      className={`p-2 rounded-xl border transition ${
+                        u.is_pro
+                          ? 'border-purple-600/50 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60'
+                          : 'border-[#1C3945] bg-[#102833] text-[#A8B4B7] hover:text-[#D9B96E] hover:border-[#D9B96E]/40 hover:bg-[#1C3945]'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4" />
                     </button>
                   </Tooltip>
 
@@ -223,6 +283,36 @@ export function AdminUsers() {
           </tbody>
         </table>
       </div>
+
+      {/* PRO Change Confirm Modal */}
+      <ConfirmModal
+        isOpen={Boolean(proChangeTarget)}
+        title={proChangeTarget?.newPro ? 'Предоставить тариф PRO?' : 'Отозвать тариф PRO?'}
+        variant={proChangeTarget?.newPro ? 'gold' : 'warning'}
+        confirmText={proChangeTarget?.newPro ? 'Да, предоставить PRO' : 'Да, отозвать PRO'}
+        cancelText="Отмена"
+        isLoading={changingPro}
+        onConfirm={handleConfirmProChange}
+        onClose={() => setProChangeTarget(null)}
+        message={
+          proChangeTarget && (
+            <div>
+              Вы собираетесь {proChangeTarget.newPro ? 'предоставить' : 'отозвать'} статус{' '}
+              <span className="text-purple-300 font-bold font-mono">PRO</span> пользователю{' '}
+              <strong className="text-[#F2F0E8]">«{proChangeTarget.user.username}»</strong>.
+              {proChangeTarget.newPro ? (
+                <p className="mt-2 text-sm text-[#A8B4B7]">
+                  Пользователь получит доступ к выпуску ключей на запасных (резервных) серверах. Рекомендуемый взнос в биллинге изменится на 300 ₽ (+50 ₽ за доп. ключи).
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-[#A8B4B7]">
+                  Пользователь вернется на стандартный тариф (200 ₽). Доступ к созданию новых ключей на запасных серверах будет ограничен.
+                </p>
+              )}
+            </div>
+          )
+        }
+      />
 
       {/* Role Change Confirm Modal */}
       <ConfirmModal

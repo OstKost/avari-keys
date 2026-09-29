@@ -17,6 +17,7 @@ type User struct {
 	PasswordHash string    `json:"-"`
 	Role         Role      `json:"role"`
 	IsActive     bool      `json:"is_active"`
+	IsPro        bool      `json:"is_pro"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -26,6 +27,7 @@ type UserPublic struct {
 	Username  string    `json:"username"`
 	Role      Role      `json:"role"`
 	IsActive  bool      `json:"is_active"`
+	IsPro     bool      `json:"is_pro"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -39,6 +41,7 @@ type Node struct {
 	APIURL            string    `json:"api_url"`
 	APIKey            string    `json:"-"` // Hidden in public responses
 	IsMobileOptimized bool      `json:"is_mobile_optimized"`
+	IsBackup          bool      `json:"is_backup"`
 	IsActive          bool      `json:"is_active"`
 	CreatedAt         time.Time `json:"created_at"`
 }
@@ -50,6 +53,7 @@ type NodePublic struct {
 	Type              string    `json:"type"`
 	CountryCode       string    `json:"country_code"`
 	IsMobileOptimized bool      `json:"is_mobile_optimized"`
+	IsBackup          bool      `json:"is_backup"`
 	IsActive          bool      `json:"is_active"`
 	CreatedAt         time.Time `json:"created_at"`
 }
@@ -123,6 +127,7 @@ type AddNodeRequest struct {
 	APIURL            string `json:"api_url"`
 	APIKey            string `json:"api_key"`
 	IsMobileOptimized bool   `json:"is_mobile_optimized"`
+	IsBackup          bool   `json:"is_backup"`
 }
 
 type UpdateNodeRequest struct {
@@ -133,6 +138,7 @@ type UpdateNodeRequest struct {
 	APIURL            string `json:"api_url"`
 	APIKey            string `json:"api_key,omitempty"` // If empty, keep existing key
 	IsMobileOptimized bool   `json:"is_mobile_optimized"`
+	IsBackup          bool   `json:"is_backup"`
 }
 
 type RestoreNodeRequest struct {
@@ -146,6 +152,10 @@ type UpdateProfileRequest struct {
 
 type SetRoleRequest struct {
 	Role Role `json:"role"`
+}
+
+type SetUserProRequest struct {
+	IsPro bool `json:"is_pro"`
 }
 
 // AuditLogCategory represents the category of the logged action.
@@ -176,6 +186,7 @@ type BillingRecord struct {
 // BillingStatusResponse represents current user's dues state and reminder countdown.
 type BillingStatusResponse struct {
 	IsDue             bool            `json:"is_due"`
+	IsPro             bool            `json:"is_pro"`
 	DaysRemaining     int             `json:"days_remaining"`
 	NextDueAt         time.Time       `json:"next_due_at"`
 	LastPaidAt        *time.Time      `json:"last_paid_at,omitempty"`
@@ -266,6 +277,7 @@ type NodeDashboardInfo struct {
 	Name                  string `json:"name"`
 	Type                  string `json:"type"`
 	CountryCode           string `json:"country_code"`
+	IsBackup              bool   `json:"is_backup"`
 	Online                bool   `json:"online"`
 	LatencyMs             int64  `json:"latency_ms"`
 	PeerCount             int    `json:"peer_count"`

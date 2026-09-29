@@ -194,6 +194,15 @@ const realApi = {
     return handleResponse<{ success: boolean; message: string }>(res);
   },
 
+  async setUserPro(id: number, isPro: boolean): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/admin/users/${id}/pro`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ is_pro: isPro }),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
   async deleteUser(id: number): Promise<{ success: boolean }> {
     const res = await fetch(`${API_BASE}/admin/users/${id}`, {
       method: 'DELETE',
@@ -217,7 +226,8 @@ const realApi = {
     apiKey: string,
     isMobileOptimized?: boolean,
     countryCode?: string,
-    providerUrl?: string
+    providerUrl?: string,
+    isBackup?: boolean
   ): Promise<AdminNode> {
     const res = await fetch(`${API_BASE}/admin/nodes`, {
       method: 'POST',
@@ -228,6 +238,7 @@ const realApi = {
         api_url: apiUrl,
         api_key: apiKey,
         is_mobile_optimized: isMobileOptimized || false,
+        is_backup: isBackup || false,
         country_code: countryCode || '',
         provider_url: providerUrl || '',
       }),
@@ -243,6 +254,7 @@ const realApi = {
       apiUrl: string;
       apiKey?: string;
       isMobileOptimized?: boolean;
+      isBackup?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
@@ -256,6 +268,7 @@ const realApi = {
         api_url: data.apiUrl,
         api_key: data.apiKey || '',
         is_mobile_optimized: data.isMobileOptimized || false,
+        is_backup: data.isBackup || false,
         country_code: data.countryCode || '',
         provider_url: data.providerUrl || '',
       }),
