@@ -11,6 +11,7 @@ import {
   Trash2,
   Search,
   CheckCircle2,
+  CheckCheck,
   Send,
   X,
   Clock,
@@ -25,14 +26,18 @@ import { Loader } from './Loader';
 
 interface NewsPageProps {
   currentUser: User;
+  onNewsRead?: () => void;
 }
 
-export const NewsPage: React.FC<NewsPageProps> = ({ currentUser }) => {
+export const NewsPage: React.FC<NewsPageProps> = ({ currentUser, onNewsRead }) => {
   const { toast } = useToast();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [lastReadId, setLastReadId] = useState<number>(() => {
+    return parseInt(localStorage.getItem('avari_last_viewed_news_id') || '0', 10);
+  });
 
   // Modals state
   const [showEditorModal, setShowEditorModal] = useState(false);
@@ -53,18 +58,25 @@ export const NewsPage: React.FC<NewsPageProps> = ({ currentUser }) => {
       const data = await api.getNews();
       const safeData = Array.isArray(data) ? data : [];
       setNews(safeData);
-
-      // Mark newest item as read in localStorage
-      if (safeData.length > 0) {
-        const maxId = Math.max(...safeData.map((n) => n.id));
-        localStorage.setItem('avari_last_viewed_news_id', maxId.toString());
-      }
     } catch (err: any) {
       toast.error(err.message || 'Ошибка загрузки новостей');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleMarkAllAsRead = () => {
+    if (news.length === 0) return;
+    const maxId = Math.max(...news.map((n) => n.id), 0);
+    setLastReadId(maxId);
+    localStorage.setItem('avari_last_viewed_news_id', maxId.toString());
+    if (onNewsRead) {
+      onNewsRead();
+    }
+    toast.info('Все новости отмечены как прочитанные');
+  };
+
+  const unreadCount = news.filter((n) => n.id > lastReadId).length;
 
   useEffect(() => {
     loadNews();
@@ -236,15 +248,28 @@ export const NewsPage: React.FC<NewsPageProps> = ({ currentUser }) => {
           </p>
         </div>
 
-        {currentUser.role === 'admin' && (
-          <button
-            onClick={handleOpenCreateModal}
-            className="w-full sm:w-auto flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold text-xs sm:text-sm uppercase tracking-wider font-mono px-5 py-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 transition-all duration-300 cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Опубликовать новость</span>
-          </button>
-        )}
+        <div className="flex items-center space-x-2.5 w-full sm:w-auto">
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={handleMarkAllAsRead}
+              className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 bg-[#102833] hover:bg-[#1C3945] text-[#D9B96E] hover:text-[#F0D48D] border border-[#D9B96E]/30 hover:border-[#D9B96E]/60 text-xs sm:text-sm font-mono font-semibold px-4 py-3 rounded-xl transition shadow-sm cursor-pointer"
+            >
+              <CheckCheck className="w-4 h-4 text-[#D9B96E]" />
+              <span>Прочитать все ({unreadCount})</span>
+            </button>
+          )}
+
+          {currentUser.role === 'admin' && (
+            <button
+              onClick={handleOpenCreateModal}
+              className="flex-1 sm:flex-initial flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold text-xs sm:text-sm uppercase tracking-wider font-mono px-5 py-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 transition-all duration-300 cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Опубликовать новость</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter & Search Bar */}
@@ -344,6 +369,13 @@ export const NewsPage: React.FC<NewsPageProps> = ({ currentUser }) => {
                       <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-[#D9B96E]/20 text-[#F0D48D] border border-[#D9B96E]/40 shadow-sm">
                         <Pin className="w-3 h-3" />
                         <span>ЗАКРЕПЛЕНО</span>
+                      </span>
+                    )}
+
+                    {item.id > lastReadId && (
+                      <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-[#F0D48D]/20 text-[#F0D48D] border border-[#F0D48D]/40 shadow-sm animate-pulse">
+                        <Sparkles className="w-3 h-3 text-[#F0D48D]" />
+                        <span>НОВОЕ</span>
                       </span>
                     )}
 

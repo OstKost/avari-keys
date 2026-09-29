@@ -631,7 +631,12 @@ export default function App() {
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}
-          {activeTab === 'news' && <NewsPage currentUser={currentUser} />}
+          {activeTab === 'news' && (
+            <NewsPage
+              currentUser={currentUser}
+              onNewsRead={() => setHasUnreadNews(false)}
+            />
+          )}
           {activeTab === 'nodes' && <AdminNodes />}
           {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'all-keys' && <AdminAllKeys />}
