@@ -173,6 +173,17 @@ func (s *Storage) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
+
+	CREATE TABLE IF NOT EXISTS announcements (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		title TEXT NOT NULL,
+		content TEXT NOT NULL,
+		category TEXT NOT NULL DEFAULT 'general',
+		is_pinned INTEGER NOT NULL DEFAULT 0,
+		author_name TEXT NOT NULL DEFAULT 'Admin',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -201,6 +212,8 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_billing_records_user_id ON billing_records(user_id);
 	CREATE INDEX IF NOT EXISTS idx_billing_records_created_at ON billing_records(created_at);
 	CREATE INDEX IF NOT EXISTS idx_telegram_link_tokens_user_id ON telegram_link_tokens(user_id);
+	CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON announcements(created_at);
+	CREATE INDEX IF NOT EXISTS idx_announcements_is_pinned ON announcements(is_pinned);
 	`
 	if _, err := s.db.Exec(indexes); err != nil {
 		return err
@@ -1493,3 +1506,143 @@ func formatHandshakeTime(epoch int64) (string, bool) {
 	}
 	return fmt.Sprintf("%d дн назад", diff/86400), false
 }
+
+// ListNews returns all announcements ordered by pinned status first, then by creation date descending.
+func (s *Storage) ListNews(ctx context.Context) ([]models.NewsItem, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, title, content, category, is_pinned, author_name, created_at, updated_at
+		FROM announcements
+		ORDER BY is_pinned DESC, created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query announcements: %w", err)
+	}
+	defer rows.Close()
+
+	var news []models.NewsItem
+	for rows.Next() {
+		var item models.NewsItem
+		var pinned int
+		if err := rows.Scan(
+			&item.ID,
+			&item.Title,
+			&item.Content,
+			&item.Category,
+			&pinned,
+			&item.AuthorName,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan announcement: %w", err)
+		}
+		item.IsPinned = pinned == 1
+		news = append(news, item)
+	}
+
+	if news == nil {
+		news = []models.NewsItem{}
+	}
+
+	return news, nil
+}
+
+// GetNewsByID retrieves a single announcement by its ID.
+func (s *Storage) GetNewsByID(ctx context.Context, id int64) (*models.NewsItem, error) {
+	var item models.NewsItem
+	var pinned int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, title, content, category, is_pinned, author_name, created_at, updated_at
+		FROM announcements
+		WHERE id = ?
+		LIMIT 1
+	`, id).Scan(
+		&item.ID,
+		&item.Title,
+		&item.Content,
+		&item.Category,
+		&pinned,
+		&item.AuthorName,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get announcement by id: %w", err)
+	}
+	item.IsPinned = pinned == 1
+	return &item, nil
+}
+
+// CreateNews inserts a new announcement.
+func (s *Storage) CreateNews(ctx context.Context, item *models.NewsItem) (*models.NewsItem, error) {
+	pinned := 0
+	if item.IsPinned {
+		pinned = 1
+	}
+
+	author := item.AuthorName
+	if author == "" {
+		author = "Admin"
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO announcements (title, content, category, is_pinned, author_name, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, item.Title, item.Content, string(item.Category), pinned, author)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert announcement: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last inserted announcement id: %w", err)
+	}
+
+	return s.GetNewsByID(ctx, id)
+}
+
+// UpdateNews updates an existing announcement.
+func (s *Storage) UpdateNews(ctx context.Context, id int64, req models.UpdateNewsRequest) (*models.NewsItem, error) {
+	pinned := 0
+	if req.IsPinned {
+		pinned = 1
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE announcements
+		SET title = ?, content = ?, category = ?, is_pinned = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, req.Title, req.Content, string(req.Category), pinned, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update announcement: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if rows == 0 {
+		return nil, errors.New("announcement not found")
+	}
+
+	return s.GetNewsByID(ctx, id)
+}
+
+// DeleteNews removes an announcement by ID.
+func (s *Storage) DeleteNews(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM announcements WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete announcement: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("announcement not found")
+	}
+	return nil
+}
+

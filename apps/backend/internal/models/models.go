@@ -351,4 +351,46 @@ type UserTelegramStatusResponse struct {
 	DeepLink         string `json:"deep_link"`
 }
 
+// NewsCategory represents category classification for announcements.
+type NewsCategory string
+
+const (
+	NewsCategoryGeneral     NewsCategory = "general"     // Общее
+	NewsCategoryMaintenance NewsCategory = "maintenance" // Техработы
+	NewsCategoryIncident    NewsCategory = "incident"    // Сбой / Авария
+	NewsCategoryBilling     NewsCategory = "billing"     // Оплата и взносы
+	NewsCategoryKeys        NewsCategory = "keys"        // Обновление ключей
+)
+
+// NewsItem represents an announcement published in the system.
+type NewsItem struct {
+	ID             int64        `json:"id"`
+	Title          string       `json:"title"`
+	Content        string       `json:"content"`
+	Category       NewsCategory `json:"category"`
+	IsPinned       bool         `json:"is_pinned"`
+	AuthorName     string       `json:"author_name"`
+	NotifyTelegram bool         `json:"notify_telegram"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+}
+
+// CreateNewsRequest is the payload for creating a new announcement.
+type CreateNewsRequest struct {
+	Title          string       `json:"title"`
+	Content        string       `json:"content"`
+	Category       NewsCategory `json:"category"`
+	IsPinned       bool         `json:"is_pinned"`
+	NotifyTelegram bool         `json:"notify_telegram"`
+}
+
+// UpdateNewsRequest is the payload for editing an existing announcement.
+type UpdateNewsRequest struct {
+	Title    string       `json:"title"`
+	Content  string       `json:"content"`
+	Category NewsCategory `json:"category"`
+	IsPinned bool         `json:"is_pinned"`
+}
+
+
 
