@@ -199,6 +199,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/activate", auth.RequireAdmin(s.handleAdminActivateUser))
 	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/deactivate", auth.RequireAdmin(s.handleAdminDeactivateUser))
 	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/role", auth.RequireAdmin(s.handleAdminSetUserRole))
+	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/pro", auth.RequireAdmin(s.handleAdminSetUserPro))
 	s.mux.HandleFunc("DELETE /api/v1/admin/users/{id}", auth.RequireAdmin(s.handleAdminDeleteUser))
 
 	s.mux.HandleFunc("GET /api/v1/admin/nodes", auth.RequireAdmin(s.handleAdminListNodes))
@@ -248,7 +249,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v0.5.0",
+		Version: "v0.6.0",
 	})
 }
 
@@ -279,6 +280,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			Username:  user.Username,
 			Role:      user.Role,
 			IsActive:  user.IsActive,
+			IsPro:     user.IsPro,
 			CreatedAt: user.CreatedAt,
 		},
 	})
@@ -321,6 +323,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Username:  user.Username,
 			Role:      user.Role,
 			IsActive:  user.IsActive,
+			IsPro:     user.IsPro,
 			CreatedAt: user.CreatedAt,
 		},
 	})
@@ -339,6 +342,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		Username:  user.Username,
 		Role:      user.Role,
 		IsActive:  user.IsActive,
+		IsPro:     user.IsPro,
 		CreatedAt: user.CreatedAt,
 	})
 }
@@ -368,6 +372,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 			Username:  updatedUser.Username,
 			Role:      updatedUser.Role,
 			IsActive:  updatedUser.IsActive,
+			IsPro:     updatedUser.IsPro,
 			CreatedAt: updatedUser.CreatedAt,
 		},
 	})
@@ -413,6 +418,19 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	node, err := s.storage.GetNodeByID(r.Context(), req.NodeID)
 	if err != nil || !node.IsActive {
 		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Selected node is unavailable"})
+		return
+	}
+
+	user, err := s.storage.GetUserByID(r.Context(), claims.UserID)
+	if err != nil {
+		s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "User not found"})
+		return
+	}
+
+	if node.IsBackup && !user.IsPro && user.Role != models.RoleAdmin {
+		s.writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "Данный сервер является запасным и доступен только для пользователей с тарифом PRO. Обратитесь к администратору для подключения.",
+		})
 		return
 	}
 
@@ -676,6 +694,44 @@ func (s *Server) handleAdminSetUserRole(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (s *Server) handleAdminSetUserPro(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
+		return
+	}
+
+	var req models.SetUserProRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	if err := s.storage.SetUserPro(r.Context(), id, req.IsPro); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	targetUser, _ := s.storage.GetUserByID(r.Context(), id)
+	targetUsername := ""
+	if targetUser != nil {
+		targetUsername = targetUser.Username
+	}
+
+	statusStr := "отключен"
+	if req.IsPro {
+		statusStr = "активирован"
+	}
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_user_pro", fmt.Sprintf("Тариф PRO %s для пользователя «%s» (ID #%d)", statusStr, targetUsername, id))
+
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
+		Success: true,
+		Message: fmt.Sprintf("PRO status updated to %v", req.IsPro),
+	})
+}
+
 func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 	idStr := r.PathValue("id")
@@ -922,12 +978,16 @@ func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized)
+	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
+	backupTag := ""
+	if node.IsBackup {
+		backupTag = " [Запасной/Backup]"
+	}
 	mobileTag := ""
 	if node.IsMobileOptimized {
 		mobileTag = " [Mobile 443/UDP]"
@@ -936,7 +996,7 @@ func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 	if node.CountryCode != "" {
 		countryTag = fmt.Sprintf(" [%s]", node.CountryCode)
 	}
-	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_create", fmt.Sprintf("Добавлен новый сервер «%s» (%s%s%s, URL: %s)", node.Name, node.Type, countryTag, mobileTag, node.APIURL))
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_create", fmt.Sprintf("Добавлен новый сервер «%s» (%s%s%s%s, URL: %s)", node.Name, node.Type, countryTag, mobileTag, backupTag, node.APIURL))
 
 	s.invalidateDashboardCache()
 
@@ -974,12 +1034,16 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized)
+	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
+	backupTag := ""
+	if node.IsBackup {
+		backupTag = " [Запасной/Backup]"
+	}
 	mobileTag := ""
 	if node.IsMobileOptimized {
 		mobileTag = " [Mobile 443/UDP]"
@@ -988,7 +1052,7 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 	if node.CountryCode != "" {
 		countryTag = fmt.Sprintf(" [%s]", node.CountryCode)
 	}
-	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_update", fmt.Sprintf("Обновлены параметры сервера «%s» (ID #%d, %s%s%s, URL: %s)", node.Name, node.ID, node.Type, countryTag, mobileTag, node.APIURL))
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_update", fmt.Sprintf("Обновлены параметры сервера «%s» (ID #%d, %s%s%s%s, URL: %s)", node.Name, node.ID, node.Type, countryTag, mobileTag, backupTag, node.APIURL))
 
 	s.invalidateDashboardCache()
 

@@ -53,7 +53,7 @@ func TestHealthCheckerTransitions(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	node, err := store.CreateNode(ctx, "Test Node", "cascade", "NLD", "https://aeza.net", mockSlave.URL, "dummy_key", true)
+	node, err := store.CreateNode(ctx, "Test Node", "cascade", "NLD", "https://aeza.net", mockSlave.URL, "dummy_key", true, false)
 	if err != nil {
 		t.Fatalf("failed to create test node: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestHealthCheckerFailureThresholdAndRetry(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := store.CreateNode(ctx, "Resilient Node", "direct", "DEU", "https://aeza.net", mockSlave.URL, "dummy_key", true)
+	_, err := store.CreateNode(ctx, "Resilient Node", "direct", "DEU", "https://aeza.net", mockSlave.URL, "dummy_key", true, false)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestTelemetryCollectorAndDeltaEngine(t *testing.T) {
 		t.Fatalf("failed to create user: %v", err)
 	}
 
-	node, err := store.CreateNode(ctx, "Telemetry Node", "cascade", "NLD", "https://aeza.net", mockSlave.URL, "dummy_key", true)
+	node, err := store.CreateNode(ctx, "Telemetry Node", "cascade", "NLD", "https://aeza.net", mockSlave.URL, "dummy_key", true, false)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}

@@ -75,6 +75,7 @@ func (s *Storage) migrate() error {
 		password_hash TEXT NOT NULL,
 		role TEXT NOT NULL DEFAULT 'user',
 		is_active INTEGER NOT NULL DEFAULT 0,
+		is_pro INTEGER NOT NULL DEFAULT 0,
 		billing_snoozed_until DATETIME DEFAULT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -88,6 +89,7 @@ func (s *Storage) migrate() error {
 		api_url TEXT NOT NULL,
 		api_key TEXT NOT NULL,
 		is_mobile_optimized INTEGER NOT NULL DEFAULT 0,
+		is_backup INTEGER NOT NULL DEFAULT 0,
 		is_active INTEGER NOT NULL DEFAULT 1,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -192,6 +194,8 @@ func (s *Storage) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN is_mobile_optimized INTEGER NOT NULL DEFAULT 0;`)
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN country_code TEXT NOT NULL DEFAULT '';`)
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN provider_url TEXT NOT NULL DEFAULT '';`)
+	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN is_backup INTEGER NOT NULL DEFAULT 0;`)
+	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN is_pro INTEGER NOT NULL DEFAULT 0;`)
 	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN billing_snoozed_until DATETIME DEFAULT NULL;`)
 	_, _ = s.db.Exec(`ALTER TABLE telegram_chats ADD COLUMN user_id INTEGER DEFAULT NULL;`)
 	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN public_key TEXT NOT NULL DEFAULT '';`)
@@ -287,8 +291,8 @@ func (s *Storage) CreateUser(ctx context.Context, username, password string) (*m
 	}
 
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (username, password_hash, role, is_active)
-		VALUES (?, ?, 'user', 0)
+		INSERT INTO users (username, password_hash, role, is_active, is_pro)
+		VALUES (?, ?, 'user', 0, 0)
 	`, username, string(hash))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -304,38 +308,40 @@ func (s *Storage) CreateUser(ctx context.Context, username, password string) (*m
 func (s *Storage) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	var u models.User
 	var role string
-	var isActive int
+	var isActive, isPro int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, role, is_active, created_at
+		SELECT id, username, password_hash, role, is_active, is_pro, created_at
 		FROM users WHERE id = ?
-	`, id).Scan(&u.ID, &u.Username, &u.PasswordHash, &role, &isActive, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.Username, &u.PasswordHash, &role, &isActive, &isPro, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	u.Role = models.Role(role)
 	u.IsActive = isActive == 1
+	u.IsPro = isPro == 1
 	return &u, nil
 }
 
 func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
 	var u models.User
 	var role string
-	var isActive int
+	var isActive, isPro int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, role, is_active, created_at
+		SELECT id, username, password_hash, role, is_active, is_pro, created_at
 		FROM users WHERE username = ?
-	`, strings.TrimSpace(username)).Scan(&u.ID, &u.Username, &u.PasswordHash, &role, &isActive, &u.CreatedAt)
+	`, strings.TrimSpace(username)).Scan(&u.ID, &u.Username, &u.PasswordHash, &role, &isActive, &isPro, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	u.Role = models.Role(role)
 	u.IsActive = isActive == 1
+	u.IsPro = isPro == 1
 	return &u, nil
 }
 
 func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, role, is_active, created_at
+		SELECT id, username, role, is_active, is_pro, created_at
 		FROM users ORDER BY id ASC
 	`)
 	if err != nil {
@@ -347,12 +353,13 @@ func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 	for rows.Next() {
 		var u models.UserPublic
 		var role string
-		var isActive int
-		if err := rows.Scan(&u.ID, &u.Username, &role, &isActive, &u.CreatedAt); err != nil {
+		var isActive, isPro int
+		if err := rows.Scan(&u.ID, &u.Username, &role, &isActive, &isPro, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		u.Role = models.Role(role)
 		u.IsActive = isActive == 1
+		u.IsPro = isPro == 1
 		list = append(list, u)
 	}
 	return list, nil
@@ -364,6 +371,22 @@ func (s *Storage) SetUserActive(ctx context.Context, id int64, active bool) erro
 		isActiveVal = 1
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE users SET is_active = ? WHERE id = ?`, isActiveVal, id)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return errors.New("user not found")
+	}
+	return nil
+}
+
+func (s *Storage) SetUserPro(ctx context.Context, id int64, isPro bool) error {
+	isProVal := 0
+	if isPro {
+		isProVal = 1
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET is_pro = ? WHERE id = ?`, isProVal, id)
 	if err != nil {
 		return err
 	}
@@ -441,15 +464,19 @@ func (s *Storage) DeleteUser(ctx context.Context, id int64) error {
 
 
 // Node methods
-func (s *Storage) CreateNode(ctx context.Context, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized bool) (*models.Node, error) {
+func (s *Storage) CreateNode(ctx context.Context, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized, isBackup bool) (*models.Node, error) {
 	isMobileVal := 0
 	if isMobileOptimized {
 		isMobileVal = 1
 	}
+	isBackupVal := 0
+	if isBackup {
+		isBackupVal = 1
+	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO nodes (name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_active)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-	`, strings.TrimSpace(name), strings.TrimSpace(nodeType), strings.ToUpper(strings.TrimSpace(countryCode)), strings.TrimSpace(providerURL), strings.TrimSpace(apiURL), strings.TrimSpace(apiKey), isMobileVal)
+		INSERT INTO nodes (name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, is_active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+	`, strings.TrimSpace(name), strings.TrimSpace(nodeType), strings.ToUpper(strings.TrimSpace(countryCode)), strings.TrimSpace(providerURL), strings.TrimSpace(apiURL), strings.TrimSpace(apiKey), isMobileVal, isBackupVal)
 	if err != nil {
 		return nil, err
 	}
@@ -457,10 +484,14 @@ func (s *Storage) CreateNode(ctx context.Context, name, nodeType, countryCode, p
 	return s.GetNodeByID(ctx, id)
 }
 
-func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized bool) (*models.Node, error) {
+func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized, isBackup bool) (*models.Node, error) {
 	isMobileVal := 0
 	if isMobileOptimized {
 		isMobileVal = 1
+	}
+	isBackupVal := 0
+	if isBackup {
+		isBackupVal = 1
 	}
 
 	name = strings.TrimSpace(name)
@@ -474,15 +505,15 @@ func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, coun
 	if apiKey != "" {
 		_, err = s.db.ExecContext(ctx, `
 			UPDATE nodes
-			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, api_key = ?, is_mobile_optimized = ?
+			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, api_key = ?, is_mobile_optimized = ?, is_backup = ?
 			WHERE id = ?
-		`, name, nodeType, countryCode, providerURL, apiURL, apiKey, isMobileVal, id)
+		`, name, nodeType, countryCode, providerURL, apiURL, apiKey, isMobileVal, isBackupVal, id)
 	} else {
 		_, err = s.db.ExecContext(ctx, `
 			UPDATE nodes
-			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, is_mobile_optimized = ?
+			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, is_mobile_optimized = ?, is_backup = ?
 			WHERE id = ?
-		`, name, nodeType, countryCode, providerURL, apiURL, isMobileVal, id)
+		`, name, nodeType, countryCode, providerURL, apiURL, isMobileVal, isBackupVal, id)
 	}
 
 	if err != nil {
@@ -493,22 +524,23 @@ func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, coun
 
 func (s *Storage) GetNodeByID(ctx context.Context, id int64) (*models.Node, error) {
 	var n models.Node
-	var isActive, isMobile int
+	var isActive, isMobile, isBackup int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_active, created_at
+		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, is_active, created_at
 		FROM nodes WHERE id = ?
-	`, id).Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isActive, &n.CreatedAt)
+	`, id).Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &isActive, &n.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	n.IsMobileOptimized = isMobile == 1
+	n.IsBackup = isBackup == 1
 	n.IsActive = isActive == 1
 	return &n, nil
 }
 
 func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_active, created_at
+		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, is_active, created_at
 		FROM nodes ORDER BY id ASC
 	`)
 	if err != nil {
@@ -519,11 +551,12 @@ func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 	list := []models.Node{}
 	for rows.Next() {
 		var n models.Node
-		var isActive, isMobile int
-		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isActive, &n.CreatedAt); err != nil {
+		var isActive, isMobile, isBackup int
+		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &isActive, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		n.IsMobileOptimized = isMobile == 1
+		n.IsBackup = isBackup == 1
 		n.IsActive = isActive == 1
 		list = append(list, n)
 	}
@@ -532,7 +565,7 @@ func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 
 func (s *Storage) ListActiveNodesPublic(ctx context.Context) ([]models.NodePublic, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, country_code, is_mobile_optimized, is_active, created_at
+		SELECT id, name, type, country_code, is_mobile_optimized, is_backup, is_active, created_at
 		FROM nodes WHERE is_active = 1 ORDER BY id ASC
 	`)
 	if err != nil {
@@ -543,11 +576,12 @@ func (s *Storage) ListActiveNodesPublic(ctx context.Context) ([]models.NodePubli
 	list := []models.NodePublic{}
 	for rows.Next() {
 		var n models.NodePublic
-		var isActive, isMobile int
-		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &isMobile, &isActive, &n.CreatedAt); err != nil {
+		var isActive, isMobile, isBackup int
+		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &isMobile, &isBackup, &isActive, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		n.IsMobileOptimized = isMobile == 1
+		n.IsBackup = isBackup == 1
 		n.IsActive = isActive == 1
 		list = append(list, n)
 	}
@@ -1098,13 +1132,15 @@ func (s *Storage) GetBillingRecords(ctx context.Context, userID int64) ([]models
 func (s *Storage) GetBillingStatus(ctx context.Context, userID int64) (*models.BillingStatusResponse, error) {
 	var userCreatedAt time.Time
 	var rawSnoozed sql.NullTime
+	var isProInt int
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT created_at, billing_snoozed_until FROM users WHERE id = ?
-	`, userID).Scan(&userCreatedAt, &rawSnoozed)
+		SELECT created_at, billing_snoozed_until, is_pro FROM users WHERE id = ?
+	`, userID).Scan(&userCreatedAt, &rawSnoozed, &isProInt)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
+	isPro := isProInt == 1
 
 	history, err := s.GetBillingRecords(ctx, userID)
 	if err != nil {
@@ -1150,13 +1186,22 @@ func (s *Storage) GetBillingStatus(ctx context.Context, userID int64) (*models.B
 	var keyCount int
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM client_configs WHERE user_id = ?`, userID).Scan(&keyCount)
 
-	recommendedAmount := 200.0
-	if keyCount > 3 {
-		recommendedAmount = 200.0 + float64(keyCount-3)*30.0
+	var recommendedAmount float64
+	if isPro {
+		recommendedAmount = 300.0
+		if keyCount > 3 {
+			recommendedAmount = 300.0 + float64(keyCount-3)*50.0
+		}
+	} else {
+		recommendedAmount = 200.0
+		if keyCount > 3 {
+			recommendedAmount = 200.0 + float64(keyCount-3)*30.0
+		}
 	}
 
 	return &models.BillingStatusResponse{
 		IsDue:             isDue,
+		IsPro:             isPro,
 		DaysRemaining:     daysRemaining,
 		NextDueAt:         nextDueAt,
 		LastPaidAt:        lastPaidAt,

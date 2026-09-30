@@ -74,7 +74,13 @@ export function BillingPage({ currentUser }: BillingPageProps) {
   }, [currentUser]);
 
   const handleOpenPayModal = () => {
-    setPayAmount(billingStatus?.recommended_amount ? String(billingStatus.recommended_amount) : '200');
+    setPayAmount(
+      billingStatus?.recommended_amount
+        ? String(billingStatus.recommended_amount)
+        : currentUser.is_pro
+        ? '300'
+        : '200'
+    );
     setShowPayModal(true);
   };
 
@@ -383,24 +389,37 @@ export function BillingPage({ currentUser }: BillingPageProps) {
             {/* Recommended Dues Card */}
             <div className="bg-[#0A1D26]/90 border border-[#1C3945] hover:border-[#D9B96E]/40 rounded-3xl p-6 backdrop-blur-md shadow-xl flex flex-col justify-between transition">
               <div>
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 rounded-xl bg-amber-500/10 text-[#D9B96E] border border-amber-500/20">
-                    <Key className="w-5 h-5" />
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 rounded-xl bg-amber-500/10 text-[#D9B96E] border border-amber-500/20">
+                      <Key className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-mono uppercase tracking-wider text-[#A8B4B7]">
+                        Рекомендуемый взнос
+                      </span>
+                      <span className="text-xs font-mono text-[#D9B96E] block font-semibold">
+                        Расчет от активных ключей
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs font-mono uppercase tracking-wider text-[#A8B4B7]">
-                      Рекомендуемый взнос
+
+                  {currentUser.is_pro ? (
+                    <span className="inline-flex items-center space-x-1 text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40 shadow-sm">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                      <span>Тариф PRO</span>
                     </span>
-                    <span className="text-xs font-mono text-[#D9B96E] block font-semibold">
-                      Расчет от активных ключей
+                  ) : (
+                    <span className="inline-flex items-center text-xs font-mono text-[#A8B4B7] px-2.5 py-1 rounded-full bg-[#102833] border border-[#1C3945]">
+                      Стандартный тариф
                     </span>
-                  </div>
+                  )}
                 </div>
 
                 <div className="bg-[#06141B]/80 rounded-2xl p-4 border border-[#1C3945]/70 mb-4">
                   <div className="flex items-baseline space-x-2">
                     <span className="text-2xl sm:text-3xl font-serif font-bold text-[#F0D48D]">
-                      {billingStatus?.recommended_amount ?? 200} ₽
+                      {billingStatus?.recommended_amount ?? (currentUser.is_pro ? 300 : 200)} ₽
                     </span>
                     <span className="text-xs font-mono text-[#A8B4B7]">/ месяц</span>
                   </div>
@@ -416,7 +435,11 @@ export function BillingPage({ currentUser }: BillingPageProps) {
               </div>
 
               <div className="p-3 rounded-xl bg-[#102833]/50 border border-[#1C3945] text-xs text-[#A8B4B7] font-sans">
-                💡 <strong className="text-[#F2F0E8]">Формула:</strong> 200 ₽ за первые 3 ключа + 30 ₽ за каждый последующий. Сумма добровольная и служит ориентиром для покрытия расходов.
+                💡 <strong className="text-[#F2F0E8]">Формула:</strong>{' '}
+                {currentUser.is_pro
+                  ? '300 ₽ за первые 3 ключа + 50 ₽ за каждый последующий (тариф PRO).'
+                  : '200 ₽ за первые 3 ключа + 30 ₽ за каждый последующий.'}{' '}
+                Сумма добровольная и служит ориентиром для покрытия расходов.
               </div>
             </div>
           </div>

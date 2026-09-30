@@ -30,6 +30,7 @@ let mockUsers: User[] = [
     username: 'Forve',
     role: 'admin',
     is_active: true,
+    is_pro: true,
     created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
   },
   {
@@ -37,6 +38,7 @@ let mockUsers: User[] = [
     username: 'alice',
     role: 'user',
     is_active: true,
+    is_pro: true,
     created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
   },
   {
@@ -44,6 +46,7 @@ let mockUsers: User[] = [
     username: 'bob_new',
     role: 'user',
     is_active: false,
+    is_pro: false,
     created_at: new Date(Date.now() - 3600000 * 3).toISOString(),
   },
 ];
@@ -162,6 +165,7 @@ let mockNodes: AdminNode[] = [
     provider_url: 'https://aeza.net',
     api_url: 'http://127.0.0.1:8081',
     is_mobile_optimized: true,
+    is_backup: false,
     is_active: true,
     online: true,
     latency_ms: 24,
@@ -175,6 +179,7 @@ let mockNodes: AdminNode[] = [
     provider_url: 'https://hetzner.com',
     api_url: 'http://127.0.0.1:8081',
     is_mobile_optimized: true,
+    is_backup: true,
     is_active: true,
     online: true,
     latency_ms: 31,
@@ -188,6 +193,7 @@ let mockNodes: AdminNode[] = [
     provider_url: 'https://hetzner.com',
     api_url: 'http://127.0.0.1:8082',
     is_mobile_optimized: false,
+    is_backup: false,
     is_active: true,
     online: true,
     latency_ms: 38,
@@ -575,6 +581,7 @@ export const mockApi = {
       username,
       role: 'user',
       is_active: false,
+      is_pro: false,
       created_at: new Date().toISOString(),
     };
     mockUsers.push(newUser);
@@ -608,6 +615,7 @@ export const mockApi = {
       type: n.type,
       country_code: n.country_code,
       is_mobile_optimized: n.is_mobile_optimized,
+      is_backup: n.is_backup,
       is_active: n.is_active,
       created_at: n.created_at,
     }));
@@ -722,6 +730,17 @@ PersistentKeepalive = 25`;
     return { success: true, message: `Роль изменена на ${role}` };
   },
 
+  async setUserPro(id: number, isPro: boolean): Promise<{ success: boolean; message: string }> {
+    const user = mockUsers.find((u) => u.id === id);
+    if (user) {
+      user.is_pro = isPro;
+      if (mockCurrentUser.id === id) {
+        mockCurrentUser.is_pro = isPro;
+      }
+    }
+    return { success: true, message: `Статус PRO ${isPro ? 'активирован' : 'деактивирован'}` };
+  },
+
   async deleteUser(id: number): Promise<{ success: boolean }> {
     mockUsers = mockUsers.filter((u) => u.id !== id);
     return { success: true };
@@ -742,7 +761,8 @@ PersistentKeepalive = 25`;
     _apiKey: string,
     isMobileOptimized?: boolean,
     countryCode?: string,
-    providerUrl?: string
+    providerUrl?: string,
+    isBackup?: boolean
   ): Promise<AdminNode> {
     const newNode: AdminNode = {
       id: mockNodes.length + 1,
@@ -752,6 +772,7 @@ PersistentKeepalive = 25`;
       provider_url: providerUrl || '',
       api_url: apiUrl,
       is_mobile_optimized: Boolean(isMobileOptimized),
+      is_backup: Boolean(isBackup),
       is_active: true,
       online: true,
       latency_ms: Math.floor(20 + Math.random() * 20),
@@ -769,6 +790,7 @@ PersistentKeepalive = 25`;
       apiUrl: string;
       apiKey?: string;
       isMobileOptimized?: boolean;
+      isBackup?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
@@ -783,6 +805,9 @@ PersistentKeepalive = 25`;
     node.country_code = data.countryCode?.toUpperCase() || '';
     node.provider_url = data.providerUrl || '';
     node.is_mobile_optimized = Boolean(data.isMobileOptimized);
+    if (data.isBackup !== undefined) {
+      node.is_backup = Boolean(data.isBackup);
+    }
     return { ...node };
   },
 
@@ -1097,7 +1122,10 @@ PersistentKeepalive = 25`;
 
     const userKeys = mockKeys.filter((k) => k.user_id === user.id);
     const keyCount = userKeys.length;
-    const recommendedAmount = keyCount <= 3 ? 200 : 200 + (keyCount - 3) * 30;
+    const isPro = Boolean(user.is_pro);
+    const baseAmount = isPro ? 300 : 200;
+    const extraPerKey = isPro ? 50 : 30;
+    const recommendedAmount = keyCount <= 3 ? baseAmount : baseAmount + (keyCount - 3) * extraPerKey;
 
     return {
       is_due: isDue,
@@ -1106,6 +1134,7 @@ PersistentKeepalive = 25`;
       last_paid_at: lastPaidAt,
       snoozed_until: snoozedUntil,
       status: status,
+      is_pro: isPro,
       key_count: keyCount,
       recommended_amount: recommendedAmount,
       history: history,
