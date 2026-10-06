@@ -81,10 +81,12 @@ function sanitizeConfig(raw: string): string {
 
 export function KeyModal({ keyData, onClose }: Props) {
   const { toast } = useToast();
-  const [protocol, setProtocol] = useState<'awg' | 'vpn'>('awg');
+  const isHysteria = keyData.protocol === 'hysteria2' || (keyData.vpn_uri && keyData.vpn_uri.startsWith('hysteria2://'));
+  const [protocol, setProtocol] = useState<'awg' | 'vpn' | 'hysteria2'>(isHysteria ? 'hysteria2' : 'awg');
   const [copied, setCopied] = useState(false);
   const [awgQrUrl, setAwgQrUrl] = useState<string>('');
   const [vpnQrUrl, setVpnQrUrl] = useState<string>('');
+  const [hysteriaQrUrl, setHysteriaQrUrl] = useState<string>('');
   const [showRawLogs, setShowRawLogs] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
 
@@ -101,6 +103,19 @@ export function KeyModal({ keyData, onClose }: Props) {
   const rawWithoutAnsi = useMemo(() => {
     return (keyData.config || '').replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\([a-zA-Z]/g, '').trim();
   }, [keyData.config]);
+
+  // Generate Hysteria QR
+  useEffect(() => {
+    if (isHysteria && vpnUri) {
+      QRCode.toDataURL(vpnUri, {
+        width: 320,
+        margin: 2,
+        color: { dark: '#06141B', light: '#FFFFFF' },
+      })
+        .then(setHysteriaQrUrl)
+        .catch(console.error);
+    }
+  }, [isHysteria, vpnUri]);
 
   // Generate AWG QR
   useEffect(() => {
@@ -124,7 +139,7 @@ export function KeyModal({ keyData, onClose }: Props) {
 
   // Generate VPN QR
   useEffect(() => {
-    if (!hasVpnUri) {
+    if (!hasVpnUri || isHysteria) {
       setVpnQrUrl('');
       return;
     }
@@ -140,9 +155,21 @@ export function KeyModal({ keyData, onClose }: Props) {
         .then(setVpnQrUrl)
         .catch(console.error);
     }
-  }, [keyData, vpnUri, hasVpnUri]);
+  }, [keyData, vpnUri, hasVpnUri, isHysteria]);
 
   const handleCopy = () => {
+    if (protocol === 'hysteria2') {
+      if (!hasVpnUri) {
+        toast.error('URI Hysteria 2 отсутствует');
+        return;
+      }
+      navigator.clipboard.writeText(vpnUri);
+      setCopied(true);
+      toast.success('Ссылка Hysteria 2 (hysteria2://) скопирована в буфер обмена');
+      setTimeout(() => setCopied(false), 2000);
+      return;
+    }
+
     if (protocol === 'awg') {
       if (!isValidAwgConfig) {
         toast.error('Конфигурация некорректна, копирование невозможно');
@@ -165,6 +192,20 @@ export function KeyModal({ keyData, onClose }: Props) {
   };
 
   const handleDownload = () => {
+    if (protocol === 'hysteria2') {
+      const blob = new Blob([keyData.config || vpnUri], { type: 'text/yaml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${keyData.client_name}.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Конфиг ${keyData.client_name}.yaml скачан`);
+      return;
+    }
+
     if (protocol === 'awg') {
       if (!isValidAwgConfig) {
         toast.error('Конфигурация некорректна, скачивание невозможно');
@@ -230,35 +271,97 @@ export function KeyModal({ keyData, onClose }: Props) {
         </div>
 
         {/* Protocol Switcher Tabs */}
-        <div className="flex p-1 bg-[#06141B] border border-[#1C3945] rounded-2xl mb-5 sm:mb-6 shadow-inner">
-          <button
-            type="button"
-            onClick={() => setProtocol('awg')}
-            className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-mono uppercase tracking-wider transition duration-200 ${
-              protocol === 'awg'
-                ? 'bg-[#102833] text-[#D9B96E] font-bold border border-[#D9B96E]/40 shadow-md shadow-black/40'
-                : 'text-[#A8B4B7] hover:text-[#F2F0E8] hover:bg-[#102833]/40 border border-transparent'
-            }`}
-          >
-            <Zap className="w-4 h-4 text-[#D9B96E]" />
-            <span>AmneziaWG (.conf)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setProtocol('vpn')}
-            className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-mono uppercase tracking-wider transition duration-200 ${
-              protocol === 'vpn'
-                ? 'bg-[#102833] text-[#D9B96E] font-bold border border-[#D9B96E]/40 shadow-md shadow-black/40'
-                : 'text-[#A8B4B7] hover:text-[#F2F0E8] hover:bg-[#102833]/40 border border-transparent'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 text-[#D9B96E]" />
-            <span>AmneziaVPN (.vpnuri)</span>
-          </button>
-        </div>
+        {isHysteria ? (
+          <div className="flex p-1 bg-[#06141B] border border-[#1C3945] rounded-2xl mb-5 sm:mb-6 shadow-inner">
+            <div className="flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-mono uppercase tracking-wider bg-[#102833] text-[#D9B96E] font-bold border border-[#D9B96E]/40 shadow-md shadow-black/40">
+              <Zap className="w-4 h-4 text-[#D9B96E]" />
+              <span>Hysteria 2 (QUIC / UDP)</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex p-1 bg-[#06141B] border border-[#1C3945] rounded-2xl mb-5 sm:mb-6 shadow-inner">
+            <button
+              type="button"
+              onClick={() => setProtocol('awg')}
+              className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-mono uppercase tracking-wider transition duration-200 ${
+                protocol === 'awg'
+                  ? 'bg-[#102833] text-[#D9B96E] font-bold border border-[#D9B96E]/40 shadow-md shadow-black/40'
+                  : 'text-[#A8B4B7] hover:text-[#F2F0E8] hover:bg-[#102833]/40 border border-transparent'
+              }`}
+            >
+              <Zap className="w-4 h-4 text-[#D9B96E]" />
+              <span>AmneziaWG (.conf)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setProtocol('vpn')}
+              className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-mono uppercase tracking-wider transition duration-200 ${
+                protocol === 'vpn'
+                  ? 'bg-[#102833] text-[#D9B96E] font-bold border border-[#D9B96E]/40 shadow-md shadow-black/40'
+                  : 'text-[#A8B4B7] hover:text-[#F2F0E8] hover:bg-[#102833]/40 border border-transparent'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4 text-[#D9B96E]" />
+              <span>AmneziaVPN (.vpnuri)</span>
+            </button>
+          </div>
+        )}
 
         {/* Main Content Area: Adaptive 2-Column on md+ screens */}
-        {protocol === 'awg' ? (
+        {protocol === 'hysteria2' ? (
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch mb-6">
+            {/* QR Code Column */}
+            <div className="md:col-span-5 flex flex-col items-center justify-center bg-white p-5 sm:p-6 rounded-2xl shadow-xl border-4 border-[#102833] min-h-[260px]">
+              {hysteriaQrUrl ? (
+                <>
+                  <img src={hysteriaQrUrl} alt="Hysteria 2 QR Code" className="w-48 h-48 sm:w-56 sm:h-56 object-contain rounded-lg" />
+                  <span className="text-xs sm:text-sm text-slate-800 font-mono tracking-wider font-semibold mt-3 text-center">
+                    Сканируйте в v2rayNG / NekoBox / Shadowrocket
+                  </span>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-48 text-[#718187] text-xs font-mono">
+                  Генерация Hysteria QR...
+                </div>
+              )}
+            </div>
+
+            {/* URI Box & Actions Column */}
+            <div className="md:col-span-7 flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs sm:text-sm font-mono font-semibold text-[#D9B96E] uppercase tracking-wider flex items-center space-x-1.5">
+                    <FileText className="w-4 h-4" />
+                    <span>Hysteria 2 Ссылка</span>
+                  </span>
+                  <span className="text-xs text-[#A8B4B7] font-mono">hysteria2://</span>
+                </div>
+                <pre className="bg-[#06141B] border border-[#1C3945] text-[#F2F0E8] text-xs p-4 rounded-2xl overflow-x-auto max-h-56 md:max-h-64 font-mono scrollbar-thin leading-relaxed whitespace-pre-wrap break-all">
+                  {vpnUri}
+                </pre>
+              </div>
+
+              {/* Actions inside column */}
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <button
+                  onClick={handleCopy}
+                  className="flex items-center justify-center space-x-2 bg-[#102833] text-[#F2F0E8] font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl border border-[#1C3945] hover:bg-[#1C3945] hover:border-[#D9B96E]/50 transition cursor-pointer"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-[#D9B96E]" />}
+                  <span>{copied ? 'Скопировано!' : 'Скопировать URI'}</span>
+                </button>
+
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 transition cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Скачать .yaml</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : protocol === 'awg' ? (
           <>
             {isValidAwgConfig ? (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch mb-6">

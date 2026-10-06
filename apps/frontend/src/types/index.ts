@@ -35,6 +35,19 @@ export interface AdminNode {
   created_at: string;
 }
 
+export type ProtocolType = 'awg' | 'hysteria2';
+
+export interface TelegramProxyInfo {
+  id: string;
+  name: string;
+  country_code: string;
+  server: string;
+  port: number;
+  secret: string;
+  link: string;
+  status: string;
+}
+
 export interface ClientConfigSummary {
   id: number;
   user_id: number;
@@ -45,6 +58,7 @@ export interface ClientConfigSummary {
   node_name?: string;
   node_type?: 'cascade' | 'direct';
   node_country_code?: string;
+  protocol?: ProtocolType;
   last_handshake?: string;
   total_traffic_bytes?: number;
   month_traffic_bytes?: number;
@@ -70,6 +84,7 @@ export interface ClientConfigDetail {
   node_id: number;
   node_name: string;
   node_type: 'cascade' | 'direct';
+  protocol?: ProtocolType;
   config: string;
   qr_code?: string;
   vpn_uri?: string;

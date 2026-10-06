@@ -78,6 +78,7 @@ type ClientConfig struct {
 	NodeName              string    `json:"node_name,omitempty"`
 	NodeType              string    `json:"node_type,omitempty"`
 	NodeCountryCode       string    `json:"node_country_code,omitempty"`
+	Protocol              string    `json:"protocol,omitempty"` // "awg" or "hysteria2"
 	LastHandshake         string    `json:"last_handshake,omitempty"`
 	LastHandshakeEpoch    int64     `json:"last_handshake_epoch,omitempty"`
 	IsOnline              bool      `json:"is_online,omitempty"`
@@ -117,6 +118,7 @@ type CreateKeyRequest struct {
 	NodeID     int64  `json:"node_id"`
 	DeviceName string `json:"device_name"`
 	PSK        bool   `json:"psk,omitempty"`
+	Protocol   string `json:"protocol,omitempty"` // "awg" or "hysteria2"
 }
 
 type AddNodeRequest struct {

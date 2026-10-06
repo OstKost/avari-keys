@@ -9,21 +9,24 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/hysteria"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
 )
 
 // Config holds configuration for the Slave API server.
 type Config struct {
-	APIKey string
-	Port   string
+	APIKey        string
+	Port          string
+	HysteriaStore *hysteria.Store
 }
 
 // Server is the HTTP server for Slave API.
 type Server struct {
-	cfg    Config
-	runner runner.AWGRunner
-	mux    *http.ServeMux
+	cfg      Config
+	runner   runner.AWGRunner
+	hysteria *hysteria.Store
+	mux      *http.ServeMux
 }
 
 // NewServer creates a new Slave API server instance.
@@ -35,10 +38,20 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 		log.Printf("\n======================================================\n[SLAVE API] Generated API Key: %s\n======================================================\n", cfg.APIKey)
 	}
 
+	hyStore := cfg.HysteriaStore
+	if hyStore == nil {
+		var err error
+		hyStore, err = hysteria.NewStore("/opt/avari-keys/hysteria_users.json", "s2.avari.dev", 443)
+		if err != nil {
+			log.Printf("[SLAVE] Warning: failed to init hysteria store: %v", err)
+		}
+	}
+
 	s := &Server{
-		cfg:    cfg,
-		runner: r,
-		mux:    http.NewServeMux(),
+		cfg:      cfg,
+		runner:   r,
+		hysteria: hyStore,
+		mux:      http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -61,7 +74,10 @@ func (s *Server) routes() {
 	// 2. Public Health Check
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 
-	// 3. Protected API Routes
+	// 3. Hysteria 2 HTTP Auth Hook (called locally by Hysteria server daemon)
+	s.mux.HandleFunc("POST /api/v1/hysteria/auth", s.handleHysteriaAuth)
+
+	// 4. Protected API Routes
 	s.mux.Handle("POST /api/v1/clients", s.authMiddleware(http.HandlerFunc(s.handleCreateClient)))
 	s.mux.Handle("GET /api/v1/clients", s.authMiddleware(http.HandlerFunc(s.handleListClients)))
 	s.mux.Handle("GET /api/v1/clients/{name}", s.authMiddleware(http.HandlerFunc(s.handleGetClient)))
@@ -130,6 +146,33 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleHysteriaAuth(w http.ResponseWriter, r *http.Request) {
+	if s.hysteria == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Auth string `json:"auth"`
+		Addr string `json:"addr"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	ok, id := s.hysteria.Authenticate(req.Auth)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true,
+		"id": id,
+	})
+}
+
 func (s *Server) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 	var req models.ClientCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -140,6 +183,20 @@ func (s *Server) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "client name is required"})
+		return
+	}
+
+	if req.Protocol == "hysteria2" {
+		if s.hysteria == nil {
+			s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Hysteria service not available on this node"})
+			return
+		}
+		res, err := s.hysteria.AddUser(r.Context(), req.Name)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.writeJSON(w, http.StatusCreated, res)
 		return
 	}
 
@@ -158,6 +215,12 @@ func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	if s.hysteria != nil {
+		hList, err := s.hysteria.ListUsers(r.Context())
+		if err == nil {
+			clients = append(clients, hList...)
+		}
+	}
 	s.writeJSON(w, http.StatusOK, clients)
 }
 
@@ -169,6 +232,13 @@ func (s *Server) handleGetClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := s.runner.GetClient(r.Context(), name)
+	if err != nil && s.hysteria != nil {
+		// Try Hysteria store
+		if hRes, hErr := s.hysteria.GetUser(r.Context(), name); hErr == nil {
+			s.writeJSON(w, http.StatusOK, hRes)
+			return
+		}
+	}
 	if err != nil {
 		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
@@ -183,7 +253,19 @@ func (s *Server) handleDeleteClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.hysteria != nil {
+		_ = s.hysteria.RemoveUser(r.Context(), name)
+	}
+
 	if err := s.runner.RemoveClient(r.Context(), name); err != nil {
+		// If it was a hysteria user, removing from AWG runner might fail harmlessly
+		if s.hysteria != nil {
+			s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
+				Success: true,
+				Message: "Client successfully removed",
+			})
+			return
+		}
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

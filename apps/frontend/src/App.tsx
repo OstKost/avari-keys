@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Key, Server, Users, LogOut, Plus, QrCode as QrIcon, Trash2, Smartphone, Laptop, AlertCircle, Sparkles, ShieldCheck, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper } from 'lucide-react';
+import { Key, Server, Users, LogOut, Plus, QrCode as QrIcon, Trash2, Smartphone, Laptop, AlertCircle, Sparkles, ShieldCheck, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send } from 'lucide-react';
 import { api, isMockMode, setMockMode } from './api/client';
-import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem } from './types';
+import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem, TelegramProxyInfo, ProtocolType } from './types';
 import { AuthModal } from './components/AuthModal';
 import { KeyModal } from './components/KeyModal';
 import { CreateKeyModal } from './components/CreateKeyModal';
 import { ConfirmModal } from './components/ConfirmModal';
+import { TelegramProxyModal } from './components/TelegramProxyModal';
 import { useToast } from './context/ToastContext';
 import { AdminUsers } from './components/AdminUsers';
 import { AdminNodes } from './components/AdminNodes';
@@ -48,6 +49,8 @@ export default function App() {
   // Modals
   const [viewingKey, setViewingKey] = useState<ClientConfigDetail | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showTelegramProxyModal, setShowTelegramProxyModal] = useState(false);
+  const [telegramProxies, setTelegramProxies] = useState<TelegramProxyInfo[]>([]);
   const [keyToDelete, setKeyToDelete] = useState<ClientConfigSummary | null>(null);
   const [deletingKey, setDeletingKey] = useState(false);
 
@@ -174,9 +177,19 @@ export default function App() {
     toast.info('Вы успешно вышли из системы');
   };
 
-  const handleCreateKey = async (nodeId: number, deviceName: string, psk: boolean) => {
+  const handleOpenTelegramProxies = async () => {
     try {
-      const newKey = await api.createKey(nodeId, deviceName, psk);
+      const data = await api.getTelegramProxies();
+      setTelegramProxies(data);
+      setShowTelegramProxyModal(true);
+    } catch (err: any) {
+      toast.error('Не удалось загрузить данные прокси Telegram');
+    }
+  };
+
+  const handleCreateKey = async (nodeId: number, deviceName: string, psk: boolean, protocol?: ProtocolType) => {
+    try {
+      const newKey = await api.createKey(nodeId, deviceName, psk, protocol);
       setViewingKey(newKey);
       if (showOnboarding) {
         setOnboardingStep(4);
@@ -190,6 +203,7 @@ export default function App() {
         node_name: newKey.node_name || (targetNode ? targetNode.name : 'Node'),
         node_type: newKey.node_type || (targetNode ? targetNode.type : 'direct'),
         node_country_code: targetNode ? targetNode.country_code : undefined,
+        protocol: newKey.protocol || protocol || 'awg',
         client_name: newKey.client_name,
         device_name: newKey.device_name,
         created_at: newKey.created_at,
@@ -463,14 +477,25 @@ export default function App() {
                   </p>
                 </div>
 
-                <button
-                  onClick={handleOpenCreateModal}
-                  disabled={(nodes || []).length === 0}
-                  className="w-full sm:w-auto flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold text-xs sm:text-sm uppercase tracking-wider font-mono px-5 py-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 disabled:opacity-50 transition-all duration-300 cursor-pointer shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Создать новый ключ</span>
-                </button>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto shrink-0">
+                  <button
+                    onClick={handleOpenTelegramProxies}
+                    className="flex items-center justify-center space-x-2 bg-[#102833] hover:bg-[#1C3945] text-[#2AABEE] border border-[#2AABEE]/40 hover:border-[#2AABEE] font-bold text-xs sm:text-sm uppercase tracking-wider font-mono px-4 py-3 rounded-xl shadow-md transition-all duration-200 cursor-pointer"
+                    title="Подключить прокси для Telegram в 1 клик"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Telegram Прокси</span>
+                  </button>
+
+                  <button
+                    onClick={handleOpenCreateModal}
+                    disabled={(nodes || []).length === 0}
+                    className="flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold text-xs sm:text-sm uppercase tracking-wider font-mono px-5 py-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 disabled:opacity-50 transition-all duration-300 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Создать новый ключ</span>
+                  </button>
+                </div>
               </div>
 
               {/* Top News Announcement Banner */}
@@ -622,15 +647,22 @@ export default function App() {
                             </div>
                           </div>
 
-                          <span
-                            className={`text-sm font-mono font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full ${
-                              k.node_type === 'cascade'
-                                ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40 shadow-sm'
-                                : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40 shadow-sm'
-                            }`}
-                          >
-                            {formatNodeRouting(k.node_type || 'direct', k.node_country_code).fullText}
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                            <span
+                              className={`text-sm font-mono font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full ${
+                                k.node_type === 'cascade'
+                                  ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40 shadow-sm'
+                                  : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40 shadow-sm'
+                              }`}
+                            >
+                              {formatNodeRouting(k.node_type || 'direct', k.node_country_code).fullText}
+                            </span>
+                            {k.protocol === 'hysteria2' && (
+                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-950/80 text-violet-300 border border-violet-500/40">
+                                Hysteria 2
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         <div className="text-sm text-[#A8B4B7] space-y-2 mb-5 bg-[#06141B]/70 p-3.5 rounded-xl border border-[#1C3945]/70 font-sans">
@@ -710,6 +742,12 @@ export default function App() {
           currentUser={currentUser}
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateKey}
+        />
+      )}
+      {showTelegramProxyModal && (
+        <TelegramProxyModal
+          proxies={telegramProxies}
+          onClose={() => setShowTelegramProxyModal(false)}
         />
       )}
 

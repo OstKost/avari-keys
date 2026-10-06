@@ -19,6 +19,8 @@ import {
   NewsItem,
   CreateNewsPayload,
   UpdateNewsPayload,
+  TelegramProxyInfo,
+  ProtocolType,
 } from '../types';
 
 import { mockApi } from './mockClient';
@@ -136,11 +138,30 @@ const realApi = {
     return Array.isArray(data) ? data : [];
   },
 
-  async createKey(nodeId: number, deviceName: string, psk?: boolean): Promise<ClientConfigDetail> {
+  async getTelegramProxies(): Promise<TelegramProxyInfo[]> {
+    if (isMockMode()) {
+      return mockApi.getTelegramProxies();
+    }
+    const res = await fetch(`${API_BASE}/proxies/telegram`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await handleResponse<TelegramProxyInfo[]>(res);
+    return Array.isArray(data) ? data : [];
+  },
+
+  async createKey(nodeId: number, deviceName: string, psk?: boolean, protocol?: ProtocolType): Promise<ClientConfigDetail> {
+    if (isMockMode()) {
+      return mockApi.createKey(nodeId, deviceName, psk, protocol);
+    }
     const res = await fetch(`${API_BASE}/keys`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ node_id: nodeId, device_name: deviceName, psk: psk || false }),
+      body: JSON.stringify({
+        node_id: nodeId,
+        device_name: deviceName,
+        psk: psk || false,
+        protocol: protocol || 'awg',
+      }),
     });
     return handleResponse<ClientConfigDetail>(res);
   },
