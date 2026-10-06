@@ -1243,6 +1243,53 @@ func TestBackupServersAndPROTierFlow(t *testing.T) {
 	}
 }
 
+func TestTelegramProxiesEndpoint(t *testing.T) {
+	masterSrv, _, _, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Login as admin
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+
+	var loginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+
+	// 2. Query /api/v1/proxies/telegram
+	req = httptest.NewRequest("GET", "/api/v1/proxies/telegram", nil)
+	req.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for telegram proxies, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var proxies []models.TelegramProxyInfo
+	if err := json.NewDecoder(rec.Body).Decode(&proxies); err != nil {
+		t.Fatalf("failed to decode proxies json: %v", err)
+	}
+
+	if len(proxies) == 0 {
+		t.Fatalf("expected at least 1 proxy in response")
+	}
+
+	p := proxies[0]
+	if p.Server != "s2.avari.dev" || p.Port != 8443 || !strings.Contains(p.Link, "tg://proxy") {
+		t.Fatalf("unexpected proxy info: %+v", p)
+	}
+}
+
 
 
 

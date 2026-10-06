@@ -21,6 +21,8 @@ import {
   NewsItem,
   CreateNewsPayload,
   UpdateNewsPayload,
+  TelegramProxyInfo,
+  ProtocolType,
 } from '../types';
 
 // In-memory mock storage for standalone FE development
@@ -645,7 +647,22 @@ export const mockApi = {
       });
   },
 
-  async createKey(nodeId: number, deviceName: string, psk?: boolean): Promise<ClientConfigDetail> {
+  async getTelegramProxies(): Promise<TelegramProxyInfo[]> {
+    return [
+      {
+        id: 's2-fin',
+        name: 'Финляндия (FIN)',
+        country_code: 'FIN',
+        server: 's2.avari.dev',
+        port: 8443,
+        secret: 'ee9cbceb37d7e8416b6ffaa076a610be1f73322e61766172692e646576',
+        link: 'tg://proxy?server=s2.avari.dev&port=8443&secret=ee9cbceb37d7e8416b6ffaa076a610be1f73322e61766172692e646576',
+        status: 'online',
+      },
+    ];
+  },
+
+  async createKey(nodeId: number, deviceName: string, psk?: boolean, protocol?: ProtocolType): Promise<ClientConfigDetail> {
     const node = mockNodes.find((n) => n.id === nodeId);
     const nodeName = node ? node.name : 'Unknown Node';
     const nodeType = node ? node.type : 'direct';
@@ -653,7 +670,7 @@ export const mockApi = {
     const clientName = `u${mockCurrentUser.id}_${deviceName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
     const pskLine = psk ? '\nPresharedKey = aMockPresharedKeyForShadowrocket12345=' : '';
 
-    const config = `[Interface]
+    let config = `[Interface]
 Address = 10.${nodeType === 'cascade' ? '7' : '8'}.0.${id + 4}/32
 PrivateKey = aMockGeneratedPrivateKeyForDemo_${clientName}=
 Jc = 4
@@ -672,7 +689,19 @@ Endpoint = 198.51.100.${nodeId}:51820
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25`;
 
-    const vpnUri = `vpn://eyJob3N0TmFtZSI6IjE5OC41MS4xMDAuJHtub2RlSWR9IiwiZGVzY3JpcHRpb24iOiJBdmFyaSBLZXlzICR7ZGV2aWNlTmFtZX0iLCJjb25maWciOiJ7XCJkbnMxXCI6XCIxLjEuMS4xXCIsXCJwb3J0XCI6NTE4MjAsXCJwcm90b2NvbFwiOlwiYXdnXCJ9In0=`;
+    let vpnUri = `vpn://eyJob3N0TmFtZSI6IjE5OC41MS4xMDAuJHtub2RlSWR9IiwiZGVzY3JpcHRpb24iOiJBdmFyaSBLZXlzICR7ZGV2aWNlTmFtZX0iLCJjb25maWciOiJ7XCJkbnMxXCI6XCIxLjEuMS4xXCIsXCJwb3J0XCI6NTE4MjAsXCJwcm90b2NvbFwiOlwiYXdnXCJ9In0=`;
+
+    if (protocol === 'hysteria2') {
+      vpnUri = `hysteria2://demo_password_123@s2.avari.dev:443/?sni=s2.avari.dev&insecure=0#${clientName}`;
+      config = `server: s2.avari.dev:443
+auth: demo_password_123
+tls:
+  sni: s2.avari.dev
+  insecure: false
+bandwidth:
+  up: 50 mbps
+  down: 200 mbps`;
+    }
 
     const newKeyDetail: ClientConfigDetail & { user_id: number } = {
       id,
@@ -682,6 +711,7 @@ PersistentKeepalive = 25`;
       node_id: nodeId,
       node_name: nodeName,
       node_type: nodeType,
+      protocol: protocol || 'awg',
       config,
       vpn_uri: vpnUri,
       created_at: new Date().toISOString(),

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Zap, ShieldCheck, Smartphone, HelpCircle, Lock, Sparkles } from 'lucide-react';
-import { User, NodePublic } from '../types';
+import { User, NodePublic, ProtocolType } from '../types';
 import { formatNodeRouting } from '../utils/country';
 import { MascotModalCompanion, MascotFaqModal } from './MascotAssistant';
 
@@ -9,7 +9,7 @@ interface Props {
   nodes: NodePublic[];
   currentUser?: User | null;
   onClose: () => void;
-  onCreate: (nodeId: number, deviceName: string, psk: boolean) => Promise<void>;
+  onCreate: (nodeId: number, deviceName: string, psk: boolean, protocol?: ProtocolType) => Promise<void>;
 }
 
 export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props) {
@@ -17,6 +17,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
   const isUserProOrAdmin = Boolean(currentUser?.is_pro || currentUser?.role === 'admin');
   const defaultNode = safeNodes.find((n) => !n.is_backup || isUserProOrAdmin) || safeNodes[0];
   const [selectedNodeId, setSelectedNodeId] = useState<number>(defaultNode?.id || 0);
+  const [protocol, setProtocol] = useState<ProtocolType>('awg');
   const [deviceName, setDeviceName] = useState<string>('');
   const [psk, setPsk] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -78,7 +79,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
     try {
       setLoading(true);
       setError(null);
-      await onCreate(selectedNodeId, cleanName, psk);
+      await onCreate(selectedNodeId, cleanName, psk, protocol);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Ошибка создания ключа');
@@ -261,6 +262,50 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Protocol Selection: AmneziaWG vs Hysteria 2 */}
+            <div>
+              <label className="block text-xs font-mono font-semibold text-[#D9B96E] uppercase tracking-wider mb-2">
+                Протокол подключения
+              </label>
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => setProtocol('awg')}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    protocol === 'awg'
+                      ? 'border-[#D9B96E] bg-[#102833] shadow-md shadow-[#D9B96E]/10'
+                      : 'border-[#1C3945] bg-[#0D222C] hover:border-[#1C3945]/80 hover:bg-[#0D222C]/80'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <ShieldCheck className={`w-4 h-4 ${protocol === 'awg' ? 'text-[#D9B96E]' : 'text-[#718187]'}`} />
+                    <span className="font-serif font-bold text-sm text-[#F2F0E8]">AmneziaWG</span>
+                  </div>
+                  <p className="text-[11px] text-[#A8B4B7] leading-tight">
+                    WireGuard с обфускацией. Универсален для AmneziaVPN и WireGuard.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setProtocol('hysteria2')}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    protocol === 'hysteria2'
+                      ? 'border-[#D9B96E] bg-[#102833] shadow-md shadow-[#D9B96E]/10'
+                      : 'border-[#1C3945] bg-[#0D222C] hover:border-[#1C3945]/80 hover:bg-[#0D222C]/80'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 mb-1">
+                    <Zap className={`w-4 h-4 ${protocol === 'hysteria2' ? 'text-[#D9B96E]' : 'text-[#718187]'}`} />
+                    <span className="font-serif font-bold text-sm text-[#F2F0E8]">Hysteria 2</span>
+                  </div>
+                  <p className="text-[11px] text-[#A8B4B7] leading-tight">
+                    QUIC / UDP. Максимальная скорость при потерях и мобильном интернете.
+                  </p>
+                </button>
               </div>
             </div>
 
