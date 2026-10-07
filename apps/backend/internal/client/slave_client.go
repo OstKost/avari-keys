@@ -107,8 +107,12 @@ func (c *SlaveClient) CreateClient(ctx context.Context, clientName string, psk b
 }
 
 // GetClient retrieves the config and QR code for an existing client from Slave.
-func (c *SlaveClient) GetClient(ctx context.Context, clientName string) (*models.ClientResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/api/v1/clients/%s", c.baseURL, clientName), nil)
+func (c *SlaveClient) GetClient(ctx context.Context, clientName string, protocol ...string) (*models.ClientResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/clients/%s", c.baseURL, clientName)
+	if len(protocol) > 0 && protocol[0] != "" {
+		url += fmt.Sprintf("?protocol=%s", protocol[0])
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}

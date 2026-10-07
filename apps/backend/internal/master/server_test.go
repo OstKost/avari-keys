@@ -193,6 +193,26 @@ func TestCompleteUserAndKeyFlow(t *testing.T) {
 		t.Fatalf("expected config to contain PresharedKey for Shadowrocket, got: %v", createdKey["config"])
 	}
 
+	if createdKey["protocol"] != "awg" {
+		t.Fatalf("expected protocol 'awg' in createdKey, got: %v", createdKey["protocol"])
+	}
+
+	keyID := int64(createdKey["id"].(float64))
+
+	// Verify GET /api/v1/keys/:id
+	req = httptest.NewRequest("GET", fmt.Sprintf("/api/v1/keys/%d", keyID), nil)
+	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for GET /api/v1/keys/:id, got %d", rec.Code)
+	}
+	var fetchedKey map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&fetchedKey)
+	if fetchedKey["protocol"] != "awg" {
+		t.Fatalf("expected protocol 'awg' in fetchedKey, got: %v", fetchedKey["protocol"])
+	}
+
 	// 8. Alice lists her keys
 	req = httptest.NewRequest("GET", "/api/v1/keys", nil)
 	req.Header.Set("Authorization", "Bearer "+aliceToken)
@@ -201,8 +221,42 @@ func TestCompleteUserAndKeyFlow(t *testing.T) {
 
 	var myKeys []models.ClientConfig
 	_ = json.NewDecoder(rec.Body).Decode(&myKeys)
-	if len(myKeys) != 1 || myKeys[0].DeviceName != "iPad-Pro" {
-		t.Fatalf("expected 1 key for alice, got %+v", myKeys)
+	if len(myKeys) != 1 || myKeys[0].DeviceName != "iPad-Pro" || myKeys[0].Protocol != "awg" {
+		t.Fatalf("expected 1 key with protocol 'awg' for alice, got %+v", myKeys)
+	}
+
+	// 9. Alice creates a Hysteria 2 key
+	hyReqBody, _ := json.Marshal(models.CreateKeyRequest{
+		NodeID:     nodeID,
+		DeviceName: "MacBook-Hysteria",
+		Protocol:   "hysteria2",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(hyReqBody))
+	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for Hysteria key, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var createdHyKey map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&createdHyKey)
+	if createdHyKey["protocol"] != "hysteria2" {
+		t.Fatalf("expected protocol 'hysteria2' in createdHyKey, got: %v", createdHyKey["protocol"])
+	}
+	hyKeyID := int64(createdHyKey["id"].(float64))
+
+	// Verify GET /api/v1/keys/:id for Hysteria 2 key
+	req = httptest.NewRequest("GET", fmt.Sprintf("/api/v1/keys/%d", hyKeyID), nil)
+	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for GET /api/v1/keys/:id (hysteria), got %d", rec.Code)
+	}
+	var fetchedHyKey map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&fetchedHyKey)
+	if fetchedHyKey["protocol"] != "hysteria2" {
+		t.Fatalf("expected protocol 'hysteria2' in fetchedHyKey, got: %v", fetchedHyKey["protocol"])
 	}
 }
 

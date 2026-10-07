@@ -510,9 +510,11 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryKeys, "key_create", fmt.Sprintf("Создан VPN-ключ «%s» (%s)%s на сервере «%s»", req.DeviceName, clientName, pskDetails, node.Name))
 
-	cleanConfig := runner.SanitizeAWGConfig(slaveResp.Config)
-	if cleanConfig != "" {
-		slaveResp.Config = cleanConfig
+	if proto != "hysteria2" {
+		cleanConfig := runner.SanitizeAWGConfig(slaveResp.Config)
+		if cleanConfig != "" {
+			slaveResp.Config = cleanConfig
+		}
 	}
 
 	s.invalidateDashboardCache()
@@ -524,6 +526,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		"node_id":     node.ID,
 		"node_name":   node.Name,
 		"node_type":   node.Type,
+		"protocol":    keyRecord.Protocol,
 		"config":      slaveResp.Config,
 		"qr_code":     slaveResp.QRCode,
 		"vpn_uri":     slaveResp.VPNURI,
@@ -560,15 +563,17 @@ func (s *Server) handleGetKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
-	slaveResp, err := slaveCli.GetClient(r.Context(), keyRecord.ClientName)
+	slaveResp, err := slaveCli.GetClient(r.Context(), keyRecord.ClientName, keyRecord.Protocol)
 	if err != nil {
 		s.writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Failed to retrieve config from slave: %v", err)})
 		return
 	}
 
-	cleanKeyConfig := runner.SanitizeAWGConfig(slaveResp.Config)
-	if cleanKeyConfig != "" {
-		slaveResp.Config = cleanKeyConfig
+	if keyRecord.Protocol != "hysteria2" {
+		cleanKeyConfig := runner.SanitizeAWGConfig(slaveResp.Config)
+		if cleanKeyConfig != "" {
+			slaveResp.Config = cleanKeyConfig
+		}
 	}
 
 	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryKeys, "key_view", fmt.Sprintf("Просмотр конфигурации / QR-кода ключа «%s» (%s)", keyRecord.DeviceName, keyRecord.ClientName))
@@ -580,6 +585,7 @@ func (s *Server) handleGetKey(w http.ResponseWriter, r *http.Request) {
 		"node_id":     node.ID,
 		"node_name":   node.Name,
 		"node_type":   node.Type,
+		"protocol":    keyRecord.Protocol,
 		"config":      slaveResp.Config,
 		"qr_code":     slaveResp.QRCode,
 		"vpn_uri":     slaveResp.VPNURI,
