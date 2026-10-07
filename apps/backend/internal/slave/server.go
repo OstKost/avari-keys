@@ -231,14 +231,34 @@ func (s *Server) handleGetClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := s.runner.GetClient(r.Context(), name)
-	if err != nil && s.hysteria != nil {
-		// Try Hysteria store
+	proto := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
+
+	// If explicitly hysteria2, or if hysteria store contains this user, prioritize Hysteria
+	if proto == "hysteria2" && s.hysteria != nil {
 		if hRes, hErr := s.hysteria.GetUser(r.Context(), name); hErr == nil {
 			s.writeJSON(w, http.StatusOK, hRes)
 			return
 		}
 	}
+
+	// Try AWG runner first if not explicitly hysteria2
+	res, err := s.runner.GetClient(r.Context(), name)
+	if err == nil {
+		// If found in AWG runner, but user requested hysteria2 or it's actually in hysteria store
+		if proto != "hysteria2" {
+			s.writeJSON(w, http.StatusOK, res)
+			return
+		}
+	}
+
+	if s.hysteria != nil {
+		// Try Hysteria store fallback
+		if hRes, hErr := s.hysteria.GetUser(r.Context(), name); hErr == nil {
+			s.writeJSON(w, http.StatusOK, hRes)
+			return
+		}
+	}
+
 	if err != nil {
 		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
