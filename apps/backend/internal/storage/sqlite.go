@@ -102,6 +102,7 @@ func (s *Storage) migrate() error {
 		device_name TEXT NOT NULL,
 		public_key TEXT NOT NULL DEFAULT '',
 		allocated_ip TEXT NOT NULL DEFAULT '',
+		protocol TEXT NOT NULL DEFAULT 'awg',
 		total_rx_bytes INTEGER NOT NULL DEFAULT 0,
 		total_tx_bytes INTEGER NOT NULL DEFAULT 0,
 		last_handshake_epoch INTEGER NOT NULL DEFAULT 0,
@@ -200,6 +201,7 @@ func (s *Storage) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE telegram_chats ADD COLUMN user_id INTEGER DEFAULT NULL;`)
 	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN public_key TEXT NOT NULL DEFAULT '';`)
 	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN allocated_ip TEXT NOT NULL DEFAULT '';`)
+	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN protocol TEXT NOT NULL DEFAULT 'awg';`)
 	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN total_rx_bytes INTEGER NOT NULL DEFAULT 0;`)
 	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN total_tx_bytes INTEGER NOT NULL DEFAULT 0;`)
 	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN last_handshake_epoch INTEGER NOT NULL DEFAULT 0;`)
@@ -604,17 +606,21 @@ func (s *Storage) DeleteNode(ctx context.Context, id int64) error {
 func (s *Storage) CreateClientConfig(ctx context.Context, userID, nodeID int64, clientName, deviceName string, extra ...string) (*models.ClientConfig, error) {
 	pubKey := ""
 	allocIP := ""
+	proto := "awg"
 	if len(extra) > 0 {
 		pubKey = strings.TrimSpace(extra[0])
 	}
 	if len(extra) > 1 {
 		allocIP = strings.TrimSpace(extra[1])
 	}
+	if len(extra) > 2 && strings.TrimSpace(extra[2]) != "" {
+		proto = strings.TrimSpace(extra[2])
+	}
 
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO client_configs (user_id, node_id, client_name, device_name, public_key, allocated_ip)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, userID, nodeID, clientName, deviceName, pubKey, allocIP)
+		INSERT INTO client_configs (user_id, node_id, client_name, device_name, public_key, allocated_ip, protocol)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, userID, nodeID, clientName, deviceName, pubKey, allocIP, proto)
 	if err != nil {
 		return nil, err
 	}
@@ -738,7 +744,7 @@ func (s *Storage) GetClientConfigByID(ctx context.Context, id int64) (*models.Cl
 	var totalRx, totalTx, handshakeEpoch int64
 	err := s.db.QueryRowContext(ctx, `
 		SELECT c.id, c.user_id, COALESCE(u.username, ''), c.node_id, c.client_name, c.device_name,
-		       COALESCE(c.public_key, ''), COALESCE(c.allocated_ip, ''),
+		       COALESCE(c.public_key, ''), COALESCE(c.allocated_ip, ''), COALESCE(c.protocol, 'awg'),
 		       c.total_rx_bytes, c.total_tx_bytes, c.last_handshake_epoch, c.created_at,
 		       COALESCE(n.name, ''), COALESCE(n.type, 'direct'), COALESCE(n.country_code, '')
 		FROM client_configs c
@@ -746,7 +752,7 @@ func (s *Storage) GetClientConfigByID(ctx context.Context, id int64) (*models.Cl
 		LEFT JOIN users u ON c.user_id = u.id
 		WHERE c.id = ?
 	`, id).Scan(&c.ID, &c.UserID, &c.Username, &c.NodeID, &c.ClientName, &c.DeviceName,
-		&c.PublicKey, &c.AllocatedIP, &totalRx, &totalTx, &handshakeEpoch, &c.CreatedAt,
+		&c.PublicKey, &c.AllocatedIP, &c.Protocol, &totalRx, &totalTx, &handshakeEpoch, &c.CreatedAt,
 		&c.NodeName, &c.NodeType, &c.NodeCountryCode)
 	if err != nil {
 		return nil, err
@@ -771,7 +777,7 @@ func (s *Storage) GetClientConfigByID(ctx context.Context, id int64) (*models.Cl
 func (s *Storage) ListClientConfigsByUser(ctx context.Context, userID int64) ([]models.ClientConfig, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.user_id, COALESCE(u.username, ''), c.node_id, c.client_name, c.device_name,
-		       COALESCE(c.public_key, ''), COALESCE(c.allocated_ip, ''),
+		       COALESCE(c.public_key, ''), COALESCE(c.allocated_ip, ''), COALESCE(c.protocol, 'awg'),
 		       c.total_rx_bytes, c.total_tx_bytes, c.last_handshake_epoch, c.created_at,
 		       COALESCE(n.name, ''), COALESCE(n.type, 'direct'), COALESCE(n.country_code, '')
 		FROM client_configs c
@@ -792,7 +798,7 @@ func (s *Storage) ListClientConfigsByUser(ctx context.Context, userID int64) ([]
 		var c models.ClientConfig
 		var totalRx, totalTx, handshakeEpoch int64
 		if err := rows.Scan(&c.ID, &c.UserID, &c.Username, &c.NodeID, &c.ClientName, &c.DeviceName,
-			&c.PublicKey, &c.AllocatedIP, &totalRx, &totalTx, &handshakeEpoch, &c.CreatedAt,
+			&c.PublicKey, &c.AllocatedIP, &c.Protocol, &totalRx, &totalTx, &handshakeEpoch, &c.CreatedAt,
 			&c.NodeName, &c.NodeType, &c.NodeCountryCode); err != nil {
 			return nil, err
 		}
@@ -816,7 +822,7 @@ func (s *Storage) ListClientConfigsByUser(ctx context.Context, userID int64) ([]
 func (s *Storage) ListAllClientConfigs(ctx context.Context) ([]models.ClientConfig, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.user_id, COALESCE(u.username, ''), c.node_id, c.client_name, c.device_name,
-		       COALESCE(c.public_key, ''), COALESCE(c.allocated_ip, ''),
+		       COALESCE(c.public_key, ''), COALESCE(c.allocated_ip, ''), COALESCE(c.protocol, 'awg'),
 		       c.total_rx_bytes, c.total_tx_bytes, c.last_handshake_epoch, c.created_at,
 		       COALESCE(n.name, ''), COALESCE(n.type, 'direct'), COALESCE(n.country_code, '')
 		FROM client_configs c
@@ -836,7 +842,7 @@ func (s *Storage) ListAllClientConfigs(ctx context.Context) ([]models.ClientConf
 		var c models.ClientConfig
 		var totalRx, totalTx, handshakeEpoch int64
 		if err := rows.Scan(&c.ID, &c.UserID, &c.Username, &c.NodeID, &c.ClientName, &c.DeviceName,
-			&c.PublicKey, &c.AllocatedIP, &totalRx, &totalTx, &handshakeEpoch, &c.CreatedAt,
+			&c.PublicKey, &c.AllocatedIP, &c.Protocol, &totalRx, &totalTx, &handshakeEpoch, &c.CreatedAt,
 			&c.NodeName, &c.NodeType, &c.NodeCountryCode); err != nil {
 			return nil, err
 		}

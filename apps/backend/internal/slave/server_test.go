@@ -238,3 +238,83 @@ func TestCascadeEgressEndpoints(t *testing.T) {
 	}
 }
 
+func TestHysteriaClientAndAuth(t *testing.T) {
+	srv, apiKey := setupTestSlave()
+
+	// 1. Create Hysteria client
+	createReq, _ := json.Marshal(models.ClientCreateRequest{
+		Name:     "u1_hysteria_test",
+		Protocol: "hysteria2",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/clients", bytes.NewReader(createReq))
+	req.Header.Set("X-API-Key", apiKey)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var created models.ClientResponse
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+
+	if created.Protocol != "hysteria2" || !strings.HasPrefix(created.VPNURI, "hysteria2://") {
+		t.Fatalf("unexpected client response: %+v", created)
+	}
+
+	// 2. Parse password from URI: hysteria2://<pwd>@s2.avari.dev:443/...
+	uriParts := strings.Split(strings.TrimPrefix(created.VPNURI, "hysteria2://"), "@")
+	if len(uriParts) < 2 {
+		t.Fatalf("malformed hysteria uri: %s", created.VPNURI)
+	}
+	password := uriParts[0]
+
+	// 3. Test HTTP Auth Hook with correct password
+	authReq, _ := json.Marshal(map[string]string{
+		"auth": password,
+		"addr": "1.2.3.4:5678",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/hysteria/auth", bytes.NewReader(authReq))
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for valid auth, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 4. Test HTTP Auth Hook with wrong password
+	badAuthReq, _ := json.Marshal(map[string]string{
+		"auth": "wrongpassword123",
+		"addr": "1.2.3.4:5678",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/hysteria/auth", bytes.NewReader(badAuthReq))
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for bad auth, got %d", rec.Code)
+	}
+
+	// 5. Test GetClient
+	req = httptest.NewRequest("GET", "/api/v1/clients/u1_hysteria_test", nil)
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on get client, got %d", rec.Code)
+	}
+
+	// 6. Test DeleteClient
+	req = httptest.NewRequest("DELETE", "/api/v1/clients/u1_hysteria_test", nil)
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on delete client, got %d", rec.Code)
+	}
+}
+

@@ -189,6 +189,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/auth/me", auth.RequireAuth(s.handleMe))
 	s.mux.HandleFunc("PUT /api/v1/auth/profile", auth.RequireAuth(s.handleUpdateProfile))
 	s.mux.HandleFunc("GET /api/v1/nodes", auth.RequireAuth(s.handleListActiveNodes))
+	s.mux.HandleFunc("GET /api/v1/proxies/telegram", auth.RequireAuth(s.handleGetTelegramProxies))
 	s.mux.HandleFunc("GET /api/v1/keys", auth.RequireAuth(s.handleListUserKeys))
 	s.mux.HandleFunc("POST /api/v1/keys", auth.RequireAuth(s.handleCreateKey))
 	s.mux.HandleFunc("GET /api/v1/keys/{id}", auth.RequireAuth(s.handleGetKey))
@@ -249,7 +250,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v0.6.0",
+		Version: "v0.7.0",
 	})
 }
 
@@ -389,6 +390,28 @@ func (s *Server) handleListActiveNodes(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, nodes)
 }
 
+func (s *Server) handleGetTelegramProxies(w http.ResponseWriter, r *http.Request) {
+	// Proxies list. FIN (S2) is preconfigured with tg-ws-proxy
+	secret := "ee9cbceb37d7e8416b6ffaa076a610be1f73322e61766172692e646576"
+	server := "s2.avari.dev"
+	port := 8443
+	link := fmt.Sprintf("tg://proxy?server=%s&port=%d&secret=%s", server, port, secret)
+
+	proxies := []models.TelegramProxyInfo{
+		{
+			ID:          "s2-fin",
+			Name:        "Финляндия (FIN)",
+			CountryCode: "FIN",
+			Server:      server,
+			Port:        port,
+			Secret:      secret,
+			Link:        link,
+			Status:      "online",
+		},
+	}
+	s.writeJSON(w, http.StatusOK, proxies)
+}
+
 func (s *Server) handleListUserKeys(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 
@@ -442,10 +465,14 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		return '_'
 	}, req.DeviceName)
 	clientName := fmt.Sprintf("u%d_%s", claims.UserID, cleanDevice)
+	proto := strings.ToLower(strings.TrimSpace(req.Protocol))
+	if proto != "hysteria2" {
+		proto = "awg"
+	}
 
 	// Call Slave API
 	slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
-	slaveResp, err := slaveCli.CreateClient(r.Context(), clientName, req.PSK)
+	slaveResp, err := slaveCli.CreateClient(r.Context(), clientName, req.PSK, proto)
 	if err != nil {
 		s.writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Slave node failed: %v", err)})
 		return
@@ -467,8 +494,8 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Save record in DB with PublicKey and AllocatedIP
-	keyRecord, err := s.storage.CreateClientConfig(r.Context(), claims.UserID, node.ID, clientName, req.DeviceName, slaveResp.PublicKey, allocIP)
+	// Save record in DB with PublicKey, AllocatedIP, and Protocol
+	keyRecord, err := s.storage.CreateClientConfig(r.Context(), claims.UserID, node.ID, clientName, req.DeviceName, slaveResp.PublicKey, allocIP, proto)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -477,6 +504,9 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	pskDetails := ""
 	if req.PSK {
 		pskDetails = " [PSK / Shadowrocket]"
+	}
+	if proto == "hysteria2" {
+		pskDetails += " [Hysteria 2]"
 	}
 	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryKeys, "key_create", fmt.Sprintf("Создан VPN-ключ «%s» (%s)%s на сервере «%s»", req.DeviceName, clientName, pskDetails, node.Name))
 

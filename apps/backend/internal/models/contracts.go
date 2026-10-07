@@ -10,21 +10,35 @@ type HealthResponse struct {
 	Version      string `json:"version,omitempty"`
 }
 
-// ClientCreateRequest payload for creating an AWG client key.
+// ClientCreateRequest payload for creating a client key.
 type ClientCreateRequest struct {
-	Name string `json:"name"`
-	PSK  bool   `json:"psk,omitempty"`
+	Name     string `json:"name"`
+	PSK      bool   `json:"psk,omitempty"`
+	Protocol string `json:"protocol,omitempty"` // "awg" (default) or "hysteria2"
 }
 
 // ClientResponse represents the output when a client is created or retrieved.
 type ClientResponse struct {
 	Name      string `json:"name"`
 	Config    string `json:"config"`
-	QRCode    string `json:"qr_code,omitempty"`     // Base64 PNG or SVG data URI for AWG
-	VPNURI    string `json:"vpn_uri,omitempty"`     // AmneziaVPN URI (vpn://...)
-	VPNQRCode string `json:"vpn_qr_code,omitempty"` // Base64 PNG or SVG data URI for AmneziaVPN
+	Protocol  string `json:"protocol,omitempty"`     // "awg" or "hysteria2"
+	QRCode    string `json:"qr_code,omitempty"`     // Base64 PNG or SVG data URI for AWG/Hysteria
+	VPNURI    string `json:"vpn_uri,omitempty"`     // AmneziaVPN URI (vpn://...) or hysteria2://
+	VPNQRCode string `json:"vpn_qr_code,omitempty"` // Base64 PNG or SVG data URI for AmneziaVPN / Hysteria
 	PublicKey string `json:"public_key,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
+}
+
+// TelegramProxyInfo represents public MTProxy information.
+type TelegramProxyInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	CountryCode string `json:"country_code"`
+	Server      string `json:"server"`
+	Port        int    `json:"port"`
+	Secret      string `json:"secret"`
+	Link        string `json:"link"`
+	Status      string `json:"status"`
 }
 
 // ClientListItem represents an entry in the client list.

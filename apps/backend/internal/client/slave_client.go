@@ -66,10 +66,15 @@ func (c *SlaveClient) CheckHealth(ctx context.Context) (*models.HealthResponse, 
 }
 
 // CreateClient requests the Slave to create a new client config.
-func (c *SlaveClient) CreateClient(ctx context.Context, clientName string, psk bool) (*models.ClientResponse, error) {
+func (c *SlaveClient) CreateClient(ctx context.Context, clientName string, psk bool, protocol ...string) (*models.ClientResponse, error) {
+	proto := "awg"
+	if len(protocol) > 0 && protocol[0] != "" {
+		proto = protocol[0]
+	}
 	body, err := json.Marshal(models.ClientCreateRequest{
-		Name: clientName,
-		PSK:  psk,
+		Name:     clientName,
+		PSK:      psk,
+		Protocol: proto,
 	})
 	if err != nil {
 		return nil, err
