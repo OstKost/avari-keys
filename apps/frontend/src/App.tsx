@@ -222,6 +222,10 @@ export default function App() {
   const handleViewKey = async (id: number) => {
     try {
       const keyDetail = await api.getKey(id);
+      const existingSummary = keys.find((k) => k.id === id);
+      if (!keyDetail.protocol && existingSummary?.protocol) {
+        keyDetail.protocol = existingSummary.protocol;
+      }
       setViewingKey(keyDetail);
     } catch (err: any) {
       toast.error(err.message || 'Ошибка получения конфигурации');
