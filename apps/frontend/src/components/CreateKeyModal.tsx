@@ -17,6 +17,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
   const isUserProOrAdmin = Boolean(currentUser?.is_pro || currentUser?.role === 'admin');
   const defaultNode = safeNodes.find((n) => !n.is_backup || isUserProOrAdmin) || safeNodes[0];
   const [selectedNodeId, setSelectedNodeId] = useState<number>(defaultNode?.id || 0);
+  const selectedNode = safeNodes.find((n) => n.id === selectedNodeId);
   const [protocol, setProtocol] = useState<ProtocolType>('awg');
   const [deviceName, setDeviceName] = useState<string>('');
   const [psk, setPsk] = useState(false);
@@ -50,6 +51,9 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
     }
     setError(null);
     setSelectedNodeId(node.id);
+    if (!node.has_hysteria && protocol === 'hysteria2') {
+      setProtocol('awg');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -208,6 +212,15 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                               <span>Только PRO</span>
                             </span>
                           )}
+                          {node.has_hysteria && (
+                            <span
+                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40 shadow-sm"
+                              title="Поддерживается высокоскоростной протокол Hysteria 2"
+                            >
+                              <Zap className="w-3 h-3 text-purple-300" />
+                              <span>Hysteria 2</span>
+                            </span>
+                          )}
                           {node.is_mobile_optimized && (
                             <span 
                               className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#06141B] text-[#D9B96E] border border-[#D9B96E]/40" 
@@ -267,9 +280,16 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
 
             {/* Protocol Selection: AmneziaWG vs Hysteria 2 */}
             <div>
-              <label className="block text-xs font-mono font-semibold text-[#D9B96E] uppercase tracking-wider mb-2">
-                Протокол подключения
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-mono font-semibold text-[#D9B96E] uppercase tracking-wider">
+                  Протокол подключения
+                </label>
+                {selectedNode && !selectedNode.has_hysteria && (
+                  <span className="text-[11px] font-mono text-[#718187]">
+                    Hysteria 2 не поддерживается данным сервером
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
                 <button
                   type="button"
@@ -291,19 +311,36 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
 
                 <button
                   type="button"
-                  onClick={() => setProtocol('hysteria2')}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                    protocol === 'hysteria2'
-                      ? 'border-[#D9B96E] bg-[#102833] shadow-md shadow-[#D9B96E]/10'
-                      : 'border-[#1C3945] bg-[#0D222C] hover:border-[#1C3945]/80 hover:bg-[#0D222C]/80'
+                  disabled={!selectedNode?.has_hysteria}
+                  onClick={() => {
+                    if (selectedNode?.has_hysteria) {
+                      setProtocol('hysteria2');
+                    }
+                  }}
+                  className={`p-3 rounded-2xl border text-left transition-all ${
+                    !selectedNode?.has_hysteria
+                      ? 'opacity-40 bg-[#091820] border-[#1C3945]/50 cursor-not-allowed'
+                      : protocol === 'hysteria2'
+                      ? 'border-[#D9B96E] bg-[#102833] shadow-md shadow-[#D9B96E]/10 cursor-pointer'
+                      : 'border-[#1C3945] bg-[#0D222C] hover:border-[#1C3945]/80 hover:bg-[#0D222C]/80 cursor-pointer'
                   }`}
+                  title={!selectedNode?.has_hysteria ? 'Сервер не поддерживает протокол Hysteria 2' : undefined}
                 >
-                  <div className="flex items-center space-x-2 mb-1">
-                    <Zap className={`w-4 h-4 ${protocol === 'hysteria2' ? 'text-[#D9B96E]' : 'text-[#718187]'}`} />
-                    <span className="font-serif font-bold text-sm text-[#F2F0E8]">Hysteria 2</span>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center space-x-2">
+                      <Zap className={`w-4 h-4 ${protocol === 'hysteria2' ? 'text-[#D9B96E]' : 'text-[#718187]'}`} />
+                      <span className="font-serif font-bold text-sm text-[#F2F0E8]">Hysteria 2</span>
+                    </div>
+                    {!selectedNode?.has_hysteria && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#102833] text-[#718187]">
+                        Недоступно
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-[#A8B4B7] leading-tight">
-                    QUIC / UDP. Максимальная скорость при потерях и мобильном интернете.
+                    {selectedNode?.has_hysteria
+                      ? 'QUIC / UDP. Максимальная скорость при потерях и мобильном интернете.'
+                      : 'На данном сервере протокол Hysteria 2 не включен.'}
                   </p>
                 </button>
               </div>

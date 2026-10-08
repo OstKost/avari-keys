@@ -42,6 +42,7 @@ type Node struct {
 	APIKey            string    `json:"-"` // Hidden in public responses
 	IsMobileOptimized bool      `json:"is_mobile_optimized"`
 	IsBackup          bool      `json:"is_backup"`
+	HasHysteria       bool      `json:"has_hysteria"`
 	IsActive          bool      `json:"is_active"`
 	CreatedAt         time.Time `json:"created_at"`
 }
@@ -54,6 +55,7 @@ type NodePublic struct {
 	CountryCode       string    `json:"country_code"`
 	IsMobileOptimized bool      `json:"is_mobile_optimized"`
 	IsBackup          bool      `json:"is_backup"`
+	HasHysteria       bool      `json:"has_hysteria"`
 	IsActive          bool      `json:"is_active"`
 	CreatedAt         time.Time `json:"created_at"`
 }
@@ -130,6 +132,7 @@ type AddNodeRequest struct {
 	APIKey            string `json:"api_key"`
 	IsMobileOptimized bool   `json:"is_mobile_optimized"`
 	IsBackup          bool   `json:"is_backup"`
+	HasHysteria       bool   `json:"has_hysteria"`
 }
 
 type UpdateNodeRequest struct {
@@ -141,6 +144,7 @@ type UpdateNodeRequest struct {
 	APIKey            string `json:"api_key,omitempty"` // If empty, keep existing key
 	IsMobileOptimized bool   `json:"is_mobile_optimized"`
 	IsBackup          bool   `json:"is_backup"`
+	HasHysteria       bool   `json:"has_hysteria"`
 }
 
 type RestoreNodeRequest struct {

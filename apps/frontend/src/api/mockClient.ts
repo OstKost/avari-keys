@@ -168,6 +168,7 @@ let mockNodes: AdminNode[] = [
     api_url: 'http://127.0.0.1:8081',
     is_mobile_optimized: true,
     is_backup: false,
+    has_hysteria: false,
     is_active: true,
     online: true,
     latency_ms: 24,
@@ -182,6 +183,7 @@ let mockNodes: AdminNode[] = [
     api_url: 'http://127.0.0.1:8081',
     is_mobile_optimized: true,
     is_backup: true,
+    has_hysteria: false,
     is_active: true,
     online: true,
     latency_ms: 31,
@@ -196,6 +198,7 @@ let mockNodes: AdminNode[] = [
     api_url: 'http://127.0.0.1:8082',
     is_mobile_optimized: false,
     is_backup: false,
+    has_hysteria: true,
     is_active: true,
     online: true,
     latency_ms: 38,
@@ -610,6 +613,7 @@ export const mockApi = {
       country_code: n.country_code,
       is_mobile_optimized: n.is_mobile_optimized,
       is_backup: n.is_backup,
+      has_hysteria: n.has_hysteria,
       is_active: n.is_active,
       created_at: n.created_at,
     }));
@@ -785,7 +789,8 @@ bandwidth:
     isMobileOptimized?: boolean,
     countryCode?: string,
     providerUrl?: string,
-    isBackup?: boolean
+    isBackup?: boolean,
+    hasHysteria?: boolean
   ): Promise<AdminNode> {
     const newNode: AdminNode = {
       id: mockNodes.length + 1,
@@ -796,6 +801,7 @@ bandwidth:
       api_url: apiUrl,
       is_mobile_optimized: Boolean(isMobileOptimized),
       is_backup: Boolean(isBackup),
+      has_hysteria: Boolean(hasHysteria),
       is_active: true,
       online: true,
       latency_ms: Math.floor(20 + Math.random() * 20),
@@ -814,6 +820,7 @@ bandwidth:
       apiKey?: string;
       isMobileOptimized?: boolean;
       isBackup?: boolean;
+      hasHysteria?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
@@ -830,6 +837,9 @@ bandwidth:
     node.is_mobile_optimized = Boolean(data.isMobileOptimized);
     if (data.isBackup !== undefined) {
       node.is_backup = Boolean(data.isBackup);
+    }
+    if (data.hasHysteria !== undefined) {
+      node.has_hysteria = Boolean(data.hasHysteria);
     }
     return { ...node };
   },

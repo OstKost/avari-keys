@@ -16,6 +16,7 @@ export interface NodePublic {
   country_code?: string;
   is_mobile_optimized?: boolean;
   is_backup?: boolean;
+  has_hysteria?: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -29,6 +30,7 @@ export interface AdminNode {
   api_url: string;
   is_mobile_optimized?: boolean;
   is_backup: boolean;
+  has_hysteria?: boolean;
   is_active: boolean;
   online: boolean;
   latency_ms?: number;
