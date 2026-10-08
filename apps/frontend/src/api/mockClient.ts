@@ -253,30 +253,22 @@ PersistentKeepalive = 25`,
     node_id: 2,
     node_name: 'Прямой туннель S2 (Франкфурт)',
     node_type: 'direct',
+    protocol: 'hysteria2',
     last_handshake: '42 минуты назад',
     total_traffic_bytes: 471859200,
     month_traffic_bytes: 471859200,
     total_traffic_formatted: '450.00 MB',
     month_traffic_formatted: '450.00 MB',
-    config: `[Interface]
-Address = 10.8.0.4/32
-PrivateKey = aMockPrivateKeyDirectTunnelMacBook7654321=
-Jc = 3
-Jmin = 50
-Jmax = 80
-S1 = 20
-S2 = 30
-H1 = 1
-H2 = 2
-H3 = 3
-H4 = 4
-
-[Peer]
-PublicKey = aMockServerPublicKeyDirectTunnel1234567=
-Endpoint = 203.0.113.50:51820
-AllowedIPs = 0.0.0.0/0, ::/0
-PersistentKeepalive = 25`,
-    vpn_uri: 'vpn://eyJob3N0TmFtZSI6IjIwMy4wLjExMy41MCIsImRlc2NyaXB0aW9uIjoiQXZhcmkgS2V5cyBEaXJlY3QgUzIiLCJjb25maWciOiJ7XCJkbnMxXCI6XCI4LjguOC44XCIsXCJwb3J0XCI6NTE4MjAsXCJwcm90b2NvbFwiOlwiYXdnXCJ9In0=',
+    config: `server: s2.avari.dev:443
+auth: demo_hysteria_secret_token_123
+tls:
+  sni: s2.avari.dev
+  insecure: false
+bandwidth:
+  up: 50 mbps
+  down: 200 mbps
+fastOpen: true`,
+    vpn_uri: 'hysteria2://demo_hysteria_secret_token_123@s2.avari.dev:443/?sni=s2.avari.dev&insecure=0#u1_macbook',
     created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
   },
   {
@@ -637,6 +629,7 @@ export const mockApi = {
           node_name: k.node_name,
           node_type: k.node_type,
           node_country_code: matchedNode?.country_code,
+          protocol: k.protocol || 'awg',
           last_handshake: k.last_handshake || '10 минут назад',
           total_traffic_bytes: k.total_traffic_bytes || 524288000,
           month_traffic_bytes: k.month_traffic_bytes || 524288000,
@@ -935,6 +928,8 @@ bandwidth:
         device_name: k.device_name,
         node_name: k.node_name,
         node_type: k.node_type,
+        node_country_code: mockNodes.find((n) => n.id === k.node_id)?.country_code,
+        protocol: k.protocol || 'awg',
         last_handshake: k.last_handshake || '5 минут назад',
         total_traffic_bytes: k.total_traffic_bytes || 524288000,
         month_traffic_bytes: k.month_traffic_bytes || 524288000,
