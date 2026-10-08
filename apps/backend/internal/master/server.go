@@ -250,7 +250,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v0.7.0",
+		Version: "v0.7.2",
 	})
 }
 
@@ -520,18 +520,19 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	s.invalidateDashboardCache()
 
 	s.writeJSON(w, http.StatusCreated, map[string]any{
-		"id":          keyRecord.ID,
-		"client_name": clientName,
-		"device_name": req.DeviceName,
-		"node_id":     node.ID,
-		"node_name":   node.Name,
-		"node_type":   node.Type,
-		"protocol":    keyRecord.Protocol,
-		"config":      slaveResp.Config,
-		"qr_code":     slaveResp.QRCode,
-		"vpn_uri":     slaveResp.VPNURI,
-		"vpn_qr_code": slaveResp.VPNQRCode,
-		"created_at":  keyRecord.CreatedAt,
+		"id":                keyRecord.ID,
+		"client_name":       clientName,
+		"device_name":       req.DeviceName,
+		"node_id":           node.ID,
+		"node_name":         node.Name,
+		"node_type":         node.Type,
+		"node_country_code": node.CountryCode,
+		"protocol":          keyRecord.Protocol,
+		"config":            slaveResp.Config,
+		"qr_code":           slaveResp.QRCode,
+		"vpn_uri":           slaveResp.VPNURI,
+		"vpn_qr_code":       slaveResp.VPNQRCode,
+		"created_at":        keyRecord.CreatedAt,
 	})
 }
 
@@ -579,18 +580,19 @@ func (s *Server) handleGetKey(w http.ResponseWriter, r *http.Request) {
 	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryKeys, "key_view", fmt.Sprintf("Просмотр конфигурации / QR-кода ключа «%s» (%s)", keyRecord.DeviceName, keyRecord.ClientName))
 
 	s.writeJSON(w, http.StatusOK, map[string]any{
-		"id":          keyRecord.ID,
-		"client_name": keyRecord.ClientName,
-		"device_name": keyRecord.DeviceName,
-		"node_id":     node.ID,
-		"node_name":   node.Name,
-		"node_type":   node.Type,
-		"protocol":    keyRecord.Protocol,
-		"config":      slaveResp.Config,
-		"qr_code":     slaveResp.QRCode,
-		"vpn_uri":     slaveResp.VPNURI,
-		"vpn_qr_code": slaveResp.VPNQRCode,
-		"created_at":  keyRecord.CreatedAt,
+		"id":                keyRecord.ID,
+		"client_name":       keyRecord.ClientName,
+		"device_name":       keyRecord.DeviceName,
+		"node_id":           node.ID,
+		"node_name":         node.Name,
+		"node_type":         node.Type,
+		"node_country_code": node.CountryCode,
+		"protocol":          keyRecord.Protocol,
+		"config":            slaveResp.Config,
+		"qr_code":           slaveResp.QRCode,
+		"vpn_uri":           slaveResp.VPNURI,
+		"vpn_qr_code":       slaveResp.VPNQRCode,
+		"created_at":        keyRecord.CreatedAt,
 	})
 }
 

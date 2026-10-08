@@ -81,8 +81,16 @@ function sanitizeConfig(raw: string): string {
 
 export function KeyModal({ keyData, onClose }: Props) {
   const { toast } = useToast();
-  const isHysteria = keyData.protocol === 'hysteria2' || (keyData.vpn_uri && keyData.vpn_uri.startsWith('hysteria2://'));
+  const isHysteria = Boolean(
+    keyData.protocol === 'hysteria2' ||
+    (keyData.vpn_uri && keyData.vpn_uri.toLowerCase().startsWith('hysteria2://')) ||
+    (keyData.config && !keyData.config.includes('[Interface]') && (keyData.config.includes('auth:') || keyData.config.includes('server:')))
+  );
   const [protocol, setProtocol] = useState<'awg' | 'vpn' | 'hysteria2'>(isHysteria ? 'hysteria2' : 'awg');
+
+  useEffect(() => {
+    setProtocol(isHysteria ? 'hysteria2' : 'awg');
+  }, [isHysteria, keyData.id]);
   const [copied, setCopied] = useState(false);
   const [awgQrUrl, setAwgQrUrl] = useState<string>('');
   const [vpnQrUrl, setVpnQrUrl] = useState<string>('');
@@ -265,6 +273,18 @@ export function KeyModal({ keyData, onClose }: Props) {
                 <span className="bg-[#102833] text-[#D9B96E] px-2 py-0.5 rounded-md font-mono text-xs border border-[#1C3945]">
                   {routing.fullText}
                 </span>
+                <span className="text-[#718187]">•</span>
+                {isHysteria ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-purple-950/60 text-purple-300 border border-purple-500/40">
+                    <Zap className="w-3 h-3 text-purple-400" />
+                    Hysteria 2
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-[#102833] text-[#D9B96E] border border-[#1C3945]">
+                    <Zap className="w-3 h-3 text-[#D9B96E]" />
+                    AmneziaWG
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -528,7 +548,11 @@ export function KeyModal({ keyData, onClose }: Props) {
             <div className="flex items-center space-x-3 text-left">
               <MascotAvatar size="xs" withGlow={false} />
               <div className="text-xs text-[#D9E1E3] font-sans">
-                <span>Отсканируйте QR в приложении AmneziaWG на телефоне или сохраните .conf для ПК.</span>
+                {isHysteria ? (
+                  <span>Отсканируйте QR в v2rayNG / NekoBox / Shadowrocket или скопируйте ссылку <code>hysteria2://</code>.</span>
+                ) : (
+                  <span>Отсканируйте QR в приложении AmneziaWG на телефоне или сохраните .conf для ПК.</span>
+                )}
                 <span className="ml-2 font-serif font-bold text-[#D9B96E] whitespace-nowrap">— Ари</span>
               </div>
             </div>
