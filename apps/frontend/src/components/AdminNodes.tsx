@@ -21,6 +21,7 @@ import {
   BellRing,
   Settings,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { AdminNode, EgressStatusResponse, TelegramStatusResponse } from '../types';
@@ -53,6 +54,7 @@ export function AdminNodes() {
   const [apiKey, setApiKey] = useState('');
   const [isMobileOptimized, setIsMobileOptimized] = useState(false);
   const [isBackup, setIsBackup] = useState(false);
+  const [hasHysteria, setHasHysteria] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Edit node modal state
@@ -65,6 +67,7 @@ export function AdminNodes() {
   const [editApiKey, setEditApiKey] = useState('');
   const [editIsMobileOptimized, setEditIsMobileOptimized] = useState(false);
   const [editIsBackup, setEditIsBackup] = useState(false);
+  const [editHasHysteria, setEditHasHysteria] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
 
   // Action modals state
@@ -181,6 +184,7 @@ export function AdminNodes() {
     const nodeKey = apiKey.trim();
     const nodeMobile = isMobileOptimized;
     const nodeBackup = isBackup;
+    const nodeHysteria = hasHysteria;
     try {
       setSubmitting(true);
       const res = await api.addAdminNode(
@@ -191,7 +195,8 @@ export function AdminNodes() {
         nodeMobile,
         nodeCountry,
         nodeProvider,
-        nodeBackup
+        nodeBackup,
+        nodeHysteria
       );
       setName('');
       setCountryCode('NLD');
@@ -200,6 +205,7 @@ export function AdminNodes() {
       setApiKey('');
       setIsMobileOptimized(false);
       setIsBackup(false);
+      setHasHysteria(false);
       setShowAddForm(false);
       toast.success(`Сервер «${nodeName}» успешно подключен`);
       if (res && res.id) {
@@ -223,6 +229,7 @@ export function AdminNodes() {
     setEditApiKey('');
     setEditIsMobileOptimized(Boolean(node.is_mobile_optimized));
     setEditIsBackup(Boolean(node.is_backup));
+    setEditHasHysteria(Boolean(node.has_hysteria));
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -237,6 +244,7 @@ export function AdminNodes() {
     const updatedApiKey = editApiKey.trim();
     const updatedMobile = editIsMobileOptimized;
     const updatedBackup = editIsBackup;
+    const updatedHysteria = editHasHysteria;
 
     // Optimistic local state update
     const previousNodes = [...nodes];
@@ -252,6 +260,7 @@ export function AdminNodes() {
               api_url: updatedApiUrl,
               is_mobile_optimized: updatedMobile,
               is_backup: updatedBackup,
+              has_hysteria: updatedHysteria,
             }
           : n
       )
@@ -267,6 +276,7 @@ export function AdminNodes() {
         apiKey: updatedApiKey || undefined,
         isMobileOptimized: updatedMobile,
         isBackup: updatedBackup,
+        hasHysteria: updatedHysteria,
         countryCode: updatedCountry,
         providerUrl: updatedProvider,
       });
@@ -674,6 +684,39 @@ export function AdminNodes() {
             </div>
           </div>
 
+          {/* Hysteria 2 Checkbox */}
+          <div
+            onClick={() => setHasHysteria(!hasHysteria)}
+            className={`p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
+              hasHysteria
+                ? 'border-[#D9B96E] bg-[#06141B] shadow-lg shadow-[#D9B96E]/10'
+                : 'border-[#1C3945] bg-[#06141B]/60 hover:border-[#1C3945]/80'
+            }`}
+          >
+            <div className="flex items-start">
+              <input
+                type="checkbox"
+                checked={hasHysteria}
+                onChange={(e) => setHasHysteria(e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1 w-4 h-4 rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945] focus:ring-[#D9B96E] accent-[#D9B96E] cursor-pointer"
+              />
+              <div className="ml-3 flex-1">
+                <div className="flex items-center space-x-2">
+                  <span className="font-serif font-bold text-sm text-[#F2F0E8]">
+                    Поддержка Hysteria 2 (QUIC / UDP 443)
+                  </span>
+                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40">
+                    ⚡ Hysteria 2
+                  </span>
+                </div>
+                <p className="text-sm text-[#A8B4B7] mt-1 font-sans leading-relaxed">
+                  Включает возможность выпуска ключей и профилей Hysteria 2 (порт 443/UDP) для клиентов на данном сервере.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="flex justify-end space-x-3 pt-2">
             <button
               type="button"
@@ -766,6 +809,15 @@ export function AdminNodes() {
                         >
                           <Sparkles className="w-3.5 h-3.5 text-purple-300" />
                           <span>Запасной (PRO)</span>
+                        </span>
+                      )}
+                      {node.has_hysteria && (
+                        <span
+                          className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm"
+                          title="Поддерживается высокоскоростной протокол Hysteria 2 (QUIC / UDP 443)"
+                        >
+                          <Zap className="w-3.5 h-3.5 text-purple-300" />
+                          <span>Hysteria 2</span>
                         </span>
                       )}
                       {node.is_mobile_optimized && (
@@ -1069,6 +1121,39 @@ export function AdminNodes() {
                     </div>
                     <p className="text-sm text-[#A8B4B7] mt-1 font-sans leading-relaxed">
                       Резервный сервер для повышенной отказоустойчивости (только для тарифа PRO).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hysteria 2 Checkbox */}
+              <div
+                onClick={() => setEditHasHysteria(!editHasHysteria)}
+                className={`p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
+                  editHasHysteria
+                    ? 'border-[#D9B96E] bg-[#06141B] shadow-lg shadow-[#D9B96E]/10'
+                    : 'border-[#1C3945] bg-[#06141B]/60 hover:border-[#1C3945]/80'
+                }`}
+              >
+                <div className="flex items-start">
+                  <input
+                    type="checkbox"
+                    checked={editHasHysteria}
+                    onChange={(e) => setEditHasHysteria(e.target.checked)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1 w-4 h-4 rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945] focus:ring-[#D9B96E] accent-[#D9B96E] cursor-pointer"
+                  />
+                  <div className="ml-3 flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-serif font-bold text-sm text-[#F2F0E8]">
+                        Поддержка Hysteria 2 (QUIC / UDP 443)
+                      </span>
+                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40">
+                        ⚡ Hysteria 2
+                      </span>
+                    </div>
+                    <p className="text-sm text-[#A8B4B7] mt-1 font-sans leading-relaxed">
+                      Включает выпуск ключей Hysteria 2 на данном сервере.
                     </p>
                   </div>
                 </div>

@@ -45,8 +45,8 @@ func setupTestEnvironment(t *testing.T) (*master.Server, *httptest.Server, *stor
 	}, mockRunner)
 	slaveHttpSrv := httptest.NewServer(slaveSrv.Handler())
 
-	// Add mock slave node to DB
-	_, err = store.CreateNode(context.Background(), "Mock Cascade Node", "cascade", "NLD", "https://aeza.net", slaveHttpSrv.URL, slaveToken, true, false)
+	// Add mock slave node to DB (with Hysteria 2 enabled)
+	_, err = store.CreateNode(context.Background(), "Mock Cascade Node", "cascade", "NLD", "https://aeza.net", slaveHttpSrv.URL, slaveToken, true, false, true)
 	if err != nil {
 		t.Fatalf("failed to create mock node: %v", err)
 	}
@@ -1341,6 +1341,66 @@ func TestTelegramProxiesEndpoint(t *testing.T) {
 	p := proxies[0]
 	if p.Server != "s2.avari.dev" || p.Port != 8443 || !strings.Contains(p.Link, "tg://proxy") {
 		t.Fatalf("unexpected proxy info: %+v", p)
+	}
+}
+
+func TestHysteriaNodeValidationFlow(t *testing.T) {
+	masterSrv, slaveHttpSrv, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+	ctx := context.Background()
+
+	// 1. Create a node without Hysteria
+	nodeNoHysteria, err := store.CreateNode(ctx, "Node Without Hysteria", "direct", "DEU", "https://hetzner.com", slaveHttpSrv.URL, "slave-secret-123", false, false, false)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	// 2. Login as admin
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var loginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+	token := loginResp.Token
+
+	// 3. Try creating Hysteria 2 key on node without Hysteria -> Expect 400 Bad Request
+	failBody, _ := json.Marshal(models.CreateKeyRequest{
+		NodeID:     nodeNoHysteria.ID,
+		DeviceName: "test-hysteria-fail",
+		Protocol:   "hysteria2",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(failBody))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when creating Hysteria key on node without Hysteria, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "не поддерживает протокол Hysteria 2") {
+		t.Fatalf("expected error message to mention Hysteria 2 support, got: %s", rec.Body.String())
+	}
+
+	// 4. Create Hysteria 2 key on mock node with HasHysteria=true (created in setupTestEnvironment) -> Expect 201 Created
+	successBody, _ := json.Marshal(models.CreateKeyRequest{
+		NodeID:     1, // Mock Cascade Node has has_hysteria=true
+		DeviceName: "test-hysteria-ok",
+		Protocol:   "hysteria2",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(successBody))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created on Hysteria node, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

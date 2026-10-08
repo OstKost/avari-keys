@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/hysteria"
@@ -40,10 +42,29 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 
 	hyStore := cfg.HysteriaStore
 	if hyStore == nil {
-		var err error
-		hyStore, err = hysteria.NewStore("/opt/avari-keys/hysteria_users.json", "s2.avari.dev", 443)
-		if err != nil {
-			log.Printf("[SLAVE] Warning: failed to init hysteria store: %v", err)
+		hyEnabled := os.Getenv("HYSTERIA_ENABLED")
+		// If explicitly disabled with 0 or false, do not init hysteria
+		if hyEnabled != "false" && hyEnabled != "0" {
+			usersPath := os.Getenv("HYSTERIA_USERS_PATH")
+			if usersPath == "" {
+				usersPath = "/opt/avari-keys/hysteria_users.json"
+			}
+			hyServer := os.Getenv("HYSTERIA_SERVER")
+			if hyServer == "" {
+				hyServer = "s2.avari.dev"
+			}
+			hyPort := 443
+			if portStr := os.Getenv("HYSTERIA_PORT"); portStr != "" {
+				if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
+					hyPort = p
+				}
+			}
+
+			var err error
+			hyStore, err = hysteria.NewStore(usersPath, hyServer, hyPort)
+			if err != nil {
+				log.Printf("[SLAVE] Warning: failed to init hysteria store: %v", err)
+			}
 		}
 	}
 
@@ -139,10 +160,11 @@ func (s *Server) handleDecoy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	healthy := s.runner.CheckHealth(r.Context())
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
-		Status:       "ok",
-		Service:      "avari-slave",
-		AWGAvailable: healthy,
-		Version:      "v0.7.2",
+		Status:            "ok",
+		Service:           "avari-slave",
+		AWGAvailable:      healthy,
+		HysteriaAvailable: s.hysteria != nil,
+		Version:           "v0.7.2",
 	})
 }
 
