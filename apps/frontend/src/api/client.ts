@@ -248,7 +248,8 @@ const realApi = {
     isMobileOptimized?: boolean,
     countryCode?: string,
     providerUrl?: string,
-    isBackup?: boolean
+    isBackup?: boolean,
+    hasHysteria?: boolean
   ): Promise<AdminNode> {
     const res = await fetch(`${API_BASE}/admin/nodes`, {
       method: 'POST',
@@ -260,6 +261,7 @@ const realApi = {
         api_key: apiKey,
         is_mobile_optimized: isMobileOptimized || false,
         is_backup: isBackup || false,
+        has_hysteria: hasHysteria || false,
         country_code: countryCode || '',
         provider_url: providerUrl || '',
       }),
@@ -276,6 +278,7 @@ const realApi = {
       apiKey?: string;
       isMobileOptimized?: boolean;
       isBackup?: boolean;
+      hasHysteria?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
@@ -290,6 +293,7 @@ const realApi = {
         api_key: data.apiKey || '',
         is_mobile_optimized: data.isMobileOptimized || false,
         is_backup: data.isBackup || false,
+        has_hysteria: data.hasHysteria || false,
         country_code: data.countryCode || '',
         provider_url: data.providerUrl || '',
       }),

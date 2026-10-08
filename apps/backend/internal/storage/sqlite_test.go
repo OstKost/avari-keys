@@ -113,28 +113,28 @@ func TestNodesAndConfigsStorage(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. Create nodes (node1: normal, node2: backup)
-	node1, err := store.CreateNode(ctx, "Cascade Node", "cascade", "NLD", "https://aeza.net", "http://127.0.0.1:8081", "token1", true, false)
+	// 1. Create nodes (node1: normal + hysteria, node2: backup)
+	node1, err := store.CreateNode(ctx, "Cascade Node", "cascade", "NLD", "https://aeza.net", "http://127.0.0.1:8081", "token1", true, false, true)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}
-	if !node1.IsMobileOptimized || node1.CountryCode != "NLD" || node1.ProviderURL != "https://aeza.net" || node1.IsBackup {
+	if !node1.IsMobileOptimized || node1.CountryCode != "NLD" || node1.ProviderURL != "https://aeza.net" || node1.IsBackup || !node1.HasHysteria {
 		t.Fatalf("invalid node1 attributes: %+v", node1)
 	}
-	node2, err := store.CreateNode(ctx, "Direct Node", "direct", "DEU", "https://hetzner.com", "http://127.0.0.1:8082", "token2", false, true)
+	node2, err := store.CreateNode(ctx, "Direct Node", "direct", "DEU", "https://hetzner.com", "http://127.0.0.1:8082", "token2", false, true, false)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}
-	if node2.IsMobileOptimized || node2.CountryCode != "DEU" || node2.ProviderURL != "https://hetzner.com" || !node2.IsBackup {
+	if node2.IsMobileOptimized || node2.CountryCode != "DEU" || node2.ProviderURL != "https://hetzner.com" || !node2.IsBackup || node2.HasHysteria {
 		t.Fatalf("invalid node2 attributes: %+v", node2)
 	}
 
-	// Update node test: change is_backup to false
-	updatedNode2, err := store.UpdateNode(ctx, node2.ID, "Direct Node Updated", "direct", "FIN", "https://hetzner.com/vps", "http://127.0.0.1:8085", "", true, false)
+	// Update node test: change is_backup to false and has_hysteria to true
+	updatedNode2, err := store.UpdateNode(ctx, node2.ID, "Direct Node Updated", "direct", "FIN", "https://hetzner.com/vps", "http://127.0.0.1:8085", "", true, false, true)
 	if err != nil {
 		t.Fatalf("failed to update node: %v", err)
 	}
-	if updatedNode2.Name != "Direct Node Updated" || updatedNode2.CountryCode != "FIN" || updatedNode2.APIURL != "http://127.0.0.1:8085" || !updatedNode2.IsMobileOptimized || updatedNode2.IsBackup {
+	if updatedNode2.Name != "Direct Node Updated" || updatedNode2.CountryCode != "FIN" || updatedNode2.APIURL != "http://127.0.0.1:8085" || !updatedNode2.IsMobileOptimized || updatedNode2.IsBackup || !updatedNode2.HasHysteria {
 		t.Fatalf("invalid updated node attributes: %+v", updatedNode2)
 	}
 	if updatedNode2.APIKey != "token2" {
@@ -340,7 +340,7 @@ func TestBillingStorage(t *testing.T) {
 	}
 
 	// Add 5 keys to user (2 extra keys)
-	testNode, _ := store.CreateNode(ctx, "Billing Node", "direct", "NLD", "https://aeza.net", "http://127.0.0.1:8080", "secret", false, false)
+	testNode, _ := store.CreateNode(ctx, "Billing Node", "direct", "NLD", "https://aeza.net", "http://127.0.0.1:8080", "secret", false, false, false)
 	for i := 1; i <= 5; i++ {
 		_, _ = store.CreateClientConfig(ctx, user.ID, testNode.ID, fmt.Sprintf("key_%d", i), fmt.Sprintf("Device %d", i))
 	}
@@ -535,7 +535,7 @@ func TestTelemetryStorageAndMonthlyDelta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
-	node, err := store.CreateNode(ctx, "Test Node S1", "direct", "NLD", "https://aeza.net", "http://127.0.0.1:8080", "secret", false, false)
+	node, err := store.CreateNode(ctx, "Test Node S1", "direct", "NLD", "https://aeza.net", "http://127.0.0.1:8080", "secret", false, false, false)
 	if err != nil {
 		t.Fatalf("failed to create node: %v", err)
 	}

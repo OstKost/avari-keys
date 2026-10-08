@@ -466,7 +466,14 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	}, req.DeviceName)
 	clientName := fmt.Sprintf("u%d_%s", claims.UserID, cleanDevice)
 	proto := strings.ToLower(strings.TrimSpace(req.Protocol))
-	if proto != "hysteria2" {
+	if proto == "hysteria2" {
+		if !node.HasHysteria {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "Выбранный сервер не поддерживает протокол Hysteria 2",
+			})
+			return
+		}
+	} else {
 		proto = "awg"
 	}
 
@@ -1016,7 +1023,7 @@ func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup)
+	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1030,11 +1037,15 @@ func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 	if node.IsMobileOptimized {
 		mobileTag = " [Mobile 443/UDP]"
 	}
+	hysteriaTag := ""
+	if node.HasHysteria {
+		hysteriaTag = " [Hysteria 2]"
+	}
 	countryTag := ""
 	if node.CountryCode != "" {
 		countryTag = fmt.Sprintf(" [%s]", node.CountryCode)
 	}
-	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_create", fmt.Sprintf("Добавлен новый сервер «%s» (%s%s%s%s, URL: %s)", node.Name, node.Type, countryTag, mobileTag, backupTag, node.APIURL))
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_create", fmt.Sprintf("Добавлен новый сервер «%s» (%s%s%s%s%s, URL: %s)", node.Name, node.Type, countryTag, mobileTag, backupTag, hysteriaTag, node.APIURL))
 
 	s.invalidateDashboardCache()
 
@@ -1072,7 +1083,7 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup)
+	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1086,11 +1097,15 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 	if node.IsMobileOptimized {
 		mobileTag = " [Mobile 443/UDP]"
 	}
+	hysteriaTag := ""
+	if node.HasHysteria {
+		hysteriaTag = " [Hysteria 2]"
+	}
 	countryTag := ""
 	if node.CountryCode != "" {
 		countryTag = fmt.Sprintf(" [%s]", node.CountryCode)
 	}
-	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_update", fmt.Sprintf("Обновлены параметры сервера «%s» (ID #%d, %s%s%s%s, URL: %s)", node.Name, node.ID, node.Type, countryTag, mobileTag, backupTag, node.APIURL))
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_update", fmt.Sprintf("Обновлены параметры сервера «%s» (ID #%d, %s%s%s%s%s, URL: %s)", node.Name, node.ID, node.Type, countryTag, mobileTag, backupTag, hysteriaTag, node.APIURL))
 
 	s.invalidateDashboardCache()
 

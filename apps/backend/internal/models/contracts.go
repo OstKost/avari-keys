@@ -4,10 +4,11 @@ import "time"
 
 // HealthResponse represents system and service health status.
 type HealthResponse struct {
-	Status       string `json:"status"`
-	Service      string `json:"service"`
-	AWGAvailable bool   `json:"awg_available"`
-	Version      string `json:"version,omitempty"`
+	Status            string `json:"status"`
+	Service           string `json:"service"`
+	AWGAvailable      bool   `json:"awg_available"`
+	HysteriaAvailable bool   `json:"hysteria_available,omitempty"`
+	Version           string `json:"version,omitempty"`
 }
 
 // ClientCreateRequest payload for creating a client key.
