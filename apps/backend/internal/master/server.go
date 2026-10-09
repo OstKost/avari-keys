@@ -820,6 +820,9 @@ func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
 		if !isOnline {
 			latency = 0
 		}
+		if isOnline && health != nil && health.HysteriaAvailable {
+			n.HasHysteria = true
+		}
 		res = append(res, models.NodeWithStatus{
 			Node:      n,
 			Online:    isOnline,
