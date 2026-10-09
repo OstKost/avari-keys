@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Key, Server, Users, LogOut, Plus, QrCode as QrIcon, Trash2, Smartphone, Laptop, AlertCircle, Sparkles, ShieldCheck, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send } from 'lucide-react';
+import { Key, Server, Users, LogOut, Plus, QrCode as QrIcon, Trash2, Smartphone, Laptop, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send } from 'lucide-react';
 import { api, isMockMode, setMockMode } from './api/client';
 import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem, TelegramProxyInfo, ProtocolType } from './types';
 import { AuthModal } from './components/AuthModal';
@@ -330,54 +330,95 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-[1680px] mx-auto px-3 sm:px-6 lg:px-10 py-5 sm:py-8 w-full">
         
-        {/* Navigation Tabs (Smooth horizontal swipe on mobile) */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
-          <button
-            onClick={() => setActiveTab('keys')}
-            className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-              activeTab === 'keys'
-                ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-            }`}
-          >
-            <Key className="w-4 h-4" />
-            <span>Мои устройства</span>
-          </button>
+        {/* Navigation Tabs */}
+        {currentUser.role === 'admin' ? (
+          <div className="space-y-2.5 pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80">
+            {/* Row 1: User / Common Pages */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
+              <div className="hidden sm:flex items-center space-x-1.5 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-[#A8B4B7]/70 bg-[#06141B]/80 rounded-lg border border-[#1C3945]/50 shrink-0">
+                <UserIcon className="w-3.5 h-3.5 text-[#D9B96E]" />
+                <span>Клиент</span>
+              </div>
 
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-              activeTab === 'dashboard'
-                ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-            }`}
-          >
-            <Radio className="w-4 h-4" />
-            <span>Статус сети</span>
-          </button>
+              <button
+                onClick={() => setActiveTab('keys')}
+                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                  activeTab === 'keys'
+                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+                }`}
+              >
+                <Key className="w-4 h-4" />
+                <span>Мои устройства</span>
+              </button>
 
-          <button
-            onClick={handleOpenNewsTab}
-            className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-              activeTab === 'news'
-                ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-            }`}
-          >
-            <Newspaper className="w-4 h-4" />
-            <span>Новости</span>
-            {hasUnreadNews && (
-              <span className="w-2 h-2 rounded-full bg-[#F0D48D] shadow-sm shadow-[#F0D48D] animate-pulse ml-0.5" />
-            )}
-          </button>
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                  activeTab === 'dashboard'
+                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+                }`}
+              >
+                <Radio className="w-4 h-4" />
+                <span>Статус сети</span>
+              </button>
 
-          {currentUser.role === 'admin' && (
-            <>
+              <button
+                onClick={handleOpenNewsTab}
+                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                  activeTab === 'news'
+                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+                }`}
+              >
+                <Newspaper className="w-4 h-4" />
+                <span>Новости</span>
+                {hasUnreadNews && (
+                  <span className="w-2 h-2 rounded-full bg-[#F0D48D] shadow-sm shadow-[#F0D48D] animate-pulse ml-0.5" />
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('billing')}
+                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                  activeTab === 'billing'
+                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+                }`}
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>Биллинг</span>
+                {billingStatus?.is_due && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('profile')}
+                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                  activeTab === 'profile'
+                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+                }`}
+              >
+                <UserIcon className="w-4 h-4" />
+                <span>Мой профиль</span>
+              </button>
+            </div>
+
+            {/* Row 2: Administration Only Pages */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap pt-1">
+              <div className="hidden sm:flex items-center space-x-1.5 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-purple-300/80 bg-purple-950/40 rounded-lg border border-purple-800/40 shrink-0">
+                <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
+                <span>Админ</span>
+              </div>
+
               <button
                 onClick={() => setActiveTab('nodes')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'nodes'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
                     : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
                 }`}
               >
@@ -389,7 +430,7 @@ export default function App() {
                 onClick={() => setActiveTab('users')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'users'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
                     : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
                 }`}
               >
@@ -401,7 +442,7 @@ export default function App() {
                 onClick={() => setActiveTab('all-keys')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'all-keys'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
                     : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
                 }`}
               >
@@ -413,7 +454,7 @@ export default function App() {
                 onClick={() => setActiveTab('logs')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'logs'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
                     : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
                 }`}
               >
@@ -425,43 +466,84 @@ export default function App() {
                 onClick={() => setActiveTab('settings')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'settings'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                    ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
                     : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
                 }`}
               >
                 <Settings className="w-4 h-4" />
                 <span>Настройки</span>
               </button>
-            </>
-          )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
+            <button
+              onClick={() => setActiveTab('keys')}
+              className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                activeTab === 'keys'
+                  ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                  : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+              }`}
+            >
+              <Key className="w-4 h-4" />
+              <span>Мои устройства</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('billing')}
-            className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-              activeTab === 'billing'
-                ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-            }`}
-          >
-            <CreditCard className="w-4 h-4" />
-            <span>Биллинг</span>
-            {billingStatus?.is_due && (
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
-            )}
-          </button>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                activeTab === 'dashboard'
+                  ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                  : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+              }`}
+            >
+              <Radio className="w-4 h-4" />
+              <span>Статус сети</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-              activeTab === 'profile'
-                ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-            }`}
-          >
-            <UserIcon className="w-4 h-4" />
-            <span>Мой профиль</span>
-          </button>
-        </div>
+            <button
+              onClick={handleOpenNewsTab}
+              className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                activeTab === 'news'
+                  ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                  : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+              }`}
+            >
+              <Newspaper className="w-4 h-4" />
+              <span>Новости</span>
+              {hasUnreadNews && (
+                <span className="w-2 h-2 rounded-full bg-[#F0D48D] shadow-sm shadow-[#F0D48D] animate-pulse ml-0.5" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('billing')}
+              className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                activeTab === 'billing'
+                  ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                  : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+              }`}
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Биллинг</span>
+              {billingStatus?.is_due && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
+                activeTab === 'profile'
+                  ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                  : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
+              }`}
+            >
+              <UserIcon className="w-4 h-4" />
+              <span>Мой профиль</span>
+            </button>
+          </div>
+        )}
 
         {/* Tab Container */}
         <div className="bg-[#0A1D26]/70 border border-[#1C3945] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
