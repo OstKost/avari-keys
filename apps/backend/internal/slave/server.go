@@ -178,7 +178,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Service:           "avari-slave",
 		AWGAvailable:      healthy,
 		HysteriaAvailable: hyAvail,
-		Version:           "v0.8.1",
+		Version:           "v0.8.2",
 	})
 }
 
