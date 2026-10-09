@@ -640,7 +640,7 @@ export function AdminNodes() {
                   <span className="font-serif font-bold text-sm text-[#F2F0E8]">
                     Оптимизирован для мобильных сетей (--mobile / 443 UDP)
                   </span>
-                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30">
+                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 whitespace-nowrap shrink-0">
                     LTE / 5G
                   </span>
                 </div>
@@ -673,7 +673,7 @@ export function AdminNodes() {
                   <span className="font-serif font-bold text-sm text-[#F2F0E8]">
                     Запасной сервер (доступен только для тарифа PRO)
                   </span>
-                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40">
+                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40 whitespace-nowrap shrink-0">
                     PRO
                   </span>
                 </div>
@@ -706,7 +706,7 @@ export function AdminNodes() {
                   <span className="font-serif font-bold text-sm text-[#F2F0E8]">
                     Поддержка Hysteria 2 (QUIC / UDP 443)
                   </span>
-                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40">
+                  <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40 whitespace-nowrap shrink-0">
                     ⚡ Hysteria 2
                   </span>
                 </div>
@@ -804,7 +804,7 @@ export function AdminNodes() {
                       <span className="font-semibold text-sm">{node.name}</span>
                       {node.is_backup && (
                         <span
-                          className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm"
+                          className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
                           title="Запасной сервер — доступен только для тарифа PRO"
                         >
                           <Sparkles className="w-3.5 h-3.5 text-purple-300" />
@@ -813,7 +813,7 @@ export function AdminNodes() {
                       )}
                       {node.has_hysteria && (
                         <span
-                          className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm"
+                          className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
                           title="Поддерживается высокоскоростной протокол Hysteria 2 (QUIC / UDP 443)"
                         >
                           <Zap className="w-3.5 h-3.5 text-purple-300" />
@@ -822,7 +822,7 @@ export function AdminNodes() {
                       )}
                       {node.is_mobile_optimized && (
                         <span
-                          className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold"
+                          className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0"
                           title="Оптимизирован для мобильных сетей (--mobile 443/UDP)"
                         >
                           <Smartphone className="w-3.5 h-3.5" />
@@ -1082,7 +1082,7 @@ export function AdminNodes() {
                       <span className="font-serif font-bold text-sm text-[#F2F0E8]">
                         Оптимизирован для мобильных сетей (--mobile / 443 UDP)
                       </span>
-                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30">
+                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 whitespace-nowrap shrink-0">
                         LTE / 5G
                       </span>
                     </div>
@@ -1115,7 +1115,7 @@ export function AdminNodes() {
                       <span className="font-serif font-bold text-sm text-[#F2F0E8]">
                         Запасной сервер (доступен только для тарифа PRO)
                       </span>
-                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40">
+                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40 whitespace-nowrap shrink-0">
                         PRO
                       </span>
                     </div>
@@ -1148,7 +1148,7 @@ export function AdminNodes() {
                       <span className="font-serif font-bold text-sm text-[#F2F0E8]">
                         Поддержка Hysteria 2 (QUIC / UDP 443)
                       </span>
-                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40">
+                      <span className="text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40 whitespace-nowrap shrink-0">
                         ⚡ Hysteria 2
                       </span>
                     </div>

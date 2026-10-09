@@ -250,7 +250,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v0.8.0",
+		Version: "v0.8.1",
 	})
 }
 
@@ -819,6 +819,9 @@ func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
 		isOnline := hErr == nil && health != nil && health.Status == "ok"
 		if !isOnline {
 			latency = 0
+		}
+		if isOnline && health != nil && health.HysteriaAvailable {
+			n.HasHysteria = true
 		}
 		res = append(res, models.NodeWithStatus{
 			Node:      n,

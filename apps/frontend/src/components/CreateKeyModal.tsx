@@ -196,7 +196,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                         <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
                           {node.is_backup && (
                             <span
-                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40 shadow-sm"
+                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40 shadow-sm whitespace-nowrap shrink-0"
                               title="Запасной сервер — доступен только для тарифа PRO"
                             >
                               <Sparkles className="w-3 h-3 text-purple-300" />
@@ -205,7 +205,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                           )}
                           {isNodeLocked && (
                             <span
-                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-[#102833] text-amber-300 border border-amber-500/30"
+                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-[#102833] text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0"
                               title="Доступно на тарифе PRO"
                             >
                               <Lock className="w-3 h-3 text-amber-300" />
@@ -214,7 +214,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                           )}
                           {node.has_hysteria && (
                             <span
-                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40 shadow-sm"
+                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40 shadow-sm whitespace-nowrap shrink-0"
                               title="Поддерживается высокоскоростной протокол Hysteria 2"
                             >
                               <Zap className="w-3 h-3 text-purple-300" />
@@ -223,7 +223,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                           )}
                           {node.is_mobile_optimized && (
                             <span 
-                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#06141B] text-[#D9B96E] border border-[#D9B96E]/40" 
+                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#06141B] text-[#D9B96E] border border-[#D9B96E]/40 whitespace-nowrap shrink-0" 
                               title="Оптимизирован для мобильных сетей (порт 443/UDP)"
                             >
                               <Smartphone className="w-3 h-3" />
@@ -231,7 +231,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                             </span>
                           )}
                           <span
-                            className={`text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 sm:px-2.5 py-0.5 rounded-full ${
+                            className={`text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 sm:px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${
                               node.type === 'cascade'
                                 ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
                                 : 'bg-[#06141B] text-[#6EA8C4] border border-[#6EA8C4]/40'
