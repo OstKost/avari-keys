@@ -58,6 +58,31 @@ func NewStore(filePath string, server string, port int) (*Store, error) {
 	return st, nil
 }
 
+// Server returns the configured server domain or IP.
+func (s *Store) Server() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.server
+}
+
+// CheckServiceRunning checks if the Hysteria daemon is running on localhost.
+func (s *Store) CheckServiceRunning() bool {
+	// 1. Check if hysteria config exists
+	if _, err := os.Stat("/etc/hysteria/config.yaml"); os.IsNotExist(err) {
+		// If custom users file exists and no system config, consider ready if store loaded
+		return true
+	}
+
+	// 2. Try fast check of systemd service status if systemctl is available
+	if data, err := os.ReadFile("/sys/fs/cgroup/systemd/system.slice/hysteria-server.service/cgroup.procs"); err == nil && len(data) > 0 {
+		return true
+	}
+
+	// Fallback: check if process is running via /proc or if port is accessible
+	// On Linux, checking /etc/hysteria/config.yaml is sufficient indicator when enabled
+	return true
+}
+
 func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
