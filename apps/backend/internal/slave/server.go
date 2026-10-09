@@ -51,7 +51,17 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 			}
 			hyServer := os.Getenv("HYSTERIA_SERVER")
 			if hyServer == "" {
-				hyServer = "s2.avari.dev"
+				// Fallback to NODE_DOMAIN or system hostname if set, else default s2.avari.dev
+				if nodeDomain := os.Getenv("NODE_DOMAIN"); nodeDomain != "" {
+					hyServer = nodeDomain
+				} else {
+					hName, _ := os.Hostname()
+					if strings.Contains(hName, ".") {
+						hyServer = hName
+					} else {
+						hyServer = "s2.avari.dev"
+					}
+				}
 			}
 			hyPort := 443
 			if portStr := os.Getenv("HYSTERIA_PORT"); portStr != "" {
@@ -159,12 +169,16 @@ func (s *Server) handleDecoy(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	healthy := s.runner.CheckHealth(r.Context())
+	hyAvail := false
+	if s.hysteria != nil {
+		hyAvail = s.hysteria.CheckServiceRunning()
+	}
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:            "ok",
 		Service:           "avari-slave",
 		AWGAvailable:      healthy,
-		HysteriaAvailable: s.hysteria != nil,
-		Version:           "v0.8.1",
+		HysteriaAvailable: hyAvail,
+		Version:           "v0.8.2",
 	})
 }
 
