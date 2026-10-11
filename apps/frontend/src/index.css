@@ -6,6 +6,11 @@
   color-scheme: dark;
 }
 
+html {
+  scrollbar-gutter: stable;
+  overflow-y: scroll;
+}
+
 body {
   margin: 0;
   display: flex;
