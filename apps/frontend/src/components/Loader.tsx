@@ -63,7 +63,7 @@ export function Loader({ size = 'section', text = 'Загрузка данных
 
   // size === 'section'
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4">
+    <div className="flex flex-col items-center justify-center py-16 px-4 min-h-[380px]">
       <div className="relative mb-4 flex items-center justify-center">
         {/* Outer subtle glow */}
         <div className="absolute w-16 h-16 rounded-full bg-[#D9B96E]/5 animate-ping opacity-50 pointer-events-none" />
