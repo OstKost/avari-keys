@@ -904,8 +904,11 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="border-t border-[#1C3945]/60 py-6 text-center text-sm text-[#718187] font-mono tracking-wider">
-        Avari Keys &copy; 2026 — «Добровольный кооператив • Частная виртуальная сеть»
+      <footer className="border-t border-[#1C3945]/60 py-6 text-center text-sm text-[#718187] font-mono tracking-wider flex flex-col sm:flex-row items-center justify-center gap-2">
+        <span>Avari Keys &copy; 2026 — «Добровольный кооператив • Частная виртуальная сеть»</span>
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[#112630] border border-[#1C3945] text-cyan-400">
+          {__APP_VERSION__}
+        </span>
       </footer>
     </div>
   );
