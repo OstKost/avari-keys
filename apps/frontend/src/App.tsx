@@ -546,11 +546,12 @@ export default function App() {
         )}
 
         {/* Tab Container */}
-        <div className="bg-[#0A1D26]/70 border border-[#1C3945] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+        <div className="bg-[#0A1D26]/70 border border-[#1C3945] rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden min-h-[520px]">
           
           {/* Subtle Elven Glow Overlay */}
           <div className="absolute top-0 right-0 w-96 h-96 bg-[radial-gradient(circle_at_100%_0%,rgba(217,185,110,0.05)_0%,transparent_70%)] pointer-events-none" />
 
+          <div key={activeTab} className="animate-fadeIn">
           {activeTab === 'keys' && (
             <div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
@@ -817,6 +818,7 @@ export default function App() {
           {activeTab === 'settings' && <AdminSettings />}
           {activeTab === 'billing' && <BillingPage currentUser={currentUser} />}
           {activeTab === 'profile' && <UserProfile user={currentUser} onUserUpdated={(u) => setCurrentUser(u)} />}
+          </div>
         </div>
       </main>
 
