@@ -467,3 +467,182 @@ func TestTelegramBotUserApprovalCallbackQuery(t *testing.T) {
 	mu.Unlock()
 }
 
+func TestTelegramBotPaidDuesCallbackQuery(t *testing.T) {
+	var mu sync.Mutex
+	var sentMessages []map[string]any
+	var answeredCallbacks []map[string]any
+	var editedMessages []map[string]any
+
+	mockTG := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if strings.Contains(r.URL.Path, "sendMessage") {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			sentMessages = append(sentMessages, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok": true, "result": {"message_id": 201}}`))
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "answerCallbackQuery") {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			answeredCallbacks = append(answeredCallbacks, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok": true, "result": true}`))
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "editMessageText") {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			editedMessages = append(editedMessages, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok": true, "result": {"message_id": 201}}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok": true, "result": []}`))
+	}))
+	defer mockTG.Close()
+
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// 1. Create user and register chat
+	user, err := store.CreateUser(ctx, "legolas", "greenleaf123")
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	_ = store.SetUserActive(ctx, user.ID, true)
+
+	userChatID := int64(777888999)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        userChatID,
+		UserID:        &user.ID,
+		Username:      "legolas_archer",
+		FirstName:     "Legolas",
+		IsAdmin:       false,
+		AlertsEnabled: true,
+	})
+
+	// Stranger chat
+	strangerChatID := int64(333222111)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        strangerChatID,
+		Username:      "gollum",
+		FirstName:     "Smeagol",
+		IsAdmin:       false,
+		AlertsEnabled: true,
+	})
+
+	// Admin chat
+	adminChatID := int64(999000111)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        adminChatID,
+		Username:      "gandalf",
+		FirstName:     "Mithrandir",
+		IsAdmin:       true,
+		AlertsEnabled: true,
+	})
+
+	cfg := telegram.Config{
+		APIURL:      mockTG.URL,
+		Token:       "test_paid_token",
+		BotUsername: "PaidElfBot",
+		Storage:     store,
+	}
+	bot := telegram.NewBot(cfg)
+
+	// 2. Test SendBillingReminder attaches "✅ Оплатил" button
+	reqs := &models.BillingRequisites{
+		SBPPhone: "+7 (999) 111-22-33",
+		SBPBank:  "Т-Банк",
+	}
+	err = bot.SendBillingReminder(userChatID, user.ID, user.Username, 2, 200.0, 2, reqs)
+	if err != nil {
+		t.Fatalf("unexpected error in SendBillingReminder: %v", err)
+	}
+
+	mu.Lock()
+	if len(sentMessages) == 0 {
+		mu.Unlock()
+		t.Fatalf("expected billing reminder message to be sent")
+	}
+	reminderMsg := sentMessages[len(sentMessages)-1]
+	mu.Unlock()
+
+	if reminderMsg["reply_markup"] == nil {
+		t.Fatalf("expected reply_markup with 'Оплатил' button, got nil")
+	}
+
+	// 3. Test stranger clicks "Оплатил" -> permission denied
+	strangerCB := &telegram.TGCallbackQuery{
+		ID: "cb_stranger_1",
+		From: telegram.TGUser{
+			ID:        strangerChatID,
+			Username:  "gollum",
+			FirstName: "Smeagol",
+		},
+		Message: &telegram.TGMessage{
+			MessageID: 201,
+			Chat: telegram.TGChat{
+				ID: strangerChatID,
+			},
+		},
+		Data: fmt.Sprintf("paid_dues:%d", user.ID),
+	}
+	bot.ProcessCallbackQuery(ctx, strangerCB)
+
+	mu.Lock()
+	if len(answeredCallbacks) == 0 || !strings.Contains(answeredCallbacks[len(answeredCallbacks)-1]["text"].(string), "только владельцу") {
+		mu.Unlock()
+		t.Fatalf("expected permission denied for stranger callback")
+	}
+	mu.Unlock()
+
+	// 4. Test account owner clicks "Оплатил" -> payment recorded
+	ownerCB := &telegram.TGCallbackQuery{
+		ID: "cb_owner_1",
+		From: telegram.TGUser{
+			ID:        userChatID,
+			Username:  "legolas_archer",
+			FirstName: "Legolas",
+		},
+		Message: &telegram.TGMessage{
+			MessageID: 201,
+			Chat: telegram.TGChat{
+				ID: userChatID,
+			},
+		},
+		Data: fmt.Sprintf("paid_dues:%d", user.ID),
+	}
+	bot.ProcessCallbackQuery(ctx, ownerCB)
+
+	// Verify payment recorded in storage
+	records, err := store.GetBillingRecords(ctx, user.ID)
+	if err != nil || len(records) == 0 {
+		t.Fatalf("expected billing record to be inserted, err: %v, count: %d", err, len(records))
+	}
+
+	mu.Lock()
+	if len(answeredCallbacks) == 0 || !strings.Contains(answeredCallbacks[len(answeredCallbacks)-1]["text"].(string), "зафиксирована") {
+		mu.Unlock()
+		t.Fatalf("expected success callback answer for owner, got: %+v", answeredCallbacks)
+	}
+
+	if len(editedMessages) == 0 || !strings.Contains(editedMessages[len(editedMessages)-1]["text"].(string), "Взнос подтвержден") {
+		mu.Unlock()
+		t.Fatalf("expected reminder message to be edited with confirmation, got: %+v", editedMessages)
+	}
+	mu.Unlock()
+}
+
