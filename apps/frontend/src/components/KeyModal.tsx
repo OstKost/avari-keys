@@ -280,9 +280,9 @@ export function KeyModal({ keyData, onClose }: Props) {
                     Hysteria 2
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-[#102833] text-[#D9B96E] border border-[#1C3945]">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30">
                     <Zap className="w-3 h-3 text-[#D9B96E]" />
-                    AmneziaWG
+                    AWG
                   </span>
                 )}
               </p>

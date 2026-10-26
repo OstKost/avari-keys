@@ -744,9 +744,13 @@ export default function App() {
                             >
                               {formatNodeRouting(k.node_type || 'direct', k.node_country_code).fullText}
                             </span>
-                            {k.protocol === 'hysteria2' && (
-                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-950/80 text-violet-300 border border-violet-500/40">
+                            {k.protocol === 'hysteria2' ? (
+                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-950/80 text-violet-300 border border-violet-500/40 shadow-sm">
                                 Hysteria 2
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 shadow-sm">
+                                AWG
                               </span>
                             )}
                           </div>
