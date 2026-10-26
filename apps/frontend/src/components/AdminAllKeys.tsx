@@ -176,7 +176,18 @@ export function AdminAllKeys() {
               <tr key={k.id} className="hover:bg-[#102833]/50 transition duration-150">
                 <td className="px-5 py-3.5 text-[#718187] font-mono text-sm">#{k.id}</td>
                 <td className="px-5 py-3.5">
-                  <div className="font-medium text-[#F2F0E8] text-sm">{k.device_name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-[#F2F0E8] text-sm">{k.device_name}</span>
+                    {k.protocol === 'hysteria2' ? (
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-950/80 text-violet-300 border border-violet-500/40 shadow-sm">
+                        Hysteria 2
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 shadow-sm">
+                        AWG
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm font-mono text-[#D9B96E] mt-0.5">{k.client_name}</div>
                 </td>
                 <td className="px-5 py-3.5 text-sm font-mono">
