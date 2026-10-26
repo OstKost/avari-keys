@@ -606,7 +606,18 @@ func (b *Bot) handleBillingCommand(ctx context.Context, chatID int64) {
 			"<i>Сумма взноса является добровольной и ориентировочной. Спасибо за поддержку сети! ✨</i>",
 		statusEmoji, statusText, status.KeyCount, status.RecommendedAmount, dueText, phone, bank,
 	)
-	_ = b.SendMessage(chatID, msg, "HTML")
+
+	var markup any
+	if linkedUserID != nil && *linkedUserID > 0 {
+		markup = InlineKeyboardMarkup{
+			InlineKeyboard: [][]InlineKeyboardButton{
+				{
+					{Text: "✅ Оплатил", CallbackData: fmt.Sprintf("paid_dues:%d", *linkedUserID)},
+				},
+			},
+		}
+	}
+	_ = b.SendMessageWithMarkup(chatID, msg, "HTML", markup)
 }
 
 func (b *Bot) handleStatusCommand(ctx context.Context, chatID int64) {
@@ -714,7 +725,7 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cb *TGCallbackQuery) {
 		return
 	}
 
-	// 1. Verify caller authorization: must be registered admin
+	// 1. Verify caller authorization: get chat if available
 	var currentChat *models.TelegramChat
 	if b.storage != nil {
 		currentChat, _ = b.storage.GetTelegramChatByChatID(ctx, cb.From.ID)
@@ -723,11 +734,6 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cb *TGCallbackQuery) {
 	isAdmin := false
 	if currentChat != nil && currentChat.IsAdmin {
 		isAdmin = true
-	}
-
-	if !isAdmin {
-		_ = b.AnswerCallbackQuery(cb.ID, "⛔ У вас нет прав администратора для выполнения этого действия", true)
-		return
 	}
 
 	adminName := cb.From.Username
@@ -740,7 +746,97 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cb *TGCallbackQuery) {
 
 	// 2. Route callback action
 	switch {
+	case strings.HasPrefix(cb.Data, "paid_dues:"):
+		idStr := strings.TrimPrefix(cb.Data, "paid_dues:")
+		targetUserID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "Некорректный ID пользователя", true)
+			return
+		}
+
+		if b.storage == nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "База данных недоступна", true)
+			return
+		}
+
+		// Security check: caller must be the account owner or an admin
+		isOwner := currentChat != nil && currentChat.UserID != nil && *currentChat.UserID == targetUserID
+		if !isOwner && !isAdmin {
+			_ = b.AnswerCallbackQuery(cb.ID, "⛔ Это действие доступно только владельцу аккаунта", true)
+			return
+		}
+
+		user, err := b.storage.GetUserByID(ctx, targetUserID)
+		if err != nil || user == nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "Пользователь не найден", true)
+			return
+		}
+
+		st, sErr := b.storage.GetBillingStatus(ctx, targetUserID)
+		amount := 200.0
+		if sErr == nil && st != nil && st.RecommendedAmount > 0 {
+			amount = st.RecommendedAmount
+		}
+
+		callerName := cb.From.Username
+		if callerName == "" {
+			callerName = cb.From.FirstName
+		}
+		if callerName == "" {
+			callerName = fmt.Sprintf("ID#%d", cb.From.ID)
+		}
+
+		rec, err := b.storage.RecordPayment(ctx, targetUserID, user.Username, amount, fmt.Sprintf("Подтверждено через Telegram (@%s)", callerName))
+		if err != nil {
+			_ = b.AnswerCallbackQuery(cb.ID, fmt.Sprintf("Ошибка сохранения: %v", err), true)
+			return
+		}
+
+		_ = b.storage.CreateAuditLog(ctx, &models.AuditLog{
+			UserID:   &targetUserID,
+			Username: user.Username,
+			Action:   "payment_recorded_tg",
+			Category: models.CategoryBilling,
+			Details:  fmt.Sprintf("Пользователь «%s» подтвердил оплату кооперативного взноса (%.0f ₽, период %s) через Telegram (@%s)", user.Username, amount, rec.PeriodMonth, callerName),
+		})
+
+		_ = b.AnswerCallbackQuery(cb.ID, "✅ Оплата взноса успешно зафиксирована! Спасибо за поддержку сети! ✨", false)
+
+		if cb.Message != nil {
+			updatedText := fmt.Sprintf(
+				"🌿 <b>[Avari Keys] Кооперативный взнос</b>\n"+
+					"━━━━━━━━━━━━━━━━━━━━━\n"+
+					"Пользователь: <b>%s</b>\n"+
+					"Статус: 🟢 <b>Взнос подтвержден</b>\n"+
+					"💳 Сумма: <b>%.0f ₽</b>\n"+
+					"⏱ Дата: <b>%s</b>\n\n"+
+					"<i>Спасибо за поддержку серверной инфраструктуры Avari Keys! ✨</i>",
+				user.Username,
+				amount,
+				time.Now().Format("02.01.2006 15:04"),
+			)
+			_ = b.EditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, updatedText, "HTML", InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{}})
+		}
+
+		_ = b.BroadcastAlert(fmt.Sprintf(
+			"💳 <b>[Avari Keys] Поступление взноса</b>\n"+
+				"━━━━━━━━━━━━━━━━━━━━━\n"+
+				"Пользователь: <b>%s</b> (ID #%d)\n"+
+				"Сумма: <b>%.0f ₽</b>\n"+
+				"Способ: <b>Telegram (@%s)</b>\n"+
+				"Период: <b>%s</b>",
+			user.Username,
+			user.ID,
+			amount,
+			callerName,
+			rec.PeriodMonth,
+		))
+
 	case strings.HasPrefix(cb.Data, "approve_user:"):
+		if !isAdmin {
+			_ = b.AnswerCallbackQuery(cb.ID, "⛔ У вас нет прав администратора для выполнения этого действия", true)
+			return
+		}
 		idStr := strings.TrimPrefix(cb.Data, "approve_user:")
 		userID, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
@@ -1150,8 +1246,8 @@ func (b *Bot) SendTestAlert(chatID int64) error {
 	return b.BroadcastAlert(msg)
 }
 
-// SendBillingReminder sends a personal dues reminder to a user's Telegram chat.
-func (b *Bot) SendBillingReminder(chatID int64, username string, keyCount int, amount float64, daysRemaining int, reqs *models.BillingRequisites) error {
+// SendBillingReminder sends a personal dues reminder to a user's Telegram chat with a quick "Оплатил" button.
+func (b *Bot) SendBillingReminder(chatID int64, userID int64, username string, keyCount int, amount float64, daysRemaining int, reqs *models.BillingRequisites) error {
 	b.mu.RLock()
 	notify := b.notifyOnBillingReminders
 	b.mu.RUnlock()
@@ -1190,7 +1286,19 @@ func (b *Bot) SendBillingReminder(chatID int64, username string, keyCount int, a
 			"<i>Взнос является добровольной поддержкой серверной инфраструктуры. Спасибо за участие в сети! ✨</i>",
 		username, dueText, keyCount, amount, phone, bank,
 	)
-	return b.SendMessage(chatID, msg, "HTML")
+
+	var markup any
+	if userID > 0 {
+		markup = InlineKeyboardMarkup{
+			InlineKeyboard: [][]InlineKeyboardButton{
+				{
+					{Text: "✅ Оплатил", CallbackData: fmt.Sprintf("paid_dues:%d", userID)},
+				},
+			},
+		}
+	}
+
+	return b.SendMessageWithMarkup(chatID, msg, "HTML", markup)
 }
 
 // BroadcastBillingReminders checks users needing payment and sends notifications.
@@ -1231,7 +1339,7 @@ func (b *Bot) BroadcastBillingReminders(ctx context.Context) error {
 
 		// Send reminder if 3 days or less remaining or overdue
 		if st.IsDue || st.DaysRemaining <= 3 {
-			_ = b.SendBillingReminder(chat.ChatID, u.Username, st.KeyCount, st.RecommendedAmount, st.DaysRemaining, reqs)
+			_ = b.SendBillingReminder(chat.ChatID, u.ID, u.Username, st.KeyCount, st.RecommendedAmount, st.DaysRemaining, reqs)
 		}
 	}
 
