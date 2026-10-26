@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Zap, ShieldCheck, Smartphone, HelpCircle, Lock, Sparkles } from 'lucide-react';
+import { X, Plus, Zap, Shield, ShieldCheck, Smartphone, HelpCircle, Lock, Sparkles } from 'lucide-react';
 import { User, NodePublic, ProtocolType } from '../types';
 import { formatNodeRouting } from '../utils/country';
 import { MascotModalCompanion, MascotFaqModal } from './MascotAssistant';
@@ -212,6 +212,13 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                               <span>Только PRO</span>
                             </span>
                           )}
+                          <span
+                            className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 shadow-sm whitespace-nowrap shrink-0"
+                            title="Поддерживается протокол AmneziaWG (AWG)"
+                          >
+                            <Shield className="w-3 h-3 text-[#D9B96E]" />
+                            <span>AWG</span>
+                          </span>
                           {node.has_hysteria && (
                             <span
                               className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40 shadow-sm whitespace-nowrap shrink-0"

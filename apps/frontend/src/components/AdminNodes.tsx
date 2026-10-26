@@ -22,6 +22,7 @@ import {
   Settings,
   Sparkles,
   Zap,
+  Shield,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { AdminNode, EgressStatusResponse, TelegramStatusResponse } from '../types';
@@ -811,6 +812,13 @@ export function AdminNodes() {
                           <span>Запасной (PRO)</span>
                         </span>
                       )}
+                      <span
+                        className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
+                        title="Поддерживается протокол AmneziaWG (AWG)"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-[#D9B96E]" />
+                        <span>AWG</span>
+                      </span>
                       {node.has_hysteria && (
                         <span
                           className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
