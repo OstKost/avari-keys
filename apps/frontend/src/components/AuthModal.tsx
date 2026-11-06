@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogIn, UserPlus, AlertCircle, CheckCircle2, User as UserIcon, ShieldCheck } from 'lucide-react';
+import { LogIn, UserPlus, AlertCircle, CheckCircle2, User as UserIcon, ShieldCheck, KeyRound } from 'lucide-react';
 import { api, loginAsDemoUser } from '../api/client';
 import { User } from '../types';
 import { MascotAuthCompanion } from './MascotAssistant';
@@ -8,8 +8,10 @@ interface Props {
   onSuccess: (user: User) => void;
 }
 
+type AuthMode = 'login' | 'register' | 'forgot_password';
+
 export function AuthModal({ onSuccess }: Props) {
-  const [isRegister, setIsRegister] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -23,10 +25,16 @@ export function AuthModal({ onSuccess }: Props) {
     setLoading(true);
 
     try {
-      if (isRegister) {
+      if (mode === 'register') {
         await api.register(username.trim(), password);
         setSuccessMsg('Учетная запись создана. Ожидайте подтверждения администратором Forve.');
-        setIsRegister(false);
+        setMode('login');
+        setPassword('');
+      } else if (mode === 'forgot_password') {
+        const res = await api.requestPasswordReset(username.trim(), password);
+        setSuccessMsg(res.message || 'Запрос на сброс пароля отправлен администратору. Ожидайте одобрения.');
+        setMode('login');
+        setPassword('');
       } else {
         const data = await api.login(username.trim(), password);
         onSuccess(data.user);
@@ -41,6 +49,12 @@ export function AuthModal({ onSuccess }: Props) {
   const handleDemoLogin = async (demoUsername: string) => {
     const user = await loginAsDemoUser(demoUsername);
     onSuccess(user);
+  };
+
+  const getSubtitle = () => {
+    if (mode === 'register') return 'Регистрация аккаунта';
+    if (mode === 'forgot_password') return 'Запрос сброса пароля';
+    return 'Управление конфигурациями';
   };
 
   return (
@@ -58,12 +72,12 @@ export function AuthModal({ onSuccess }: Props) {
         
         {/* Mascot Character Standing to the Left of the Centered Form (Desktop lg+) */}
         <div className="hidden lg:block absolute right-[calc(100%+2rem)] xl:right-[calc(100%+3.5rem)] bottom-0 w-80">
-          <MascotAuthCompanion isRegister={isRegister} />
+          <MascotAuthCompanion mode={mode} />
         </div>
 
         {/* Mascot on Mobile (Above card, compact banner) */}
         <div className="lg:hidden mb-4 w-full flex justify-center">
-          <MascotAuthCompanion isRegister={isRegister} compact={true} />
+          <MascotAuthCompanion mode={mode} compact={true} />
         </div>
 
         {/* Login Card (Exact Center) */}
@@ -84,7 +98,7 @@ export function AuthModal({ onSuccess }: Props) {
               Avari Keys
             </h1>
             <p className="text-sm text-[#A8B4B7] tracking-wider uppercase mt-1.5 font-mono">
-              {isRegister ? 'Регистрация аккаунта' : 'Управление конфигурациями'}
+              {getSubtitle()}
             </p>
           </div>
 
@@ -103,11 +117,18 @@ export function AuthModal({ onSuccess }: Props) {
           </div>
         )}
 
+        {mode === 'forgot_password' && (
+          <div className="bg-[#102833]/90 border border-[#D9B96E]/30 rounded-xl p-3.5 mb-5 text-xs text-[#A8B4B7] leading-relaxed shadow-inner">
+            <span className="text-[#F0D48D] font-semibold block mb-1">Сброс пароля через администратора</span>
+            Укажите логин вашей учетной записи и новый пароль. Запрос на подтверждение поступит администратору в Telegram и веб-панель.
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-semibold text-[#A8B4B7] uppercase tracking-wider mb-1.5 font-mono">
-              Имя пользователя
+              Имя пользователя {mode === 'forgot_password' ? '(Логин)' : ''}
             </label>
             <input
               type="text"
@@ -121,13 +142,13 @@ export function AuthModal({ onSuccess }: Props) {
 
           <div>
             <label className="block text-sm font-semibold text-[#A8B4B7] uppercase tracking-wider mb-1.5 font-mono">
-              Пароль
+              {mode === 'forgot_password' ? 'Новый пароль' : 'Пароль'}
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder={mode === 'forgot_password' ? 'минимум 6 символов' : '••••••••'}
               className="w-full bg-[#0D222C] border border-[#1C3945] focus:border-[#D9B96E] rounded-xl px-4 py-3 text-base text-[#F2F0E8] placeholder-[#718187] focus:outline-none focus:ring-1 focus:ring-[#D9B96E]/50 transition shadow-inner font-sans"
               required
             />
@@ -139,11 +160,16 @@ export function AuthModal({ onSuccess }: Props) {
             className="w-full mt-3 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 disabled:opacity-50 transition-all duration-300 flex items-center justify-center space-x-2 text-sm uppercase tracking-wider font-mono cursor-pointer"
           >
             {loading ? (
-              <span>Авторизация...</span>
-            ) : isRegister ? (
+              <span>Обработка...</span>
+            ) : mode === 'register' ? (
               <>
                 <UserPlus className="w-4 h-4" />
                 <span>Создать аккаунт</span>
+              </>
+            ) : mode === 'forgot_password' ? (
+              <>
+                <KeyRound className="w-4 h-4" />
+                <span>Отправить запрос на сброс</span>
               </>
             ) : (
               <>
@@ -183,17 +209,58 @@ export function AuthModal({ onSuccess }: Props) {
           </div>
         )}
 
-        <div className="mt-4 pt-2 text-center">
-          <button
-            onClick={() => {
-              setIsRegister(!isRegister);
-              setError(null);
-              setSuccessMsg(null);
-            }}
-            className="text-sm text-[#A8B4B7] hover:text-[#F2F0E8] transition text-center font-medium cursor-pointer"
-          >
-            {isRegister ? 'Уже есть учетная запись? Войти' : 'Новый пользователь? Зарегистрироваться'}
-          </button>
+        {/* Links Navigation */}
+        <div className="mt-5 pt-3 border-t border-[#1C3945]/60 flex flex-col items-center space-y-2">
+          {mode === 'login' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('register');
+                  setError(null);
+                  setSuccessMsg(null);
+                }}
+                className="text-sm text-[#A8B4B7] hover:text-[#F2F0E8] transition text-center font-medium cursor-pointer"
+              >
+                Новый пользователь? Зарегистрироваться
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('forgot_password');
+                  setError(null);
+                  setSuccessMsg(null);
+                }}
+                className="text-sm text-[#D9B96E]/80 hover:text-[#F0D48D] transition text-center font-medium cursor-pointer"
+              >
+                Забыли пароль? Сбросить
+              </button>
+            </>
+          ) : mode === 'register' ? (
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setError(null);
+                setSuccessMsg(null);
+              }}
+              className="text-sm text-[#A8B4B7] hover:text-[#F2F0E8] transition text-center font-medium cursor-pointer"
+            >
+              Уже есть учетная запись? Войти
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setError(null);
+                setSuccessMsg(null);
+              }}
+              className="text-sm text-[#A8B4B7] hover:text-[#F2F0E8] transition text-center font-medium cursor-pointer"
+            >
+              Вспомнили пароль? Вернуться ко входу
+            </button>
+          )}
         </div>
 
         </div>

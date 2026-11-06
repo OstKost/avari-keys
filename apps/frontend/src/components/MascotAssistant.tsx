@@ -319,11 +319,21 @@ export function MascotModalCompanion({
 // Auth Screen Companion (Standing to the left of centered form)
 export function MascotAuthCompanion({
   isRegister = false,
+  mode,
   compact = false,
 }: {
   isRegister?: boolean;
+  mode?: 'login' | 'register' | 'forgot_password';
   compact?: boolean;
 }) {
+  const currentMode = mode || (isRegister ? 'register' : 'login');
+  let speech = 'Рад снова приветствовать тебя в Avari Keys! Войди в систему, чтобы управлять своими ключами.';
+  if (currentMode === 'register') {
+    speech = 'Приветствую тебя! Создай учетную запись, и я помогу настроить твой первый защищенный ключ.';
+  } else if (currentMode === 'forgot_password') {
+    speech = 'Забыли пароль? Укажите логин и новый пароль — администратор проверит заявку и подтвердит доступ.';
+  }
+
   if (compact) {
     return (
       <div className="w-full max-w-md gold-rotating-border">
@@ -331,9 +341,7 @@ export function MascotAuthCompanion({
           <MascotAvatar size="sm" withGlow={false} />
           <div className="flex-1 min-w-0">
             <p className="text-xs text-[#D9E1E3] leading-tight">
-              {isRegister
-                ? 'Приветствую! Создайте аккаунт, и я помогу настроить защищенный ключ.'
-                : 'Рад снова видеть вас! Войдите для управления вашими ключами.'}
+              {speech}
             </p>
             <div className="text-right mt-1 text-[11px] font-serif font-bold text-[#D9B96E]">
               — Ари
@@ -351,9 +359,7 @@ export function MascotAuthCompanion({
         <div className="gold-rotating-border">
           <div className="gold-rotating-border-content p-4 text-xs sm:text-sm text-[#F2F0E8] font-sans">
             <p className="leading-relaxed text-[#D9E1E3] text-left">
-              {isRegister
-                ? 'Приветствую тебя! Создай учетную запись, и я помогу настроить твой первый защищенный ключ.'
-                : 'Рад снова приветствовать тебя в Avari Keys! Войди в систему, чтобы управлять своими ключами.'}
+              {speech}
             </p>
             <div className="text-right mt-2 text-xs font-serif font-bold text-[#D9B96E] tracking-wider">
               — Ари

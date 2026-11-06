@@ -188,6 +188,16 @@ func (s *Storage) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS password_reset_requests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		new_password_hash TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+	);
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -222,6 +232,8 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_telegram_link_tokens_user_id ON telegram_link_tokens(user_id);
 	CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON announcements(created_at);
 	CREATE INDEX IF NOT EXISTS idx_announcements_is_pinned ON announcements(is_pinned);
+	CREATE INDEX IF NOT EXISTS idx_pwd_reset_user_id ON password_reset_requests(user_id);
+	CREATE INDEX IF NOT EXISTS idx_pwd_reset_status ON password_reset_requests(status);
 	`
 	if _, err := s.db.Exec(indexes); err != nil {
 		return err
@@ -345,8 +357,11 @@ func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*mode
 
 func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, role, is_active, is_pro, created_at
-		FROM users ORDER BY id ASC
+		SELECT u.id, u.username, u.role, u.is_active, u.is_pro, u.created_at,
+			CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END AS has_pending_reset
+		FROM users u
+		LEFT JOIN password_reset_requests p ON p.user_id = u.id AND p.status = 'pending'
+		ORDER BY u.id ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -357,13 +372,14 @@ func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 	for rows.Next() {
 		var u models.UserPublic
 		var role string
-		var isActive, isPro int
-		if err := rows.Scan(&u.ID, &u.Username, &role, &isActive, &isPro, &u.CreatedAt); err != nil {
+		var isActive, isPro, hasPendingReset int
+		if err := rows.Scan(&u.ID, &u.Username, &role, &isActive, &isPro, &u.CreatedAt, &hasPendingReset); err != nil {
 			return nil, err
 		}
 		u.Role = models.Role(role)
 		u.IsActive = isActive == 1
 		u.IsPro = isPro == 1
+		u.HasPendingPasswordReset = hasPendingReset == 1
 		list = append(list, u)
 	}
 	return list, nil
@@ -464,6 +480,153 @@ func (s *Storage) DeleteUser(ctx context.Context, id int64) error {
 		return errors.New("user not found")
 	}
 	return nil
+}
+
+// Password Reset methods
+
+func (s *Storage) CreatePasswordResetRequest(ctx context.Context, username, newPassword string) (*models.PasswordResetRequest, *models.User, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, nil, errors.New("username cannot be empty")
+	}
+	if len(newPassword) < 6 {
+		return nil, nil, errors.New("password must be at least 6 characters")
+	}
+
+	user, err := s.GetUserByUsername(ctx, username)
+	if err != nil {
+		return nil, nil, errors.New("user not found")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Remove any older pending requests for this user
+	_, err = s.db.ExecContext(ctx, `DELETE FROM password_reset_requests WHERE user_id = ? AND status = 'pending'`, user.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO password_reset_requests (user_id, new_password_hash, status)
+		VALUES (?, ?, 'pending')
+	`, user.ID, string(hash))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	id, _ := res.LastInsertId()
+	req := &models.PasswordResetRequest{
+		ID:              id,
+		UserID:          user.ID,
+		Username:        user.Username,
+		NewPasswordHash: string(hash),
+		Status:          "pending",
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	return req, user, nil
+}
+
+func (s *Storage) GetPasswordResetRequestByID(ctx context.Context, id int64) (*models.PasswordResetRequest, error) {
+	var req models.PasswordResetRequest
+	err := s.db.QueryRowContext(ctx, `
+		SELECT p.id, p.user_id, u.username, p.new_password_hash, p.status, p.created_at, p.updated_at
+		FROM password_reset_requests p
+		JOIN users u ON u.id = p.user_id
+		WHERE p.id = ?
+	`, id).Scan(&req.ID, &req.UserID, &req.Username, &req.NewPasswordHash, &req.Status, &req.CreatedAt, &req.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+func (s *Storage) GetPendingPasswordResetRequestByUserID(ctx context.Context, userID int64) (*models.PasswordResetRequest, error) {
+	var req models.PasswordResetRequest
+	err := s.db.QueryRowContext(ctx, `
+		SELECT p.id, p.user_id, u.username, p.new_password_hash, p.status, p.created_at, p.updated_at
+		FROM password_reset_requests p
+		JOIN users u ON u.id = p.user_id
+		WHERE p.user_id = ? AND p.status = 'pending'
+		ORDER BY p.id DESC LIMIT 1
+	`, userID).Scan(&req.ID, &req.UserID, &req.Username, &req.NewPasswordHash, &req.Status, &req.CreatedAt, &req.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &req, nil
+}
+
+func (s *Storage) ApprovePasswordReset(ctx context.Context, reqID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var userID int64
+	var newPasswordHash, status string
+	err = tx.QueryRowContext(ctx, `
+		SELECT user_id, new_password_hash, status
+		FROM password_reset_requests
+		WHERE id = ?
+	`, reqID).Scan(&userID, &newPasswordHash, &status)
+	if err != nil {
+		return errors.New("password reset request not found")
+	}
+
+	if status != "pending" {
+		return fmt.Errorf("request already processed (status: %s)", status)
+	}
+
+	// Update user password
+	_, err = tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, newPasswordHash, userID)
+	if err != nil {
+		return err
+	}
+
+	// Update request status
+	_, err = tx.ExecContext(ctx, `UPDATE password_reset_requests SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, reqID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *Storage) ApprovePasswordResetByUserID(ctx context.Context, userID int64) error {
+	req, err := s.GetPendingPasswordResetRequestByUserID(ctx, userID)
+	if err != nil {
+		return errors.New("no pending password reset request found for user")
+	}
+	return s.ApprovePasswordReset(ctx, req.ID)
+}
+
+func (s *Storage) RejectPasswordReset(ctx context.Context, reqID int64) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE password_reset_requests 
+		SET status = 'rejected', updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ? AND status = 'pending'
+	`, reqID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return errors.New("no pending password reset request found")
+	}
+	return nil
+}
+
+func (s *Storage) RejectPasswordResetByUserID(ctx context.Context, userID int64) error {
+	req, err := s.GetPendingPasswordResetRequestByUserID(ctx, userID)
+	if err != nil {
+		return errors.New("no pending password reset request found for user")
+	}
+	return s.RejectPasswordReset(ctx, req.ID)
 }
 
 

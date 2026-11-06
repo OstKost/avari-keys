@@ -6,6 +6,7 @@ export interface User {
   role: UserRole;
   is_active: boolean;
   is_pro: boolean;
+  has_pending_password_reset?: boolean;
   created_at: string;
 }
 

@@ -97,6 +97,15 @@ const realApi = {
     return handleResponse<{ message: string; user: User }>(res);
   },
 
+  async requestPasswordReset(username: string, newPassword: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, new_password: newPassword }),
+    });
+    return handleResponse<{ message: string }>(res);
+  },
+
   async getMe(): Promise<User> {
     const res = await fetch(`${API_BASE}/auth/me`, {
       headers: getAuthHeaders(),
@@ -230,6 +239,22 @@ const realApi = {
       headers: getAuthHeaders(),
     });
     return handleResponse<{ success: boolean }>(res);
+  },
+
+  async approvePasswordReset(id: number): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/admin/users/${id}/approve-password-reset`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async rejectPasswordReset(id: number): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/admin/users/${id}/reject-password-reset`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
   },
 
   async getAdminNodes(): Promise<AdminNode[]> {

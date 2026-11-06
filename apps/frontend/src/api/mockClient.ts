@@ -585,6 +585,15 @@ export const mockApi = {
     return { message: 'Регистрация успешна, ожидайте модерации', user: newUser };
   },
 
+  async requestPasswordReset(username: string, _newPassword: string): Promise<{ message: string }> {
+    const user = mockUsers.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
+    if (!user) {
+      throw new Error('Пользователь не найден');
+    }
+    user.has_pending_password_reset = true;
+    return { message: 'Запрос на сброс пароля отправлен администратору' };
+  },
+
   async getMe(): Promise<User> {
     return mockCurrentUser;
   },
@@ -771,6 +780,22 @@ bandwidth:
   async deleteUser(id: number): Promise<{ success: boolean }> {
     mockUsers = mockUsers.filter((u) => u.id !== id);
     return { success: true };
+  },
+
+  async approvePasswordReset(id: number): Promise<{ success: boolean; message: string }> {
+    const user = mockUsers.find((u) => u.id === id);
+    if (user) {
+      user.has_pending_password_reset = false;
+    }
+    return { success: true, message: 'Сброс пароля успешно одобрен' };
+  },
+
+  async rejectPasswordReset(id: number): Promise<{ success: boolean; message: string }> {
+    const user = mockUsers.find((u) => u.id === id);
+    if (user) {
+      user.has_pending_password_reset = false;
+    }
+    return { success: true, message: 'Запрос на сброс пароля отклонен' };
   },
 
   async getAdminNodes(): Promise<AdminNode[]> {

@@ -184,6 +184,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/v1/auth/reset-password", s.handleResetPasswordRequest)
 
 	// User Authenticated Routes
 	s.mux.HandleFunc("GET /api/v1/auth/me", auth.RequireAuth(s.handleMe))
@@ -201,6 +202,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/deactivate", auth.RequireAdmin(s.handleAdminDeactivateUser))
 	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/role", auth.RequireAdmin(s.handleAdminSetUserRole))
 	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/pro", auth.RequireAdmin(s.handleAdminSetUserPro))
+	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/approve-password-reset", auth.RequireAdmin(s.handleAdminApprovePasswordReset))
+	s.mux.HandleFunc("POST /api/v1/admin/users/{id}/reject-password-reset", auth.RequireAdmin(s.handleAdminRejectPasswordReset))
 	s.mux.HandleFunc("DELETE /api/v1/admin/users/{id}", auth.RequireAdmin(s.handleAdminDeleteUser))
 
 	s.mux.HandleFunc("GET /api/v1/admin/nodes", auth.RequireAdmin(s.handleAdminListNodes))
@@ -284,6 +287,42 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			IsPro:     user.IsPro,
 			CreatedAt: user.CreatedAt,
 		},
+	})
+}
+
+func (s *Server) handleResetPasswordRequest(w http.ResponseWriter, r *http.Request) {
+	var req models.ResetPasswordRequestDTO
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	req.Username = strings.TrimSpace(req.Username)
+	if req.Username == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Имя пользователя не может быть пустым"})
+		return
+	}
+
+	if len(req.NewPassword) < 6 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Новый пароль должен содержать не менее 6 символов"})
+		return
+	}
+
+	pwdReq, user, err := s.storage.CreatePasswordResetRequest(r.Context(), req.Username, req.NewPassword)
+	if err != nil {
+		s.logActivity(r, nil, req.Username, models.CategoryAuth, "auth_pwd_reset_failed", fmt.Sprintf("Ошибка запроса сброса пароля: %v", err))
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.logActivity(r, &user.ID, user.Username, models.CategoryAuth, "auth_pwd_reset_request", "Запрос на сброс пароля (ожидает подтверждения администратора)")
+
+	if s.telegramBot != nil && s.telegramBot.IsEnabled() {
+		go s.telegramBot.NotifyPasswordReset(*pwdReq, *user)
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"message": "Запрос на сброс пароля отправлен администратору. Ожидайте подтверждения.",
 	})
 }
 
@@ -775,6 +814,64 @@ func (s *Server) handleAdminSetUserPro(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: fmt.Sprintf("PRO status updated to %v", req.IsPro),
 	})
+}
+
+func (s *Server) handleAdminApprovePasswordReset(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
+		return
+	}
+
+	targetUser, err := s.storage.GetUserByID(r.Context(), id)
+	if err != nil || targetUser == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+		return
+	}
+
+	if err := s.storage.ApprovePasswordResetByUserID(r.Context(), id); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_pwd_reset_approve", fmt.Sprintf("Одобрен сброс пароля для пользователя «%s» (ID #%d)", targetUser.Username, id))
+
+	if s.telegramBot != nil && s.telegramBot.IsEnabled() {
+		go s.telegramBot.NotifyUserPasswordResetApproved(*targetUser)
+	}
+
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{Success: true, Message: "Password reset approved"})
+}
+
+func (s *Server) handleAdminRejectPasswordReset(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
+		return
+	}
+
+	targetUser, err := s.storage.GetUserByID(r.Context(), id)
+	if err != nil || targetUser == nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+		return
+	}
+
+	if err := s.storage.RejectPasswordResetByUserID(r.Context(), id); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_pwd_reset_reject", fmt.Sprintf("Отклонен сброс пароля для пользователя «%s» (ID #%d)", targetUser.Username, id))
+
+	if s.telegramBot != nil && s.telegramBot.IsEnabled() {
+		go s.telegramBot.NotifyUserPasswordResetRejected(*targetUser)
+	}
+
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{Success: true, Message: "Password reset rejected"})
 }
 
 func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
