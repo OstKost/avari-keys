@@ -1404,6 +1404,121 @@ func TestHysteriaNodeValidationFlow(t *testing.T) {
 	}
 }
 
+func TestPasswordResetEndpointsFlow(t *testing.T) {
+	masterSrv, _, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Admin login
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var loginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+	adminToken := loginResp.Token
+
+	// 2. Create user carol and activate her
+	user, err := store.CreateUser(context.Background(), "carol", "carolInitial123")
+	if err != nil {
+		t.Fatalf("failed to create user carol: %v", err)
+	}
+	_ = store.SetUserActive(context.Background(), user.ID, true)
+
+	// 3. Submit reset password request
+	resetBody, _ := json.Marshal(models.ResetPasswordRequestDTO{
+		Username:    "carol",
+		NewPassword: "carolNewPass789!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/reset-password", bytes.NewReader(resetBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for reset-password request, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 4. Admin lists users and checks has_pending_password_reset
+	req = httptest.NewRequest("GET", "/api/v1/admin/users", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin list users, got %d", rec.Code)
+	}
+	var users []models.UserPublic
+	_ = json.NewDecoder(rec.Body).Decode(&users)
+	var carolUser *models.UserPublic
+	for _, u := range users {
+		if u.ID == user.ID {
+			carolUser = &u
+			break
+		}
+	}
+	if carolUser == nil || !carolUser.HasPendingPasswordReset {
+		t.Fatalf("expected carol to have pending password reset in admin users list")
+	}
+
+	// 5. Admin approves password reset
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/v1/admin/users/%d/approve-password-reset", user.ID), nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for approve-password-reset, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 6. Login with new password succeeds
+	newLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "carol",
+		Password: "carolNewPass789!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(newLoginBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected login to succeed with new password, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 7. Test Reject flow
+	resetBody2, _ := json.Marshal(models.ResetPasswordRequestDTO{
+		Username:    "carol",
+		NewPassword: "rejectedPassword123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/reset-password", bytes.NewReader(resetBody2))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for second reset request, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/v1/admin/users/%d/reject-password-reset", user.ID), nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for reject-password-reset, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Carol cannot login with rejected password
+	rejLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "carol",
+		Password: "rejectedPassword123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(rejLoginBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for rejected password, got %d", rec.Code)
+	}
+}
+
 
 
 

@@ -646,3 +646,160 @@ func TestTelegramBotPaidDuesCallbackQuery(t *testing.T) {
 	mu.Unlock()
 }
 
+func TestTelegramBotPasswordResetApprovalCallbackQuery(t *testing.T) {
+	var mu sync.Mutex
+	var sentMessages []map[string]any
+	var answeredCallbacks []map[string]any
+	var editedMessages []map[string]any
+
+	mockTG := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if strings.Contains(r.URL.Path, "sendMessage") {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			sentMessages = append(sentMessages, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok": true, "result": {"message_id": 301}}`))
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "answerCallbackQuery") {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			answeredCallbacks = append(answeredCallbacks, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok": true, "result": true}`))
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "editMessageText") {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			editedMessages = append(editedMessages, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok": true, "result": {"message_id": 301}}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok": true, "result": []}`))
+	}))
+	defer mockTG.Close()
+
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	adminChatID := int64(111222333)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        adminChatID,
+		Username:      "lead_admin",
+		FirstName:     "Lead",
+		IsAdmin:       true,
+		AlertsEnabled: true,
+	})
+
+	regularUserChatID := int64(444555666)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        regularUserChatID,
+		Username:      "regular_joe",
+		FirstName:     "Joe",
+		IsAdmin:       false,
+		AlertsEnabled: true,
+	})
+
+	cfg := telegram.Config{
+		APIURL:      mockTG.URL,
+		Token:       "test_approval_token",
+		BotUsername: "ApprovalElfBot",
+		Storage:     store,
+	}
+	bot := telegram.NewBot(cfg)
+
+	user, err := store.CreateUser(ctx, "gandalf", "mithrandir123")
+	if err != nil {
+		t.Fatalf("failed to create user gandalf: %v", err)
+	}
+
+	req, _, err := store.CreatePasswordResetRequest(ctx, "gandalf", "newStaffPass999!")
+	if err != nil {
+		t.Fatalf("failed to create password reset request: %v", err)
+	}
+
+	// 1. NotifyPasswordReset sends alert with inline buttons
+	bot.NotifyPasswordReset(*req, *user)
+
+	mu.Lock()
+	if len(sentMessages) == 0 {
+		mu.Unlock()
+		t.Fatalf("expected alert message to be sent")
+	}
+	lastMsg := sentMessages[len(sentMessages)-1]
+	mu.Unlock()
+
+	if lastMsg["reply_markup"] == nil {
+		t.Fatalf("expected reply_markup with inline buttons")
+	}
+
+	// 2. Non-admin cannot approve
+	nonAdminCB := &telegram.TGCallbackQuery{
+		ID: "cb_nonadmin_pwd",
+		From: telegram.TGUser{
+			ID:        regularUserChatID,
+			Username:  "regular_joe",
+			FirstName: "Joe",
+		},
+		Message: &telegram.TGMessage{
+			MessageID: 301,
+			Chat: telegram.TGChat{
+				ID: adminChatID,
+			},
+		},
+		Data: fmt.Sprintf("approve_pwd_reset:%d", req.ID),
+	}
+	bot.ProcessCallbackQuery(ctx, nonAdminCB)
+
+	mu.Lock()
+	if len(answeredCallbacks) == 0 || !strings.Contains(answeredCallbacks[len(answeredCallbacks)-1]["text"].(string), "нет прав") {
+		mu.Unlock()
+		t.Fatalf("expected unauthorized callback answer for non-admin")
+	}
+	mu.Unlock()
+
+	// 3. Admin approves
+	adminCB := &telegram.TGCallbackQuery{
+		ID: "cb_admin_pwd",
+		From: telegram.TGUser{
+			ID:        adminChatID,
+			Username:  "lead_admin",
+			FirstName: "Lead",
+		},
+		Message: &telegram.TGMessage{
+			MessageID: 301,
+			Chat: telegram.TGChat{
+				ID: adminChatID,
+			},
+		},
+		Data: fmt.Sprintf("approve_pwd_reset:%d", req.ID),
+	}
+	bot.ProcessCallbackQuery(ctx, adminCB)
+
+	mu.Lock()
+	if len(answeredCallbacks) == 0 || !strings.Contains(answeredCallbacks[len(answeredCallbacks)-1]["text"].(string), "успешно обновлен") {
+		mu.Unlock()
+		t.Fatalf("expected success callback answer for admin, got: %+v", answeredCallbacks)
+	}
+
+	if len(editedMessages) == 0 || !strings.Contains(editedMessages[len(editedMessages)-1]["text"].(string), "Одобрен") {
+		mu.Unlock()
+		t.Fatalf("expected message to be edited with status Одобрен, got: %+v", editedMessages)
+	}
+	mu.Unlock()
+}
+

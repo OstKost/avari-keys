@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserCheck, UserX, Trash2, Users, ShieldPlus, ShieldMinus, Sparkles } from 'lucide-react';
+import { UserCheck, UserX, Trash2, Users, ShieldPlus, ShieldMinus, Sparkles, KeyRound, XCircle } from 'lucide-react';
 import { api } from '../api/client';
 import { User } from '../types';
 import { ConfirmModal } from './ConfirmModal';
@@ -17,6 +17,8 @@ export function AdminUsers() {
   const [changingRole, setChangingRole] = useState(false);
   const [proChangeTarget, setProChangeTarget] = useState<{ user: User; newPro: boolean } | null>(null);
   const [changingPro, setChangingPro] = useState(false);
+  const [pwdResetTarget, setPwdResetTarget] = useState<{ user: User; action: 'approve' | 'reject' } | null>(null);
+  const [processingPwdReset, setProcessingPwdReset] = useState(false);
 
   const fetchUsers = async (silent = false) => {
     try {
@@ -134,6 +136,35 @@ export function AdminUsers() {
     }
   };
 
+  const handleConfirmPasswordReset = async () => {
+    if (!pwdResetTarget) return;
+    const { user, action } = pwdResetTarget;
+    const previousUsers = [...users];
+
+    // Optimistic reset request removal
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, has_pending_password_reset: false } : u))
+    );
+    setPwdResetTarget(null);
+
+    try {
+      setProcessingPwdReset(true);
+      if (action === 'approve') {
+        await api.approvePasswordReset(user.id);
+        toast.success(`Сброс пароля для «${user.username}» успешно одобрен`);
+      } else {
+        await api.rejectPasswordReset(user.id);
+        toast.info(`Запрос на сброс пароля для «${user.username}» отклонен`);
+      }
+      fetchUsers(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка обработки запроса сброса пароля');
+      setUsers(previousUsers);
+    } finally {
+      setProcessingPwdReset(false);
+    }
+  };
+
   if (loading && users.length === 0) {
     return <Loader size="section" text="Загрузка списка пользователей..." />;
   }
@@ -198,20 +229,53 @@ export function AdminUsers() {
                   )}
                 </td>
                 <td className="px-5 py-3.5">
-                  <span
-                    className={`inline-flex items-center text-sm font-mono font-semibold px-2.5 py-0.5 rounded-full ${
-                      u.is_active
-                        ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
-                        : 'bg-amber-950/80 text-amber-300 border border-amber-600/40 animate-pulse'
-                    }`}
-                  >
-                    {u.is_active ? 'Активен (Одобрен)' : 'Ожидает модерации'}
-                  </span>
+                  <div className="flex flex-col space-y-1">
+                    <span
+                      className={`inline-flex items-center text-sm font-mono font-semibold px-2.5 py-0.5 rounded-full ${
+                        u.is_active
+                          ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
+                          : 'bg-amber-950/80 text-amber-300 border border-amber-600/40 animate-pulse'
+                      }`}
+                    >
+                      {u.is_active ? 'Активен (Одобрен)' : 'Ожидает модерации'}
+                    </span>
+                    {u.has_pending_password_reset && (
+                      <span className="inline-flex items-center space-x-1 text-xs font-mono font-semibold px-2.5 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-500/50 animate-pulse shadow-sm w-fit">
+                        <KeyRound className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Сброс пароля</span>
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-5 py-3.5 text-sm text-[#A8B4B7] font-mono">
                   {new Date(u.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-5 py-3.5 text-right space-x-2">
+                  {/* Password Reset Actions */}
+                  {u.has_pending_password_reset && (
+                    <>
+                      <Tooltip content="Одобрить новый пароль">
+                        <button
+                          onClick={() => setPwdResetTarget({ user: u, action: 'approve' })}
+                          aria-label="Одобрить новый пароль"
+                          className="p-2 rounded-xl border border-emerald-500/60 bg-emerald-950/50 text-emerald-300 hover:bg-emerald-900/70 hover:border-emerald-400 transition"
+                        >
+                          <KeyRound className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
+
+                      <Tooltip content="Отклонить сброс пароля">
+                        <button
+                          onClick={() => setPwdResetTarget({ user: u, action: 'reject' })}
+                          aria-label="Отклонить сброс пароля"
+                          className="p-2 rounded-xl border border-rose-800/60 bg-rose-950/40 text-rose-400 hover:bg-rose-900/60 transition"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
+                    </>
+                  )}
+
                   {/* Toggle Active / Deactivate */}
                   <Tooltip content={u.is_active ? 'Деактивировать учетную запись' : 'Одобрить и активировать'}>
                     <button
@@ -362,6 +426,34 @@ export function AdminUsers() {
               Вы собираетесь полностью удалить аккаунт пользователя{' '}
               <strong className="text-[#F2F0E8]">«{userToDelete.username}»</strong>.
               Все привязанные к пользователю VPN-ключи и конфигурации будут также удалены из системы.
+            </div>
+          )
+        }
+      />
+      {/* Password Reset Confirm Modal */}
+      <ConfirmModal
+        isOpen={Boolean(pwdResetTarget)}
+        title={pwdResetTarget?.action === 'approve' ? 'Одобрить сброс пароля?' : 'Отклонить сброс пароля?'}
+        variant={pwdResetTarget?.action === 'approve' ? 'gold' : 'danger'}
+        confirmText={pwdResetTarget?.action === 'approve' ? 'Да, одобрить пароль' : 'Да, отклонить сброс'}
+        cancelText="Отмена"
+        isLoading={processingPwdReset}
+        onConfirm={handleConfirmPasswordReset}
+        onClose={() => setPwdResetTarget(null)}
+        message={
+          pwdResetTarget && (
+            <div>
+              {pwdResetTarget.action === 'approve' ? (
+                <p className="text-sm text-[#A8B4B7]">
+                  Вы собираетесь подтвердить установку нового пароля для пользователя <strong className="text-[#F2F0E8]">«{pwdResetTarget.user.username}»</strong>.
+                  После подтверждения пользователь сможет войти в систему с новым паролем.
+                </p>
+              ) : (
+                <p className="text-sm text-[#A8B4B7]">
+                  Вы собираетесь отклонить запрос на смену пароля для пользователя <strong className="text-[#F2F0E8]">«{pwdResetTarget.user.username}»</strong>.
+                  Текущий пароль останется без изменений.
+                </p>
+              )}
             </div>
           )
         }
