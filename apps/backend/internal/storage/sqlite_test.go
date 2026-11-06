@@ -11,6 +11,7 @@ import (
 
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/storage"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func createTestDB(t *testing.T) (*storage.Storage, func()) {
@@ -730,6 +731,89 @@ func TestAnnouncementsStorage(t *testing.T) {
 	}
 	if len(afterDelete) != 1 || afterDelete[0].ID != item1.ID {
 		t.Fatalf("expected 1 item remaining, got %d", len(afterDelete))
+	}
+}
+
+func TestPasswordResetStorageFlow(t *testing.T) {
+	store, cleanup := createTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// 1. Create a user
+	u, err := store.CreateUser(ctx, "resettester", "initialpass123")
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	// 2. Initial ListUsers check
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("failed to list users: %v", err)
+	}
+	var found *models.UserPublic
+	for _, user := range users {
+		if user.ID == u.ID {
+			found = &user
+			break
+		}
+	}
+	if found == nil || found.HasPendingPasswordReset {
+		t.Fatalf("expected user to not have pending password reset initially")
+	}
+
+	// 3. Create reset request
+	req, userRef, err := store.CreatePasswordResetRequest(ctx, "resettester", "brandnewpass456")
+	if err != nil {
+		t.Fatalf("failed to create password reset request: %v", err)
+	}
+	if req.Status != "pending" || userRef.ID != u.ID {
+		t.Fatalf("unexpected request state: %+v", req)
+	}
+
+	// 4. Verify ListUsers shows HasPendingPasswordReset
+	users, err = store.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("failed to list users: %v", err)
+	}
+	for _, user := range users {
+		if user.ID == u.ID {
+			if !user.HasPendingPasswordReset {
+				t.Fatalf("expected HasPendingPasswordReset to be true")
+			}
+		}
+	}
+
+	// 5. Approve password reset
+	if err := store.ApprovePasswordReset(ctx, req.ID); err != nil {
+		t.Fatalf("failed to approve password reset: %v", err)
+	}
+
+	// 6. Verify password changed
+	updatedUser, err := store.GetUserByID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("failed to get user: %v", err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(updatedUser.PasswordHash), []byte("brandnewpass456")) != nil {
+		t.Fatalf("new password hash did not match brandnewpass456")
+	}
+
+	// 7. Test reject flow
+	req2, _, err := store.CreatePasswordResetRequest(ctx, "resettester", "willberejected789")
+	if err != nil {
+		t.Fatalf("failed to create second password reset request: %v", err)
+	}
+	if err := store.RejectPasswordResetByUserID(ctx, u.ID); err != nil {
+		t.Fatalf("failed to reject password reset: %v", err)
+	}
+	req2After, err := store.GetPasswordResetRequestByID(ctx, req2.ID)
+	if err != nil || req2After.Status != "rejected" {
+		t.Fatalf("expected request2 to have status rejected, got: %+v", req2After)
+	}
+	// Verify password did not change
+	userStillSame, _ := store.GetUserByID(ctx, u.ID)
+	if bcrypt.CompareHashAndPassword([]byte(userStillSame.PasswordHash), []byte("brandnewpass456")) != nil {
+		t.Fatalf("password should still match brandnewpass456 after reject")
 	}
 }
 

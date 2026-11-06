@@ -954,6 +954,162 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cb *TGCallbackQuery) {
 			_ = b.EditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, updatedText, "HTML", InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{}})
 		}
 
+	case strings.HasPrefix(cb.Data, "approve_pwd_reset:"):
+		if !isAdmin {
+			_ = b.AnswerCallbackQuery(cb.ID, "⛔ У вас нет прав администратора для выполнения этого действия", true)
+			return
+		}
+		idStr := strings.TrimPrefix(cb.Data, "approve_pwd_reset:")
+		reqID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "Некорректный ID запроса", true)
+			return
+		}
+
+		if b.storage == nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "База данных недоступна", true)
+			return
+		}
+
+		req, err := b.storage.GetPasswordResetRequestByID(ctx, reqID)
+		if err != nil || req == nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "Запрос на сброс пароля не найден", true)
+			return
+		}
+
+		if req.Status != "pending" {
+			_ = b.AnswerCallbackQuery(cb.ID, fmt.Sprintf("Запрос уже обработан (статус: %s)", req.Status), false)
+			if cb.Message != nil {
+				updatedText := fmt.Sprintf(
+					"🔑 <b>[Avari Keys] Запрос на сброс пароля!</b>\n"+
+						"━━━━━━━━━━━━━━━━━━━━━\n"+
+						"Пользователь: <b>@%s</b> (ID #%d)\n"+
+						"Статус: <b>Уже обработан (%s)</b>\n"+
+						"Дата: %s",
+					req.Username,
+					req.UserID,
+					req.Status,
+					req.CreatedAt.Format("02.01.2006 15:04:05"),
+				)
+				_ = b.EditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, updatedText, "HTML", InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{}})
+			}
+			return
+		}
+
+		user, err := b.storage.GetUserByID(ctx, req.UserID)
+		if err != nil || user == nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "Пользователь не найден", true)
+			return
+		}
+
+		if err := b.storage.ApprovePasswordReset(ctx, reqID); err != nil {
+			_ = b.AnswerCallbackQuery(cb.ID, fmt.Sprintf("Ошибка одобрения: %v", err), true)
+			return
+		}
+
+		_ = b.storage.CreateAuditLog(ctx, &models.AuditLog{
+			Username: "tg:@" + adminName,
+			Action:   "admin_pwd_reset_approve_tg",
+			Category: models.CategoryAdmin,
+			Details:  fmt.Sprintf("Сброс пароля для «%s» (ID #%d) одобрен администратором через Telegram (@%s)", user.Username, user.ID, adminName),
+		})
+
+		_ = b.AnswerCallbackQuery(cb.ID, fmt.Sprintf("✅ Пароль для @%s успешно обновлен!", user.Username), false)
+
+		if cb.Message != nil {
+			updatedText := fmt.Sprintf(
+				"🔑 <b>[Avari Keys] Запрос на сброс пароля!</b>\n"+
+					"━━━━━━━━━━━━━━━━━━━━━\n"+
+					"Пользователь: <b>@%s</b> (ID #%d)\n"+
+					"Статус: 🟢 <b>Одобрен</b> (модератор: @%s)\n"+
+					"Дата: %s",
+				user.Username,
+				user.ID,
+				adminName,
+				req.CreatedAt.Format("02.01.2006 15:04:05"),
+			)
+			_ = b.EditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, updatedText, "HTML", InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{}})
+		}
+
+		// Notify user if their Telegram account is linked
+		userChat, _ := b.storage.GetTelegramChatByUserID(ctx, user.ID)
+		if userChat != nil {
+			_ = b.SendMessage(userChat.ChatID, "🔑 <b>Ваш новый пароль одобрен!</b>\n\nАдминистратор подтвердил сброс пароля для вашей учетной записи в Avari Keys.\nТеперь вы можете войти в систему с новым паролем.", "HTML")
+		}
+
+	case strings.HasPrefix(cb.Data, "reject_pwd_reset:"):
+		if !isAdmin {
+			_ = b.AnswerCallbackQuery(cb.ID, "⛔ У вас нет прав администратора для выполнения этого действия", true)
+			return
+		}
+		idStr := strings.TrimPrefix(cb.Data, "reject_pwd_reset:")
+		reqID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "Некорректный ID запроса", true)
+			return
+		}
+
+		if b.storage == nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "База данных недоступна", true)
+			return
+		}
+
+		req, err := b.storage.GetPasswordResetRequestByID(ctx, reqID)
+		if err != nil || req == nil {
+			_ = b.AnswerCallbackQuery(cb.ID, "Запрос на сброс пароля не найден", true)
+			return
+		}
+
+		if req.Status != "pending" {
+			_ = b.AnswerCallbackQuery(cb.ID, fmt.Sprintf("Запрос уже обработан (статус: %s)", req.Status), false)
+			return
+		}
+
+		user, err := b.storage.GetUserByID(ctx, req.UserID)
+		targetUsername := ""
+		if user != nil {
+			targetUsername = user.Username
+		} else {
+			targetUsername = req.Username
+		}
+
+		if err := b.storage.RejectPasswordReset(ctx, reqID); err != nil {
+			_ = b.AnswerCallbackQuery(cb.ID, fmt.Sprintf("Ошибка отклонения: %v", err), true)
+			return
+		}
+
+		_ = b.storage.CreateAuditLog(ctx, &models.AuditLog{
+			Username: "tg:@" + adminName,
+			Action:   "admin_pwd_reset_reject_tg",
+			Category: models.CategoryAdmin,
+			Details:  fmt.Sprintf("Сброс пароля для «%s» (ID #%d) отклонен администратором через Telegram (@%s)", targetUsername, req.UserID, adminName),
+		})
+
+		_ = b.AnswerCallbackQuery(cb.ID, fmt.Sprintf("❌ Сброс пароля для @%s отклонен", targetUsername), false)
+
+		if cb.Message != nil {
+			updatedText := fmt.Sprintf(
+				"🔑 <b>[Avari Keys] Запрос на сброс пароля!</b>\n"+
+					"━━━━━━━━━━━━━━━━━━━━━\n"+
+					"Пользователь: <b>@%s</b> (ID #%d)\n"+
+					"Статус: 🔴 <b>Отклонен</b> (модератор: @%s)\n"+
+					"Дата: %s",
+				targetUsername,
+				req.UserID,
+				adminName,
+				req.CreatedAt.Format("02.01.2006 15:04:05"),
+			)
+			_ = b.EditMessageText(cb.Message.Chat.ID, cb.Message.MessageID, updatedText, "HTML", InlineKeyboardMarkup{InlineKeyboard: [][]InlineKeyboardButton{}})
+		}
+
+		// Notify user if their Telegram account is linked
+		if user != nil {
+			userChat, _ := b.storage.GetTelegramChatByUserID(ctx, user.ID)
+			if userChat != nil {
+				_ = b.SendMessage(userChat.ChatID, "❌ <b>Запрос на сброс пароля отклонен</b>\n\nАдминистратор отклонил ваш запрос на смену пароля.", "HTML")
+			}
+		}
+
 	default:
 		_ = b.AnswerCallbackQuery(cb.ID, "Неизвестное действие", false)
 	}
@@ -1221,6 +1377,58 @@ func (b *Bot) NotifyNewUser(user models.User) {
 	}
 
 	_ = b.BroadcastAlertWithMarkup(msg, keyboard)
+}
+
+// NotifyPasswordReset sends an alert to admins about a user requesting a password reset.
+func (b *Bot) NotifyPasswordReset(req models.PasswordResetRequest, user models.User) {
+	if !b.IsEnabled() {
+		return
+	}
+
+	msg := fmt.Sprintf(
+		"🔑 <b>[Avari Keys] Запрос на сброс пароля!</b>\n"+
+			"━━━━━━━━━━━━━━━━━━━━━\n"+
+			"Пользователь: <b>@%s</b> (ID #%d)\n"+
+			"Статус: 🟡 <b>Ожидает подтверждения</b>\n"+
+			"Дата: %s\n\n"+
+			"<i>Пользователь запросил установку нового пароля. Нажмите кнопку ниже или используйте веб-панель для подтверждения.</i>",
+		user.Username,
+		user.ID,
+		req.CreatedAt.Format("02.01.2006 15:04:05"),
+	)
+
+	keyboard := InlineKeyboardMarkup{
+		InlineKeyboard: [][]InlineKeyboardButton{
+			{
+				{Text: "✅ Одобрить сброс", CallbackData: fmt.Sprintf("approve_pwd_reset:%d", req.ID)},
+				{Text: "❌ Отклонить", CallbackData: fmt.Sprintf("reject_pwd_reset:%d", req.ID)},
+			},
+		},
+	}
+
+	_ = b.BroadcastAlertWithMarkup(msg, keyboard)
+}
+
+// NotifyUserPasswordResetApproved notifies a linked user that their password was approved.
+func (b *Bot) NotifyUserPasswordResetApproved(user models.User) {
+	if !b.IsEnabled() || b.storage == nil {
+		return
+	}
+	userChat, _ := b.storage.GetTelegramChatByUserID(context.Background(), user.ID)
+	if userChat != nil {
+		_ = b.SendMessage(userChat.ChatID, "🔑 <b>Ваш новый пароль одобрен!</b>\n\nАдминистратор подтвердил сброс пароля для вашей учетной записи в Avari Keys.\nТеперь вы можете войти в систему с новым паролем.", "HTML")
+	}
+}
+
+// NotifyUserPasswordResetRejected notifies a linked user that their password reset was rejected.
+func (b *Bot) NotifyUserPasswordResetRejected(user models.User) {
+	if !b.IsEnabled() || b.storage == nil {
+		return
+	}
+	userChat, _ := b.storage.GetTelegramChatByUserID(context.Background(), user.ID)
+	if userChat != nil {
+		_ = b.SendMessage(userChat.ChatID, "❌ <b>Запрос на сброс пароля отклонен</b>\n\nАдминистратор отклонил ваш запрос на смену пароля.", "HTML")
+	}
 }
 
 // SendTestAlert sends a test message to a specific chat or broadcasts.

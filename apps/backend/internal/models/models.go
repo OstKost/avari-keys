@@ -23,12 +23,13 @@ type User struct {
 
 // UserPublic represents user data safe for API responses.
 type UserPublic struct {
-	ID        int64     `json:"id"`
-	Username  string    `json:"username"`
-	Role      Role      `json:"role"`
-	IsActive  bool      `json:"is_active"`
-	IsPro     bool      `json:"is_pro"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                      int64     `json:"id"`
+	Username                string    `json:"username"`
+	Role                    Role      `json:"role"`
+	IsActive                bool      `json:"is_active"`
+	IsPro                   bool      `json:"is_pro"`
+	HasPendingPasswordReset bool      `json:"has_pending_password_reset,omitempty"`
+	CreatedAt               time.Time `json:"created_at"`
 }
 
 // Node represents a managed Slave API node (Cascade or Direct).
@@ -104,6 +105,22 @@ type PaginatedKeysResponse struct {
 type RegisterRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type ResetPasswordRequestDTO struct {
+	Username    string `json:"username"`
+	NewPassword string `json:"new_password"`
+}
+
+// PasswordResetRequest represents a password reset request awaiting admin approval.
+type PasswordResetRequest struct {
+	ID              int64     `json:"id"`
+	UserID          int64     `json:"user_id"`
+	Username        string    `json:"username,omitempty"`
+	NewPasswordHash string    `json:"-"`
+	Status          string    `json:"status"` // "pending", "approved", "rejected"
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type LoginRequest struct {
