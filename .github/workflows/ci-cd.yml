@@ -27,7 +27,7 @@ on:
       target_host:
         description: 'IP/Хост целевого VPS (для одиночного slave-api или master-api)'
         required: false
-        default: '176.53.174.118'
+        default: ''
         type: string
 
 concurrency:
@@ -44,6 +44,16 @@ jobs:
     steps:
       - name: 📥 Check out repository
         uses: actions/checkout@v4
+
+      - name: Check private deployment inventory
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS }}
+          CASCADE_GATEWAY_HOST: ${{ secrets.CASCADE_GATEWAY_HOST }}
+          TELEGRAM_PROXY_SERVER: ${{ secrets.TELEGRAM_PROXY_SERVER }}
+          NETWORK_PROBE_TARGETS: ${{ secrets.NETWORK_PROBE_TARGETS }}
+          CASCADE_EGRESS_CONFIG: ${{ secrets.CASCADE_EGRESS_CONFIG }}
+        run: python3 scripts/check_private_inventory.py
 
       - name: 🐹 Set up Go
         uses: actions/setup-go@v5
@@ -88,6 +98,8 @@ jobs:
             dist/linux-amd64/avari-master
             dist/linux-amd64/avari-slave
             apps/frontend/dist/
+            scripts/avari-egress.py
+            scripts/install_egress.sh
 
   # ==========================================
   # 2. Деплой Frontend SPA (Автоматически на push в main/master или по запросу)
@@ -113,7 +125,7 @@ jobs:
       - name: 🔑 Configure SSH Key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST || '176.53.174.118' }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |
           if [ -z "$SSH_PRIVATE_KEY" ]; then
@@ -127,11 +139,12 @@ jobs:
 
       - name: 📦 Sync Frontend Static Files (Atomic Swap)
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST || '176.53.174.118' }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           RUN_ID: ${{ github.run_id }}
         run: |
+          : "${SSH_HOST:?SSH_HOST secret is required}"
           DEPLOY_TMP="/tmp/avari-front-${RUN_ID}"
           SSH_CMD="ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new ${SSH_USER}@${SSH_HOST}"
           RSYNC_CMD="rsync -avz --delete -e \"ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new\""
@@ -174,7 +187,7 @@ jobs:
       - name: 🔑 Configure SSH Key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST || '176.53.174.118' }}
+          SSH_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |
           if [ -z "$SSH_PRIVATE_KEY" ]; then
@@ -188,10 +201,15 @@ jobs:
 
       - name: 🚀 Deploy avari-master Binary & Restart
         env:
-          TARGET_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST || '176.53.174.118' }}
+          TARGET_HOST: ${{ github.event.inputs.target_host || secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           RUN_ID: ${{ github.run_id }}
+          NETWORK_PROBE_TARGETS: ${{ secrets.NETWORK_PROBE_TARGETS }}
+          TELEGRAM_PROXY_SERVER: ${{ secrets.TELEGRAM_PROXY_SERVER }}
+          TELEGRAM_PROXY_SECRET: ${{ secrets.TELEGRAM_PROXY_SECRET }}
+          TELEGRAM_PROXY_PORT: ${{ secrets.TELEGRAM_PROXY_PORT }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
           DEPLOY_TMP="/tmp/avari-master-${RUN_ID}"
           SSH_CMD="ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new ${SSH_USER}@${TARGET_HOST}"
@@ -202,6 +220,18 @@ jobs:
           $SCP_CMD deploy-artifacts/dist/linux-amd64/avari-master ${SSH_USER}@${TARGET_HOST}:${DEPLOY_TMP}/avari-master
           $SSH_CMD "install -m 755 ${DEPLOY_TMP}/avari-master /usr/local/bin/avari-master && rm -rf ${DEPLOY_TMP}"
 
+          # Keep addresses outside the checkout and build artifacts.
+          python3 - <<'PYENV' | $SSH_CMD 'umask 077; mkdir -p /etc/systemd/system/avari-master.service.d; cat > /etc/systemd/system/avari-master.service.d/runtime.conf'
+          import os
+          print('[Service]')
+          for key in ('NETWORK_PROBE_TARGETS', 'TELEGRAM_PROXY_SERVER', 'TELEGRAM_PROXY_SECRET', 'TELEGRAM_PROXY_PORT', 'JWT_SECRET'):
+              value = os.environ.get(key, '')
+              if not value:
+                  raise SystemExit('Missing runtime secret: ' + key)
+              if '\n' in value or '\r' in value:
+                  raise SystemExit('Invalid multiline runtime secret: ' + key)
+              print('Environment="' + key + '=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
+          PYENV
           echo "==> Restarting avari-master service..."
           $SSH_CMD "systemctl daemon-reload && systemctl restart avari-master"
           sleep 2
@@ -247,7 +277,10 @@ jobs:
 
       - name: 🚀 Deploy avari-slave to All Nodes & Restart
         env:
-          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS || '157.22.252.225 185.213.240.136 157.228.142.20 157.228.130.7' }}
+          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS }}
+          CASCADE_GATEWAY_HOST: ${{ secrets.CASCADE_GATEWAY_HOST }}
+          CASCADE_EGRESS_CONFIG: ${{ secrets.CASCADE_EGRESS_CONFIG }}
+          NETWORK_PROBE_TARGETS: ${{ secrets.NETWORK_PROBE_TARGETS }}
           SINGLE_TARGET_HOST: ${{ github.event.inputs.target_host }}
           TARGET_MODE: ${{ github.event.inputs.target }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
@@ -258,6 +291,7 @@ jobs:
           SSH_OPTS="-i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
           SCP_OPTS="-i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
+          : "${SLAVE_HOSTS:?SLAVE_HOSTS secret is required}"
           # Determine which hosts to deploy to
           if [ "${TARGET_MODE}" = "slave-api" ] && [ -n "${SINGLE_TARGET_HOST}" ]; then
             HOSTS_TO_DEPLOY="${SINGLE_TARGET_HOST}"
@@ -265,7 +299,8 @@ jobs:
             HOSTS_TO_DEPLOY="${SLAVE_HOSTS}"
           fi
 
-          echo "==> Target Slave Nodes to deploy: ${HOSTS_TO_DEPLOY}"
+          for MASKED_HOST in ${HOSTS_TO_DEPLOY}; do echo "::add-mask::${MASKED_HOST}"; done
+          echo "==> Deploying configured Slave nodes"
 
           for HOST in ${HOSTS_TO_DEPLOY}; do
             echo ""
@@ -278,6 +313,23 @@ jobs:
               echo "⚠️ Warning: Failed to connect to ${HOST}, skipping..."
               continue
             }
+
+            if [ "$HOST" = "$CASCADE_GATEWAY_HOST" ]; then
+              : "${NETWORK_PROBE_TARGETS:?Missing probe targets secret}"
+              : "${CASCADE_EGRESS_CONFIG:?Missing cascade registry secret}"
+              printf '%s' "$CASCADE_EGRESS_CONFIG" | ssh ${SSH_OPTS} ${SSH_USER}@${HOST} 'umask 077; mkdir -p /etc/avari-keys; cat > /etc/avari-keys/egress.json'
+              python3 - <<'PYENV' | ssh ${SSH_OPTS} ${SSH_USER}@${HOST} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf'
+          import os
+          print('[Service]')
+          value = os.environ['NETWORK_PROBE_TARGETS']
+          if '\n' in value or '\r' in value:
+              raise SystemExit('Probe inventory must be single-line JSON')
+          print('Environment="NETWORK_PROBE_TARGETS=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
+          PYENV
+              ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "mkdir -p ${DEPLOY_TMP}"
+              scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${HOST}:${DEPLOY_TMP}/
+              ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null"
+            fi
 
             scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${HOST}:${DEPLOY_TMP}/avari-slave
             

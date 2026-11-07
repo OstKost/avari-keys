@@ -38,7 +38,7 @@
 - **[TASK-005](./tasks/TASK-005-master-frontend-ui.md)**: ✅ React Web UI — Дашборд пользователя (QR, .conf, выбор ноды) и Админ-панель (пользователи, ноды, аудит).
 - **[TASK-006](./tasks/TASK-006-contract-integration-tests.md)**: ✅ Контрактные тесты Master $\leftrightarrow$ Slave API, тесты модерации и прав доступа.
 - **[TASK-007](./tasks/TASK-007-deployment-and-docs.md)**: ✅ Документация развертывания, Caddy auto-HTTPS конфиги, systemd unit-файлы.
-- **[TASK-008](./tasks/TASK-008-cicd-github-actions.md)**: ✅ Безопасный CI/CD пайплайн в GitHub Actions с атомарным деплоем на VPS 157.22.252.225.
+- **[TASK-008](./tasks/TASK-008-cicd-github-actions.md)**: ✅ Безопасный CI/CD пайплайн в GitHub Actions с атомарным деплоем на VPS 192.0.2.20.
 - **[TASK-009](./tasks/TASK-009-billing-system.md)**: ✅ Кооперативные взносы (каждые 30 дней) и страница «Биллинг».
 - **[TASK-010](./tasks/TASK-010-mascot-assistant.md)**: ✅ Интерактивный UI-помощник (Маскот), онбординг первого ключа и база знаний FAQ.
 - **[TASK-018](./tasks/TASK-018-mobile-tablet-responsive.md)**: ✅ Адаптация интерфейса под мобильные устройства (320px–640px) и планшеты (640px–1024px).
@@ -48,7 +48,7 @@
 - **[TASK-022](./tasks/TASK-022-stats-telemetry-redesign.md)**: ✅ Полный редизайн сбора статистики и телеметрии AmneziaWG (PublicKey, Delta Engine, SQLite, Worker).
 - **[TASK-023](./tasks/TASK-023-telegram-user-approval-inline-buttons.md)**: ✅ Модерация и одобрение новых пользователей через Inline-кнопки в Telegram-боте.
 - **[TASK-024](./tasks/TASK-024-healthcheck-resilience-and-lightweight-probe.md)**: ✅ Устойчивость HealthChecker к сетевым задержкам и легковесный опрос Slave API.
-- **[TASK-025](./tasks/TASK-025-cicd-server-migration.md)**: ✅ Перенастройка CI/CD пайплайна на VPS 176.53.174.118 (keys.avari.dev / OpenResty Manager).
+- **[TASK-025](./tasks/TASK-025-cicd-server-migration.md)**: ✅ Перенастройка CI/CD пайплайна на VPS 192.0.2.10 (keys.example.net / OpenResty Manager).
 - **[TASK-026](./tasks/TASK-026-onboarding-tour-layout-fix.md)**: ⚙️ Исправление разметки и мобильной адаптивности окна обучения (OnboardingTour).
 - **[TASK-027](./tasks/TASK-027-news-and-announcements-system.md)**: ✅ Страница «Новости» с публикацией, категориями, рассылкой в Telegram-бота и баннером.
 - **[TASK-028](./tasks/TASK-028-backup-servers-and-pro-tier.md)**: ⚙️ Запасные серверы (`is_backup`), тариф PRO (`is_pro`), разграничение доступа к ключам и формула взноса 300+50 ₽.
@@ -59,3 +59,5 @@
 
 
 
+
+- **TASK-055**: ✅ Independent public network/server monitoring, S4 onboarding, persistent cascade selection, private runtime inventory and v0.9.0 release.

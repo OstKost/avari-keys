@@ -4,8 +4,6 @@ import {
   Server,
   Plus,
   Trash2,
-  CheckCircle2,
-  XCircle,
   RefreshCw,
   RotateCcw,
   Download,
@@ -33,6 +31,24 @@ import { useToast } from '../context/ToastContext';
 import { Loader } from './Loader';
 import { Tooltip } from './Tooltip';
 import { COUNTRIES, formatNodeRouting, getCountryInfo } from '../utils/country';
+
+function NodeHealthBadge({ label, status }: { label: string; status?: AdminNode['server_status'] }) {
+  const stale = !!status?.checked_at && Date.now() - new Date(status.checked_at).getTime() > 180_000;
+  const state = stale ? 'yellow' : (status?.state || 'unknown');
+  const reason = stale ? 'Результат проверки устарел' : status?.reason;
+  const colors = { green: 'text-emerald-400 bg-emerald-950/70', yellow: 'text-amber-300 bg-amber-950/70', red: 'text-rose-400 bg-rose-950/70', unknown: 'text-slate-400 bg-slate-900/70' };
+  const labels = { green: 'В порядке', yellow: 'Замечания', red: 'Недоступен', unknown: 'Нет данных' };
+  const checked = status?.checked_at && !status.checked_at.startsWith('0001-') ? new Date(status.checked_at).toLocaleString('ru-RU') : '';
+  return (
+    <div className="space-y-0.5" title={reason}>
+      <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-semibold ${colors[state]}`}>
+        <span aria-hidden="true">●</span>{label}: {labels[state]}
+      </span>
+      {checked && <div className="text-[10px] text-[#A8B4B7] whitespace-nowrap">{checked}</div>}
+      {reason && <div className="text-[10px] text-[#A8B4B7] max-w-[260px]">{reason}</div>}
+    </div>
+  );
+}
 
 export function AdminNodes() {
   const { toast } = useToast();
@@ -99,7 +115,7 @@ export function AdminNodes() {
     try {
       const status = await api.getNodeEgress(node.id);
       setEgressStatus(status);
-      setTargetEgressIf(status.active_interface === 'awg1' ? 'awg3' : 'awg1');
+      setTargetEgressIf(status.active_interface);
     } catch (err: any) {
       toast.error(err.message || 'Ошибка получения данных Egress');
     } finally {
@@ -109,14 +125,15 @@ export function AdminNodes() {
 
   const handleSwitchEgressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!egressNode || !targetEgressIf) return;
+    if (!egressNode || !targetEgressIf || !egressStatus?.targets?.some(t => t.interface === targetEgressIf && t.available)) return;
+    if (!window.confirm(`Переключить выход каскада с ${egressStatus?.active_interface} на ${targetEgressIf}?`)) return;
     try {
       setSwitchingEgress(true);
       const res = await api.switchNodeEgress(egressNode.id, targetEgressIf);
       toast.success(res.message || `Шлюз выхода каскада переключен на ${targetEgressIf}`);
       const updated = await api.getNodeEgress(egressNode.id);
       setEgressStatus(updated);
-      setTargetEgressIf(updated.active_interface === 'awg1' ? 'awg3' : 'awg1');
+      setTargetEgressIf(updated.active_interface);
       fetchNodes(false, true);
     } catch (err: any) {
       toast.error(err.message || 'Ошибка переключения шлюза выхода');
@@ -742,7 +759,7 @@ export function AdminNodes() {
         <table className="w-full text-left text-sm text-[#F2F0E8] min-w-[760px]">
           <thead className="bg-[#102833]/90 text-sm font-mono uppercase tracking-wider text-[#A8B4B7] border-b border-[#1C3945]">
             <tr>
-              <th className="px-5 py-3.5">Статус / Ping</th>
+              <th className="px-5 py-3.5">Сервер / Сеть</th>
               <th className="px-5 py-3.5">Маршрут / Страна</th>
               <th className="px-5 py-3.5">Название</th>
               <th className="px-5 py-3.5">API URL</th>
@@ -757,21 +774,27 @@ export function AdminNodes() {
               return (
                 <tr key={node.id} className="hover:bg-[#102833]/50 transition duration-150">
                   <td className="px-5 py-3.5">
-                    <div className="flex items-center space-x-2">
-                      <span
-                        className={`inline-flex items-center space-x-1.5 text-sm font-mono font-semibold px-2.5 py-0.5 rounded-full ${
-                          node.online
-                            ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
-                            : 'bg-rose-950/80 text-rose-400 border border-rose-800/60'
-                        }`}
-                      >
-                        {node.online ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                        <span>{node.online ? 'Online' : 'Offline'}</span>
-                      </span>
+                    <div className="space-y-2 min-w-[190px]">
+                      <NodeHealthBadge label="Сервер" status={node.server_status} />
+                      <NodeHealthBadge label="Сеть" status={node.network_status} />
                       {node.online && typeof node.latency_ms === 'number' && (
-                        <span className="text-sm font-mono font-semibold px-2 py-0.5 rounded-md bg-[#102833] text-emerald-300 border border-[#1C3945]">
-                          {node.latency_ms} ms
-                        </span>
+                        <span className="block whitespace-nowrap text-xs font-mono text-[#A8B4B7]" title="Время ответа API, не ICMP Ping">API: {node.latency_ms} ms</span>
+                      )}
+                      {!!node.network_probes?.length && (
+                        <details className="text-xs text-[#A8B4B7] max-w-[360px]">
+                          <summary className="cursor-pointer">Проверки M0 / S0</summary>
+                          <p className="mt-2">Доступность с этих серверов; результат не подтверждает блокировку у всех провайдеров.</p>
+                          {node.network_probes.map((probe) => (
+                            <div key={probe.source} className="mt-2 space-y-1">
+                              <NodeHealthBadge label={probe.source} status={probe} />
+                              {probe.checks.map((check) => (
+                                <div key={check.kind} className="break-all">
+                                  {check.kind} · {check.target}: {check.ok ? <span className="whitespace-nowrap">{check.latency_ms} ms</span> : (check.error || 'Нет ответа')}
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </details>
                       )}
                     </div>
                   </td>
@@ -802,7 +825,7 @@ export function AdminNodes() {
                   {/* Name & Mobile / Backup Tags */}
                   <td className="px-5 py-3.5 font-medium text-[#F2F0E8]">
                     <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                      <span className="font-semibold text-sm">{node.name}</span>
+                      <span className="font-semibold text-sm w-full">{node.name}</span>
                       {node.is_backup && (
                         <span
                           className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
@@ -1347,7 +1370,7 @@ export function AdminNodes() {
               </div>
 
               <p className="text-sm text-[#A8B4B7] font-sans">
-                Узел <strong className="text-[#F2F0E8]">«{egressNode.name}»</strong>. Переключение шлюза зарубежного выхода на лету без изменения клиентских ключей.
+                Узел <strong className="text-[#F2F0E8]">«{egressNode.name}»</strong>. Выбор выхода каскада без изменения клиентских ключей.
               </p>
 
               {loadingEgress ? (
@@ -1365,7 +1388,7 @@ export function AdminNodes() {
                       <div className="flex items-center space-x-2">
                         <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
                         <span className="font-mono font-bold text-base text-[#F2F0E8]">
-                          {egressStatus.active_interface === 'awg1' ? 'awg1 — Выход через S1 (Германия)' : 'awg3 — Выход через S2 (Нидерланды)'}
+                          {egressStatus.targets?.find(t => t.interface === egressStatus.active_interface)?.label || egressStatus.active_interface || 'Не определён'}
                         </span>
                       </div>
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold uppercase bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
@@ -1379,51 +1402,17 @@ export function AdminNodes() {
                     <label className="block text-sm font-mono font-semibold text-[#A8B4B7] uppercase mb-2">
                       Выберите целевой шлюз выхода:
                     </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setTargetEgressIf('awg1')}
-                        className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between space-y-1 ${
-                          targetEgressIf === 'awg1'
-                            ? 'bg-[#102833] border-[#D9B96E] text-[#F2F0E8] shadow-md shadow-[#D9B96E]/10 ring-1 ring-[#D9B96E]'
-                            : 'bg-[#06141B] border-[#1C3945] text-[#A8B4B7] hover:border-[#1C3945]/80'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-sm">🇩🇪 Шлюз S1</span>
-                          {egressStatus.active_interface === 'awg1' && (
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/50">
-                              Текущий
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs text-[#A8B4B7] font-mono">dev awg1 (Германия)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setTargetEgressIf('awg3')}
-                        className={`p-3.5 rounded-2xl border text-left transition flex flex-col justify-between space-y-1 ${
-                          targetEgressIf === 'awg3'
-                            ? 'bg-[#102833] border-[#D9B96E] text-[#F2F0E8] shadow-md shadow-[#D9B96E]/10 ring-1 ring-[#D9B96E]'
-                            : 'bg-[#06141B] border-[#1C3945] text-[#A8B4B7] hover:border-[#1C3945]/80'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-sm">🇳🇱 Шлюз S2</span>
-                          {egressStatus.active_interface === 'awg3' && (
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/50">
-                              Текущий
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs text-[#A8B4B7] font-mono">dev awg3 (Нидерланды)</span>
-                      </button>
-                    </div>
+                    <select value={targetEgressIf} onChange={(e) => setTargetEgressIf(e.target.value)} disabled={switchingEgress} className="w-full p-3 rounded-xl bg-[#06141B] border border-[#1C3945] text-[#F2F0E8]">
+                      {(egressStatus.targets || []).map((target) => (
+                        <option key={target.interface} value={target.interface} disabled={!target.available}>
+                          {target.label} ({target.interface}){target.interface === egressStatus.active_interface ? ' — текущий' : ''}{!target.available ? ` — ${target.reason || 'недоступен'}` : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-[#102833]/60 border border-[#1C3945] text-xs text-[#A8B4B7] font-sans leading-relaxed">
-                    ℹ️ Маршрут будет мгновенно заменен в таблице 100 ядра Linux. Подключенные клиенты на смартфонах и ПК продолжат работать без необходимости перевыпускать конфигурации.
+                    Выбранный выход будет проверен перед переключением. При ошибке прежний маршрут восстановится. Ключи сохранятся; действующим соединениям может потребоваться переподключение.
                   </div>
                 </div>
               ) : (
@@ -1443,7 +1432,7 @@ export function AdminNodes() {
                 </button>
                 <button
                   type="submit"
-                  disabled={switchingEgress || loadingEgress || !egressStatus || targetEgressIf === egressStatus?.active_interface}
+                  disabled={switchingEgress || loadingEgress || !egressStatus || targetEgressIf === egressStatus?.active_interface || !egressStatus?.targets?.some(t => t.interface === targetEgressIf && t.available)}
                   className="px-5 py-2.5 text-sm font-mono font-bold uppercase bg-gradient-to-r from-[#F0D48D] to-[#D9B96E] text-[#06141B] rounded-xl shadow-lg transition disabled:opacity-50 flex items-center space-x-1.5"
                 >
                   <ArrowRightLeft className="w-4 h-4" />

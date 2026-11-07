@@ -36,6 +36,9 @@ export interface AdminNode {
   online: boolean;
   latency_ms?: number;
   created_at: string;
+  server_status?: NodeStatus;
+  network_status?: NodeStatus;
+  network_probes?: NetworkProbe[];
 }
 
 export type ProtocolType = 'awg' | 'hysteria2';
@@ -174,6 +177,7 @@ export interface DashboardStats {
 }
 
 export interface EgressStatusResponse {
+  targets?: { interface: string; node: string; label: string; endpoint: string; available: boolean; reason?: string }[];
   active_interface: string;
   available_interfaces: string[];
   details?: string;
@@ -290,3 +294,14 @@ export interface UpdateNewsPayload {
 
 
 
+
+export interface NodeStatus {
+  state: 'green' | 'yellow' | 'red' | 'unknown';
+  checked_at?: string;
+  reason?: string;
+}
+export interface NetworkProbe extends NodeStatus {
+  node_id: number;
+  source: string;
+  checks: { kind: string; target: string; ok: boolean; latency_ms: number; error?: string }[];
+}

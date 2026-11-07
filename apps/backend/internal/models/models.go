@@ -36,7 +36,7 @@ type UserPublic struct {
 type Node struct {
 	ID                int64     `json:"id"`
 	Name              string    `json:"name"`
-	Type              string    `json:"type"` // "cascade" or "direct"
+	Type              string    `json:"type"`         // "cascade" or "direct"
 	CountryCode       string    `json:"country_code"` // e.g. "NLD", "DEU", "USA"
 	ProviderURL       string    `json:"provider_url"` // e.g. "https://aeza.net"
 	APIURL            string    `json:"api_url"`
@@ -64,8 +64,11 @@ type NodePublic struct {
 // NodeWithStatus represents node with live connectivity & ping.
 type NodeWithStatus struct {
 	Node
-	Online    bool  `json:"online"`
-	LatencyMs int64 `json:"latency_ms"`
+	Online        bool           `json:"online"`
+	LatencyMs     int64          `json:"latency_ms"`
+	ServerStatus  StatusDetail   `json:"server_status"`
+	NetworkStatus StatusDetail   `json:"network_status"`
+	NetworkProbes []NetworkProbe `json:"network_probes"`
 }
 
 // ClientConfig represents a user's VPN key reference in the database and audit logs.
@@ -233,10 +236,10 @@ type SnoozeDuesRequest struct {
 
 // AdminBillingSummaryResponse for admin billing overview.
 type AdminBillingSummaryResponse struct {
-	TotalPayments  int             `json:"total_payments"`
-	UsersDueCount  int             `json:"users_due_count"`
-	TotalUsers     int             `json:"total_users"`
-	Records        []BillingRecord `json:"records"`
+	TotalPayments int             `json:"total_payments"`
+	UsersDueCount int             `json:"users_due_count"`
+	TotalUsers    int             `json:"total_users"`
+	Records       []BillingRecord `json:"records"`
 }
 
 // AuditLog represents a single action performed in the system.
@@ -427,5 +430,22 @@ type UpdateNewsRequest struct {
 	IsPinned bool         `json:"is_pinned"`
 }
 
-
-
+// StatusDetail is a timestamped independent server or network assessment.
+type StatusDetail struct {
+	State     string    `json:"state"` // green, yellow, red, unknown
+	CheckedAt time.Time `json:"checked_at,omitempty"`
+	Reason    string    `json:"reason,omitempty"`
+}
+type ProbeCheck struct {
+	Kind      string `json:"kind"`
+	Target    string `json:"target"`
+	OK        bool   `json:"ok"`
+	LatencyMs int64  `json:"latency_ms"`
+	Error     string `json:"error,omitempty"`
+}
+type NetworkProbe struct {
+	NodeID int64  `json:"node_id"`
+	Source string `json:"source"`
+	StatusDetail
+	Checks []ProbeCheck `json:"checks"`
+}

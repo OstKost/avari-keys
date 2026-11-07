@@ -9,6 +9,7 @@ import (
 
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/client"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/netprobe"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/storage"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/telegram"
 )
@@ -27,6 +28,8 @@ type HealthChecker struct {
 	failureThreshold int
 	logActivity      func(category models.AuditLogCategory, action string, details string)
 
+	serverStatuses  map[int64]models.StatusDetail
+	networkProbes   map[int64][]models.NetworkProbe
 	nodeStates      map[int64]bool         // nodeID -> isOnline
 	nodeLatencies   map[int64]int64        // nodeID -> latencyMs
 	nodeFailures    map[int64]int          // nodeID -> consecutive failure count
@@ -72,6 +75,8 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 		failureThreshold: failThreshold,
 		logActivity:      cfg.LogActivity,
 		nodeStates:       make(map[int64]bool),
+		serverStatuses:   make(map[int64]models.StatusDetail),
+		networkProbes:    make(map[int64][]models.NetworkProbe),
 		nodeLatencies:    make(map[int64]int64),
 		nodeFailures:     make(map[int64]int),
 		prevPeerRaw:      make(map[string]rawCounters),
@@ -168,6 +173,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 		node      models.Node
 		online    bool
 		latencyMs int64
+		health    *models.HealthResponse
 		stats     *models.StatsSummaryResponse
 		err       error
 	}
@@ -222,6 +228,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 
 			resultsChan <- nodeResult{
 				node:      n,
+				health:    health,
 				online:    isOnline,
 				latencyMs: latency,
 				stats:     statsResp,
@@ -232,6 +239,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 
 	wg.Wait()
 	close(resultsChan)
+	h.refreshPublicNetwork(ctx, nodes)
 
 	// Process results & compute telemetry deltas
 	onlineNodesCount := 0
@@ -254,6 +262,15 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 		latency := res.latencyMs
 
 		h.mu.Lock()
+		status := models.StatusDetail{State: "green", CheckedAt: time.Now().UTC()}
+		if !isOnline {
+			status.State = "red"
+			status.Reason = "API ноды недоступен; работа сервера не подтверждена"
+		} else if res.health != nil && (!res.health.AWGAvailable || (n.HasHysteria && !res.health.HysteriaAvailable)) {
+			status.State = "yellow"
+			status.Reason = "API отвечает, но настроенная VPN-служба недоступна"
+		}
+		h.serverStatuses[n.ID] = status
 		wasOnline, existed := h.nodeStates[n.ID]
 		prevFails := h.nodeFailures[n.ID]
 
@@ -556,7 +573,15 @@ func (h *HealthChecker) CheckAllNodes(ctx context.Context) ([]models.NodeWithSta
 			h.mu.RLock()
 			isOnline, exists := h.nodeStates[node.ID]
 			latency := h.nodeLatencies[node.ID]
+			status, hasStatus := h.serverStatuses[node.ID]
+			probes := append([]models.NetworkProbe{}, h.networkProbes[node.ID]...)
 			h.mu.RUnlock()
+			if !hasStatus {
+				status = models.StatusDetail{State: "unknown", Reason: "Нет результатов фоновой проверки сервера"}
+			} else if time.Since(status.CheckedAt) > 3*h.interval {
+				status.State = "yellow"
+				status.Reason = "Результат проверки сервера устарел"
+			}
 
 			if !exists {
 				pingCtx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
@@ -573,9 +598,12 @@ func (h *HealthChecker) CheckAllNodes(ctx context.Context) ([]models.NodeWithSta
 			}
 
 			res[idx] = models.NodeWithStatus{
-				Node:      node,
-				Online:    isOnline,
-				LatencyMs: latency,
+				Node:          node,
+				Online:        isOnline,
+				LatencyMs:     latency,
+				ServerStatus:  status,
+				NetworkStatus: netprobe.Aggregate(probes, time.Now()),
+				NetworkProbes: probes,
 			}
 		}(i, n)
 	}
@@ -597,3 +625,37 @@ func formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.2f TB", float64(bytes)/(1024*1024*1024*1024))
 }
 
+// refreshPublicNetwork is called by the telemetry loop, never by the node list endpoint.
+func (h *HealthChecker) refreshPublicNetwork(ctx context.Context, nodes []models.Node) {
+	targets := netprobe.TargetsFromEnv()
+	if len(targets) == 0 {
+		return
+	}
+	samples := netprobe.Run(ctx, "M0", targets)
+	for _, n := range nodes {
+		if n.Type != "cascade" || !n.IsActive {
+			continue
+		}
+		cctx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+		remote, err := client.NewSlaveClient(n.APIURL, n.APIKey).NetworkProbes(cctx)
+		cancel()
+		if err != nil || len(remote) == 0 {
+			for _, t := range targets {
+				samples = append(samples, models.NetworkProbe{NodeID: t.NodeID, Source: "S0", StatusDetail: models.StatusDetail{State: "unknown", CheckedAt: time.Now().UTC(), Reason: "Источник проверок S0 недоступен"}, Checks: []models.ProbeCheck{}})
+			}
+		} else {
+			for _, p := range remote {
+				p.Source = "S0"
+				samples = append(samples, p)
+			}
+		}
+		break
+	}
+	grouped := make(map[int64][]models.NetworkProbe)
+	for _, p := range samples {
+		grouped[p.NodeID] = append(grouped[p.NodeID], p)
+	}
+	h.mu.Lock()
+	h.networkProbes = grouped
+	h.mu.Unlock()
+}

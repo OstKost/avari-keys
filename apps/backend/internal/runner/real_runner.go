@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -805,7 +806,6 @@ func (r *RealRunner) buildClientMappings() (map[string]string, map[string]string
 	return pubkeyToName, ipToName, knownClients
 }
 
-
 func (r *RealRunner) RestartAWG(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "systemctl", "restart", "awg-quick@awg0")
 	if err := cmd.Run(); err != nil {
@@ -848,41 +848,26 @@ func (r *RealRunner) RestoreAWG(ctx context.Context, backupData string) error {
 	return nil
 }
 
+// SwitchEgress delegates the allowlisted, persistent transaction to a root-owned helper.
 func (r *RealRunner) SwitchEgress(ctx context.Context, devName string) error {
-	devName = strings.TrimSpace(devName)
-	if devName != "awg1" && devName != "awg3" {
-		return fmt.Errorf("invalid egress interface '%s': must be awg1 or awg3", devName)
+	if !regexp.MustCompile(`^awg[1-9][0-9]*$`).MatchString(devName) {
+		return fmt.Errorf("invalid egress interface %q", devName)
 	}
-
-	cmd := exec.CommandContext(ctx, "ip", "route", "replace", "default", "dev", devName, "table", "100")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ip route replace failed: %w (stderr: %s)", err, stderr.String())
+	output, err := exec.CommandContext(ctx, "/usr/local/libexec/avari-egress", "switch", devName).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("egress switch failed: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil
 }
 
 func (r *RealRunner) GetEgressStatus(ctx context.Context) (*models.EgressStatusResponse, error) {
-	cmd := exec.CommandContext(ctx, "ip", "-4", "route", "show", "table", "100")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	active := "awg1"
-	if err := cmd.Run(); err == nil {
-		outStr := stdout.String()
-		if strings.Contains(outStr, "dev awg3") {
-			active = "awg3"
-		} else if strings.Contains(outStr, "dev awg1") {
-			active = "awg1"
-		}
+	output, err := exec.CommandContext(ctx, "/usr/local/libexec/avari-egress", "status").Output()
+	if err != nil {
+		return nil, fmt.Errorf("egress status failed: %w", err)
 	}
-
-	return &models.EgressStatusResponse{
-		ActiveInterface:     active,
-		AvailableInterfaces: []string{"awg1", "awg3"},
-		Details:             fmt.Sprintf("Current default dev in table 100 is %s", active),
-	}, nil
+	var status models.EgressStatusResponse
+	if err := json.Unmarshal(output, &status); err != nil {
+		return nil, fmt.Errorf("invalid egress status: %w", err)
+	}
+	return &status, nil
 }
-

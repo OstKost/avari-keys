@@ -6,7 +6,7 @@
 # ==============================================================================
 set -euo pipefail
 
-DOMAIN="${1:-s2.avari.dev}"
+DOMAIN="${1:-${NODE_DOMAIN:?Set NODE_DOMAIN or pass domain}}"
 SLAVE_AUTH_URL="${2:-http://127.0.0.1:8081/api/v1/hysteria/auth}"
 LISTEN_PORT="${3:-443}"
 ACME_EMAIL="${4:-admin@${DOMAIN}}"
