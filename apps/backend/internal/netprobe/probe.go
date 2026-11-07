@@ -54,7 +54,14 @@ func Run(ctx context.Context, source string, targets []Target) []models.NetworkP
 	return out
 }
 func Check(ctx context.Context, source string, t Target) models.NetworkProbe {
-	p := models.NetworkProbe{NodeID: t.NodeID, Source: source, StatusDetail: models.StatusDetail{State: "green", CheckedAt: time.Now().UTC()}, Checks: []models.ProbeCheck{}}
+	iface := strings.TrimSpace(os.Getenv("NETWORK_PROBE_INTERFACE"))
+	p := models.NetworkProbe{NodeID: t.NodeID, Source: source, Interface: iface, StatusDetail: models.StatusDetail{State: "green", CheckedAt: time.Now().UTC()}, Checks: []models.ProbeCheck{}}
+	dialer, bindErr := interfaceDialer(iface)
+	if bindErr != nil {
+		p.State = "unknown"
+		p.Reason = "Источник сетевой проверки не настроен: " + bindErr.Error()
+		return p
+	}
 	dns := models.ProbeCheck{Kind: "dns", Target: t.Domain}
 	dctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	start := time.Now()
@@ -85,7 +92,7 @@ func Check(ctx context.Context, source string, t Target) models.NetworkProbe {
 		c := models.ProbeCheck{Kind: kind + "_icmp", Target: host}
 		cctx, stop := context.WithTimeout(ctx, 3*time.Second)
 		start = time.Now()
-		output, pingErr := exec.CommandContext(cctx, "ping", "-n", "-c", "1", host).Output()
+		output, pingErr := exec.CommandContext(cctx, "ping", pingArguments(iface, host)...).Output()
 		err = pingErr
 		stop()
 		c.OK = err == nil
@@ -102,7 +109,7 @@ func Check(ctx context.Context, source string, t Target) models.NetworkProbe {
 		c = models.ProbeCheck{Kind: kind + "_tcp", Target: net.JoinHostPort(host, strconv.Itoa(t.Port))}
 		cctx, stop = context.WithTimeout(ctx, 3*time.Second)
 		start = time.Now()
-		conn, e := (&net.Dialer{}).DialContext(cctx, "tcp", c.Target)
+		conn, e := dialer.DialContext(cctx, "tcp", c.Target)
 		stop()
 		c.OK = e == nil
 		c.LatencyMs = time.Since(start).Milliseconds()
@@ -206,4 +213,12 @@ func Aggregate(probes []models.NetworkProbe, now time.Time) models.StatusDetail 
 		s.Reason = fmt.Sprintf("Есть ошибки или расхождения между источниками проверок (%d)", len(probes))
 	}
 	return s
+}
+
+func pingArguments(iface, host string) []string {
+	args := []string{"-n", "-c", "1"}
+	if iface != "" {
+		args = append(args, "-I", iface)
+	}
+	return append(args, host)
 }

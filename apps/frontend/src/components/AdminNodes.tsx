@@ -786,7 +786,7 @@ export function AdminNodes() {
                           <p className="mt-2">Доступность с этих серверов; результат не подтверждает блокировку у всех провайдеров.</p>
                           {node.network_probes.map((probe) => (
                             <div key={probe.source} className="mt-2 space-y-1">
-                              <NodeHealthBadge label={probe.source} status={probe} />
+                              <NodeHealthBadge label={probe.interface ? `${probe.source} · ${probe.interface}` : probe.source} status={probe} />
                               {probe.checks.map((check) => (
                                 <div key={check.kind} className="break-all">
                                   {check.kind} · {check.target}: {check.ok ? <span className="whitespace-nowrap">{check.latency_ms} ms</span> : (check.error || 'Нет ответа')}

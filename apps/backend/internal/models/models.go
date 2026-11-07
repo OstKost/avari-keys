@@ -444,8 +444,9 @@ type ProbeCheck struct {
 	Error     string `json:"error,omitempty"`
 }
 type NetworkProbe struct {
-	NodeID int64  `json:"node_id"`
-	Source string `json:"source"`
+	NodeID    int64  `json:"node_id"`
+	Source    string `json:"source"`
+	Interface string `json:"interface,omitempty"`
 	StatusDetail
 	Checks []ProbeCheck `json:"checks"`
 }

@@ -19,3 +19,11 @@ Master runs probes from M0 in the background telemetry loop. Gateway Slave sampl
 Green requires all checks to pass at both configured sources. Partial reachability, mismatched DNS, source failure, or any sample older than three minutes is yellow. Red requires all available sources to fail public ICMP/TCP checks. API service health is independent of this outcome. Neither a failed ICMP check nor these two network vantage points prove an ISP-wide block.
 
 The UI shows the source and timestamp with diagnostics. Public network checks never execute as part of loading the node list. Before the first background server sample, `server_status` is unknown. Existing `online` behavior is retained for old clients.
+
+## Pin public connectivity checks to the physical network
+
+Set `NETWORK_PROBE_INTERFACE` independently on Master and gateway Slave to each machine's physical outbound interface name. No interface is assumed by the code. This prevents existing overlay routes to a public node address from making the public checks appear reachable through a VPN tunnel.
+
+On Linux, ICMP uses `ping -I <interface>` and TCP sockets use `SO_BINDTODEVICE`. The selected interface is returned as `network_probes[].interface` and displayed alongside the source. DNS lookup still uses the host's system resolver; domain ICMP/TCP traffic is bound to the selected interface.
+
+An absent setting preserves the system routing policy for compatibility. An unknown interface or configuring binding on a non-Linux platform produces an unknown source status with an explanatory error; probes do not silently fall back to the overlay. Socket binding permission errors are recorded as failed TCP checks. The service needs permission to bind sockets to the configured device.

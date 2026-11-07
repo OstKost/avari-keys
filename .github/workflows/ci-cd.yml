@@ -210,6 +210,7 @@ jobs:
           TELEGRAM_PROXY_SECRET: ${{ secrets.TELEGRAM_PROXY_SECRET }}
           TELEGRAM_PROXY_PORT: ${{ secrets.TELEGRAM_PROXY_PORT }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          NETWORK_PROBE_INTERFACE: ${{ secrets.MASTER_PUBLIC_INTERFACE }}
         run: |
           DEPLOY_TMP="/tmp/avari-master-${RUN_ID}"
           SSH_CMD="ssh -i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new ${SSH_USER}@${TARGET_HOST}"
@@ -224,7 +225,7 @@ jobs:
           python3 - <<'PYENV' | $SSH_CMD 'umask 077; mkdir -p /etc/systemd/system/avari-master.service.d; cat > /etc/systemd/system/avari-master.service.d/runtime.conf'
           import os
           print('[Service]')
-          for key in ('NETWORK_PROBE_TARGETS', 'TELEGRAM_PROXY_SERVER', 'TELEGRAM_PROXY_SECRET', 'TELEGRAM_PROXY_PORT', 'JWT_SECRET'):
+          for key in ('NETWORK_PROBE_TARGETS', 'TELEGRAM_PROXY_SERVER', 'TELEGRAM_PROXY_SECRET', 'TELEGRAM_PROXY_PORT', 'JWT_SECRET', 'NETWORK_PROBE_INTERFACE'):
               value = os.environ.get(key, '')
               if not value:
                   raise SystemExit('Missing runtime secret: ' + key)
@@ -279,6 +280,7 @@ jobs:
         env:
           SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS }}
           CASCADE_GATEWAY_HOST: ${{ secrets.CASCADE_GATEWAY_HOST }}
+          NETWORK_PROBE_INTERFACE: ${{ secrets.CASCADE_PUBLIC_INTERFACE }}
           CASCADE_EGRESS_CONFIG: ${{ secrets.CASCADE_EGRESS_CONFIG }}
           NETWORK_PROBE_TARGETS: ${{ secrets.NETWORK_PROBE_TARGETS }}
           SINGLE_TARGET_HOST: ${{ github.event.inputs.target_host }}
@@ -321,6 +323,10 @@ jobs:
               python3 - <<'PYENV' | ssh ${SSH_OPTS} ${SSH_USER}@${HOST} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf'
           import os
           print('[Service]')
+          iface = os.environ['NETWORK_PROBE_INTERFACE']
+          if not iface or not iface.replace('_','').replace('-','').replace('.','').isalnum():
+              raise SystemExit('Invalid public network interface')
+          print('Environment="NETWORK_PROBE_INTERFACE=' + iface + '"')
           value = os.environ['NETWORK_PROBE_TARGETS']
           if '\n' in value or '\r' in value:
               raise SystemExit('Probe inventory must be single-line JSON')

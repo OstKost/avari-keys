@@ -301,6 +301,7 @@ export interface NodeStatus {
   reason?: string;
 }
 export interface NetworkProbe extends NodeStatus {
+  interface?: string;
   node_id: number;
   source: string;
   checks: { kind: string; target: string; ok: boolean; latency_ms: number; error?: string }[];
