@@ -89,3 +89,48 @@ PublicKey = ServerPubKey=
 		t.Errorf("expected offline status with 'Никогда', got %+v", stats.Peers["u1_phone"])
 	}
 }
+
+func TestPremiumTelemetryUsesOnlyConfiguredInterface(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\n[ \"$1 $2 $3\" = 'show awgp dump' ] || exit 1\nprintf 'private\\tpublic\\t51826\\toff\\npeer\\tpsk\\tendpoint\\t10.56.0.2/32\\t123\\t10\\t20\\t25\\n'\n"
+	if err := os.WriteFile(filepath.Join(dir, "awg"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("AWG_INTERFACE", "awgp")
+	r := NewRealRunner("unused", dir)
+	lines := r.fetchAWGDump(context.Background())
+	if len(lines) != 1 || lines[0] != "awgp\tpeer\tpsk\tendpoint\t10.56.0.2/32\t123\t10\t20\t25" {
+		t.Fatalf("unexpected premium dump: %q", lines)
+	}
+}
+
+func TestRestartUsesConfiguredManager(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "premium-manager.sh")
+	marker := filepath.Join(dir, "restarted")
+	if err := os.WriteFile(script, []byte("#!/bin/bash\n[ \"$1\" = restart ] || exit 1\ntouch '"+marker+"'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewRealRunner(script, dir).RestartAWG(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("configured manager was not invoked", err)
+	}
+}
+
+func TestPremiumMappingsExcludeOtherServerInterfaces(t *testing.T) {
+	dir := t.TempDir()
+	for name, client := range map[string]string{"awgp": "premium_user", "awg0": "standard_user"} {
+		conf := "[Interface]\n\n### Client " + client + "\n[Peer]\nPublicKey = " + client + "\nAllowedIPs = 10.56.0.2/32\n"
+		if err := os.WriteFile(filepath.Join(dir, name+".conf"), []byte(conf), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("AWG_INTERFACE", "awgp")
+	_, _, clients := NewRealRunner(filepath.Join(dir, "manage.sh"), dir).buildClientMappings()
+	if !clients["premium_user"] || clients["standard_user"] {
+		t.Fatalf("cross-interface client mappings: %+v", clients)
+	}
+}

@@ -63,3 +63,5 @@
 - **TASK-055**: ✅ Independent public network/server monitoring, S4 onboarding, persistent cascade selection, private runtime inventory and v0.9.0 release.
 
 - **TASK-057**: ✅ v1.0.0: current cascade labels, switch feedback, expandable server diagnostics and portal modal animations.
+
+- **[TASK-058](./tasks/TASK-058-s5p-premium-dashboard.md)**: ✅ S5P PRO-only direct/cascade ingress, isolated telemetry and current dashboard egress.

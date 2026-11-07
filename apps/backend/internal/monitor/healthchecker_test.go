@@ -154,6 +154,8 @@ func TestHealthCheckerFailureThresholdAndRetry(t *testing.T) {
 }
 
 func TestTelemetryCollectorAndDeltaEngine(t *testing.T) {
+	var activeEgress atomic.Value
+	activeEgress.Store("awg4")
 	var rawRx atomic.Int64
 	var rawTx atomic.Int64
 	rawRx.Store(100 * 1024 * 1024)
@@ -164,6 +166,10 @@ func TestTelemetryCollectorAndDeltaEngine(t *testing.T) {
 		if r.URL.Path == "/health" || r.URL.Path == "/api/v1/health" {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"status":"ok","service":"avari-slave","version":"v0.1.0"}`))
+			return
+		}
+		if r.URL.Path == "/api/v1/cascade/egress" {
+			fmt.Fprintf(w, `{"active_interface":%q,"targets":[{"interface":"awg4","label":"S4"},{"interface":"awg5","label":"S5P"}]}`, activeEgress.Load().(string))
 			return
 		}
 		if r.URL.Path == "/api/v1/stats" {
@@ -226,10 +232,21 @@ func TestTelemetryCollectorAndDeltaEngine(t *testing.T) {
 	// Round 1: Baseline collection
 	checker.CollectTelemetry(ctx)
 
+	stats := checker.GetLatestDashboardStats(ctx)
+	if len(stats.Nodes) != 1 || stats.Nodes[0].ActiveEgress != "S4" {
+		t.Fatalf("missing current egress: %+v", stats.Nodes)
+	}
+	activeEgress.Store("awg5")
+
 	// Round 2: Increment traffic (+50MB RX, +30MB TX = +80MB total)
 	rawRx.Store(150 * 1024 * 1024)
 	rawTx.Store(80 * 1024 * 1024)
 	checker.CollectTelemetry(ctx)
+
+	stats = checker.GetLatestDashboardStats(ctx)
+	if stats.Nodes[0].ActiveEgress != "S5P" {
+		t.Fatalf("egress did not refresh: %+v", stats.Nodes)
+	}
 
 	updatedCfg, err := store.GetClientConfigByID(ctx, cfg.ID)
 	if err != nil {
@@ -263,4 +280,3 @@ func TestTelemetryCollectorAndDeltaEngine(t *testing.T) {
 		t.Fatalf("unexpected dashboard metrics: %+v", dash)
 	}
 }
-
