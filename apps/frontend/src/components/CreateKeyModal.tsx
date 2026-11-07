@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
+import { animatedPortal as createPortal } from './animatedPortal';
 import { X, Plus, Zap, Shield, ShieldCheck, Smartphone, HelpCircle, Lock, Sparkles } from 'lucide-react';
 import { User, NodePublic, ProtocolType } from '../types';
 import { formatNodeRouting } from '../utils/country';

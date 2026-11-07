@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { animatedPortal as createPortal } from './animatedPortal';
 import {
   Server,
   Plus,
@@ -101,6 +101,25 @@ export function AdminNodes() {
   const [restoreData, setRestoreData] = useState('');
   const [isRestoring, setIsRestoring] = useState(false);
 
+  const [egressByNode, setEgressByNode] = useState<Record<number, EgressStatusResponse>>({});
+  const [expandedNodes, setExpandedNodes] = useState<Record<number, boolean>>({});
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      if (document.hidden) return;
+      nodes.filter(n => n.type === 'cascade').forEach(async n => {
+        try {
+          const status = await api.getNodeEgress(n.id);
+          if (alive) setEgressByNode(prev => ({ ...prev, [n.id]: status }));
+        } catch { /* Keep the last known route. */ }
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [nodes]);
+
   // Egress Switcher modal state
   const [egressNode, setEgressNode] = useState<AdminNode | null>(null);
   const [egressStatus, setEgressStatus] = useState<EgressStatusResponse | null>(null);
@@ -115,6 +134,7 @@ export function AdminNodes() {
     try {
       const status = await api.getNodeEgress(node.id);
       setEgressStatus(status);
+      setEgressByNode(prev => ({ ...prev, [node.id]: status }));
       setTargetEgressIf(status.active_interface);
     } catch (err: any) {
       toast.error(err.message || 'Ошибка получения данных Egress');
@@ -126,15 +146,15 @@ export function AdminNodes() {
   const handleSwitchEgressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!egressNode || !targetEgressIf || !egressStatus?.targets?.some(t => t.interface === targetEgressIf && t.available)) return;
-    if (!window.confirm(`Переключить выход каскада с ${egressStatus?.active_interface} на ${targetEgressIf}?`)) return;
+
     try {
       setSwitchingEgress(true);
       const res = await api.switchNodeEgress(egressNode.id, targetEgressIf);
-      toast.success(res.message || `Шлюз выхода каскада переключен на ${targetEgressIf}`);
-      const updated = await api.getNodeEgress(egressNode.id);
-      setEgressStatus(updated);
-      setTargetEgressIf(updated.active_interface);
-      fetchNodes(false, true);
+      if (!res.success) throw new Error(res.message || 'Не удалось переключить каскад');
+      setEgressByNode(prev => ({ ...prev, [egressNode.id]: { ...egressStatus!, active_interface: targetEgressIf } }));
+      toast.success(res.message || 'Каскад успешно переключён');
+      setEgressNode(null);
+      void fetchNodes(false, true);
     } catch (err: any) {
       toast.error(err.message || 'Ошибка переключения шлюза выхода');
     } finally {
@@ -771,16 +791,20 @@ export function AdminNodes() {
           <tbody className="divide-y divide-[#1C3945]/70 bg-[#0A1D26]/40 font-sans">
             {(nodes || []).map((node) => {
               const routing = formatNodeRouting(node.type, node.country_code);
+              const currentEgress = egressByNode[node.id];
+              const currentLabel = currentEgress?.targets?.find(t => t.interface === currentEgress.active_interface)?.label || currentEgress?.active_interface || 'Выход недоступен';
               return (
                 <tr key={node.id} className="hover:bg-[#102833]/50 transition duration-150">
                   <td className="px-5 py-3.5">
                     <div className="space-y-2 min-w-[190px]">
+                      <div className="font-semibold text-[#F2F0E8]">{node.name}</div>
+                      <button className="text-xs text-[#D9B96E]" aria-expanded={!!expandedNodes[node.id]} onClick={() => setExpandedNodes(prev => ({...prev, [node.id]: !prev[node.id]}))}>{expandedNodes[node.id] ? 'Скрыть подробности' : 'Подробнее'}</button>
                       <NodeHealthBadge label="Сервер" status={node.server_status} />
                       <NodeHealthBadge label="Сеть" status={node.network_status} />
                       {node.online && typeof node.latency_ms === 'number' && (
                         <span className="block whitespace-nowrap text-xs font-mono text-[#A8B4B7]" title="Время ответа API, не ICMP Ping">API: {node.latency_ms} ms</span>
                       )}
-                      {!!node.network_probes?.length && (
+                      {expandedNodes[node.id] && !!node.network_probes?.length && (
                         <details className="text-xs text-[#A8B4B7] max-w-[360px]">
                           <summary className="cursor-pointer">Проверки M0 / S0</summary>
                           <p className="mt-2">Доступность с этих серверов; результат не подтверждает блокировку у всех провайдеров.</p>
@@ -814,10 +838,8 @@ export function AdminNodes() {
                             : `Прямой туннель: ${getCountryInfo(node.country_code)?.name || node.country_code || 'Зарубеж'}`
                         }
                       >
-                        {routing.prefix && <span>{routing.prefix}</span>}
-                        {routing.arrow && <span className="text-[#D9B96E] font-bold">{routing.arrow}</span>}
-                        <span>{routing.targetFlag}</span>
-                        <span>{routing.targetCode}</span>
+                        {node.type === 'cascade' ? <span>{currentLabel}</span> : <><span>{routing.targetFlag}</span><span>{routing.targetCode}</span></>}
+
                       </span>
                     </div>
                   </td>
@@ -825,7 +847,7 @@ export function AdminNodes() {
                   {/* Name & Mobile / Backup Tags */}
                   <td className="px-5 py-3.5 font-medium text-[#F2F0E8]">
                     <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                      <span className="font-semibold text-sm w-full">{node.name}</span>
+
                       {node.is_backup && (
                         <span
                           className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
@@ -864,7 +886,7 @@ export function AdminNodes() {
                   </td>
 
                   {/* API URL */}
-                  <td className="px-5 py-3.5 text-sm font-mono text-[#A8B4B7]">{node.api_url}</td>
+                  <td className="px-5 py-3.5 text-sm font-mono text-[#A8B4B7]">{expandedNodes[node.id] ? node.api_url : '—'}</td>
 
                   {/* Provider URL Note / Quick Link */}
                   <td className="px-5 py-3.5 text-sm font-mono">
@@ -895,7 +917,7 @@ export function AdminNodes() {
                     <div className="flex items-center justify-end space-x-1.5">
                       {/* Egress Switcher (Only for Cascade nodes) */}
                       {node.type === 'cascade' && (
-                        <Tooltip content="Управление шлюзом выхода каскада (Egress: S1 ↔ S2)">
+                        <Tooltip content="Управление выходом каскада">
                           <button
                             onClick={() => handleOpenEgress(node)}
                             aria-label="Управление шлюзом выхода каскада"
