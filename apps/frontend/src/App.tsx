@@ -23,7 +23,7 @@ import { NewsBanner } from './components/NewsBanner';
 import { NewsPage } from './components/NewsPage';
 import { ClientKeysView } from './components/ClientKeysView';
 import { Tooltip } from './components/Tooltip';
-import { FloatingMascot, MascotFaqModal } from './components/MascotAssistant';
+import { FloatingMascot, MascotFaqModal, MASCOT_IMAGE_SRC } from './components/MascotAssistant';
 import { OnboardingTour } from './components/OnboardingTour';
 import { TabType, ADMIN_TABS, resolveTabFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
 
@@ -731,7 +731,7 @@ export default function App() {
                 <div className="py-10 px-4 sm:px-6 flex flex-col md:flex-row items-center justify-center gap-6 max-w-2xl mx-auto">
                   <div className="shrink-0 select-none">
                     <img 
-                      src="/assets/mascot.png" 
+                      src={MASCOT_IMAGE_SRC} 
                       alt="Ари" 
                       className="w-36 sm:w-44 max-h-60 object-contain object-bottom filter drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] drop-shadow-[0_0_15px_rgba(217,185,110,0.25)] pointer-events-none"
                     />
