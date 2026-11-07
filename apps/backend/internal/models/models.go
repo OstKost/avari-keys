@@ -299,6 +299,7 @@ type TopologyTrafficBreakdown struct {
 
 // NodeDashboardInfo represents individual node status in the dashboard overview.
 type NodeDashboardInfo struct {
+	ActiveEgress          string `json:"active_egress,omitempty"`
 	ID                    int64  `json:"id"`
 	Name                  string `json:"name"`
 	Type                  string `json:"type"`
