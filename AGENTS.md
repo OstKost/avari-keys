@@ -8,7 +8,7 @@
 
 **Avari Keys** — распределенная self-hosted платформа управления конфигурациями и пирами AmneziaWG (AWG) поверх скрипта `manage_amneziawg.sh` ([bivlked/amneziawg-installer](https://github.com/bivlked/amneziawg-installer)).
 
-- **Текущая версия**: v1.2.0+
+- **Текущая версия**: v1.2.1+
 - **Стек бэкенда**: Go 1.22+ (`CGO_ENABLED=0`, чистый Go SQLite через `modernc.org/sqlite`).
 - **Стек фронтенда**: React 18.3 / TypeScript 5.5 / Vite / Tailwind CSS.
 - **Интеграция с AWG**: Вся работа с интерфейсами, портами, ключами и пирами AmneziaWG на нодах осуществляется исключительно через CLI-вызовы `manage_amneziawg.sh`. В тестах и dev-режиме используется встроенный mock-раннер.

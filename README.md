@@ -5,7 +5,7 @@
   # AVARI KEYS
   ### 🛡️ Распределенная система оркестрации и управления AmneziaWG и Hysteria 2 VPN-ключами
 
-  [![Release](https://img.shields.io/badge/Release-v1.2.0-gold?style=for-the-badge&logo=git&logoColor=white)](./_docs/RELEASE-v1.2.0.md)
+  [![Release](https://img.shields.io/badge/Release-v1.2.1-gold?style=for-the-badge&logo=git&logoColor=white)](./_docs/RELEASE-v1.2.1.md)
   [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
   [![Zero CGo](https://img.shields.io/badge/CGO-Disabled%20(Pure%20Go)-success?style=for-the-badge&logo=linux&logoColor=white)](https://pkg.go.dev/modernc.org/sqlite)
   [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
@@ -328,7 +328,7 @@ avari-keys-mvp/
 │   ├── CASCADE_SIMPLE.md   # Руководство по настройке 2-hop каскада
 │   ├── DEPLOY.md           # Инструкция по развертыванию на VPS
 │   ├── CICD.md             # Описание GitHub Actions пайплайна
-│   ├── RELEASE-v1.2.0.md   # Описание изменений релиза v1.2.0
+│   ├── RELEASE-v1.2.1.md   # Описание изменений релиза v1.2.1
 │   ├── TASKS.md            # Kanban-доска проекта
 │   └── screenshots/        # Презентационные скриншоты Showcase (App Store style)
 ├── apps/
