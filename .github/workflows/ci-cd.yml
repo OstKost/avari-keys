@@ -313,7 +313,10 @@ jobs:
             '  TCPKeepAlive yes' \
             '  ServerAliveInterval 10' \
             '  ServerAliveCountMax 3' \
-            '  ConnectTimeout 30' > ~/.ssh/config
+            '  ConnectTimeout 30' \
+            '  ControlMaster auto' \
+            '  ControlPath /tmp/ssh-%C' \
+            '  ControlPersist 120s' > ~/.ssh/config
           chmod 600 ~/.ssh/config
           [ -z "$SSH_JUMP_HOST" ] || echo "::add-mask::${SSH_JUMP_HOST}"
 
@@ -365,8 +368,8 @@ jobs:
             MAX_ATTEMPTS=3
             for ATTEMPT in $(seq 1 ${MAX_ATTEMPTS}); do
               if [ ${ATTEMPT} -gt 1 ]; then
-                echo "⏳ Retrying [Node: ${HOST}] in 4s (Attempt ${ATTEMPT}/${MAX_ATTEMPTS})..."
-                sleep 4
+                echo "⏳ Retrying [Node: ${HOST}] in 10s (Attempt ${ATTEMPT}/${MAX_ATTEMPTS})..."
+                sleep 10
               fi
               if deploy_slave_node "${HOST}"; then
                 DEPLOYED=1
