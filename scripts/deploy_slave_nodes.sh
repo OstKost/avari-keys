@@ -32,7 +32,7 @@ for HOST in ${TARGET_HOSTS}; do
     echo "=========================================================="
     
     # Test SSH connectivity first
-    if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -p "${SSH_PORT}" "${SSH_USER}@${HOST}" "uptime" >/dev/null 2>&1; then
+    if ! ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p "${SSH_PORT}" "${SSH_USER}@${HOST}" "uptime" >/dev/null 2>&1; then
         echo "⚠️ Warning: Cannot connect to ${HOST}, skipping."
         continue
     fi

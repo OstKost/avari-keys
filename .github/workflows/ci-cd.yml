@@ -291,8 +291,8 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           DEPLOY_TMP="/tmp/avari-slave-${RUN_ID}"
-          SSH_BASE_OPTS="-i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
-          SCP_BASE_OPTS="-O -i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+          SSH_BASE_OPTS="-i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes"
+          SCP_BASE_OPTS="-O -i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
 
           : "${SLAVE_HOSTS:?SLAVE_HOSTS secret is required}"
           # Determine which hosts to deploy to
@@ -305,51 +305,81 @@ jobs:
           for MASKED_HOST in ${HOSTS_TO_DEPLOY}; do echo "::add-mask::${MASKED_HOST}"; done
           echo "==> Deploying configured Slave nodes"
 
-          printf '%s\n' 'Host *' '  IdentityFile ~/.ssh/id_deploy' '  IdentitiesOnly yes' '  StrictHostKeyChecking accept-new' '  ControlMaster auto' '  ControlPersist 120' '  ControlPath ~/.ssh/control-%C' > ~/.ssh/config
+          printf '%s\n' \
+            'Host *' \
+            '  IdentityFile ~/.ssh/id_deploy' \
+            '  IdentitiesOnly yes' \
+            '  StrictHostKeyChecking accept-new' \
+            '  TCPKeepAlive yes' \
+            '  ServerAliveInterval 10' \
+            '  ServerAliveCountMax 3' \
+            '  ConnectTimeout 30' > ~/.ssh/config
           chmod 600 ~/.ssh/config
           [ -z "$SSH_JUMP_HOST" ] || echo "::add-mask::${SSH_JUMP_HOST}"
-          for HOST in ${HOSTS_TO_DEPLOY}; do
-            SSH_OPTS="$SSH_BASE_OPTS"
-            SCP_OPTS="$SCP_BASE_OPTS"
-            if [ -n "$SSH_JUMP_HOST" ] && [ "$HOST" != "$SSH_JUMP_HOST" ]; then
+
+          deploy_slave_node() {
+            local TARGET="$1"
+            local SSH_OPTS="$SSH_BASE_OPTS"
+            local SCP_OPTS="$SCP_BASE_OPTS"
+            if [ -n "$SSH_JUMP_HOST" ] && [ "$TARGET" != "$SSH_JUMP_HOST" ]; then
               SSH_OPTS="$SSH_OPTS -J ${SSH_USER}@${SSH_JUMP_HOST}:${SSH_PORT}"
               SCP_OPTS="$SCP_OPTS -J ${SSH_USER}@${SSH_JUMP_HOST}:${SSH_PORT}"
             fi
+
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || return 1
+
+            if [ "$TARGET" = "$CASCADE_GATEWAY_HOST" ]; then
+              : "${NETWORK_PROBE_TARGETS:?Missing probe targets secret}"
+              : "${CASCADE_EGRESS_CONFIG:?Missing cascade registry secret}"
+              printf '%s' "$CASCADE_EGRESS_CONFIG" | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/avari-keys; cat > /etc/avari-keys/egress.json' || return 1
+              python3 - <<'PYENV' | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf' || return 1
+import os
+print('[Service]')
+iface = os.environ['NETWORK_PROBE_INTERFACE']
+if not iface or not iface.replace('_','').replace('-','').replace('.','').isalnum():
+    raise SystemExit('Invalid public network interface')
+print('Environment="NETWORK_PROBE_INTERFACE=' + iface + '"')
+value = os.environ['NETWORK_PROBE_TARGETS']
+if '\n' in value or '\r' in value:
+    raise SystemExit('Probe inventory must be single-line JSON')
+print('Environment="NETWORK_PROBE_TARGETS=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
+PYENV
+              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP}" || return 1
+              scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/ || return 1
+              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null" || return 1
+            fi
+
+            scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave || return 1
+
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave && rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && systemctl is-active --quiet avari-slave && systemctl restart avari-slave && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
+            return 0
+          }
+
+          for HOST in ${HOSTS_TO_DEPLOY}; do
             echo ""
             echo "=================================================="
             echo "==> [Node: ${HOST}] Connecting & Deploying avari-slave..."
             echo "=================================================="
-            ssh-keyscan -p "${SSH_PORT}" -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-            ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || {
-              echo "Error: configured Slave host is unreachable; deployment failed"
+            DEPLOYED=0
+            MAX_ATTEMPTS=3
+            for ATTEMPT in $(seq 1 ${MAX_ATTEMPTS}); do
+              if [ ${ATTEMPT} -gt 1 ]; then
+                echo "⏳ Retrying [Node: ${HOST}] in 4s (Attempt ${ATTEMPT}/${MAX_ATTEMPTS})..."
+                sleep 4
+              fi
+              if deploy_slave_node "${HOST}"; then
+                DEPLOYED=1
+                break
+              else
+                echo "⚠️ Attempt ${ATTEMPT}/${MAX_ATTEMPTS} for [Node: ${HOST}] failed."
+              fi
+            done
+
+            if [ ${DEPLOYED} -ne 1 ]; then
+              echo "❌ Error: configured Slave host ${HOST} is unreachable after ${MAX_ATTEMPTS} attempts; deployment failed"
               exit 1
-            }
-
-            if [ "$HOST" = "$CASCADE_GATEWAY_HOST" ]; then
-              : "${NETWORK_PROBE_TARGETS:?Missing probe targets secret}"
-              : "${CASCADE_EGRESS_CONFIG:?Missing cascade registry secret}"
-              printf '%s' "$CASCADE_EGRESS_CONFIG" | ssh ${SSH_OPTS} ${SSH_USER}@${HOST} 'umask 077; mkdir -p /etc/avari-keys; cat > /etc/avari-keys/egress.json'
-              python3 - <<'PYENV' | ssh ${SSH_OPTS} ${SSH_USER}@${HOST} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf'
-          import os
-          print('[Service]')
-          iface = os.environ['NETWORK_PROBE_INTERFACE']
-          if not iface or not iface.replace('_','').replace('-','').replace('.','').isalnum():
-              raise SystemExit('Invalid public network interface')
-          print('Environment="NETWORK_PROBE_INTERFACE=' + iface + '"')
-          value = os.environ['NETWORK_PROBE_TARGETS']
-          if '\n' in value or '\r' in value:
-              raise SystemExit('Probe inventory must be single-line JSON')
-          print('Environment="NETWORK_PROBE_TARGETS=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
-          PYENV
-              ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "mkdir -p ${DEPLOY_TMP}"
-              scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${HOST}:${DEPLOY_TMP}/
-              ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null"
             fi
-
-            scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${HOST}:${DEPLOY_TMP}/avari-slave
-            
-            ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave && rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && systemctl is-active --quiet avari-slave && systemctl restart avari-slave && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'"
           done
 
           echo ""
