@@ -7,7 +7,8 @@
     "dev": "vite",
     "dev:mock": "VITE_USE_MOCK=true vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "screenshots": "node scripts/generate_all_showcase.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
