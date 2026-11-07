@@ -4,6 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
+| | | | | [TASK-060](./tasks/TASK-060-keys-compact-list-view.md) |
 | | | | | [TASK-001](./tasks/TASK-001-project-scaffolding.md) |
 | | | | | [TASK-002](./tasks/TASK-002-slave-api-core.md) |
 | | | | | [TASK-003](./tasks/TASK-003-master-backend-auth-db.md) |
@@ -67,3 +68,4 @@
 
 - **[TASK-058](./tasks/TASK-058-s5p-premium-dashboard.md)**: ✅ S5P PRO-only direct/cascade ingress, isolated telemetry and current dashboard egress.
 - **[TASK-059](./tasks/TASK-059-route-preservation-and-chibi-mascot.md)**: ✅ HTML5 History API навигация и сохранение роутов/вкладок при перезагрузке, милый чиби-маскот Ари.
+- **[TASK-060](./tasks/TASK-060-keys-compact-list-view.md)**: ✅ Второй вариант отображения конфигураций — минималистичный список с плавным аккордеоном деталей и действий.
