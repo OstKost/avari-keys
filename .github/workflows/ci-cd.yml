@@ -305,7 +305,7 @@ jobs:
           for MASKED_HOST in ${HOSTS_TO_DEPLOY}; do echo "::add-mask::${MASKED_HOST}"; done
           echo "==> Deploying configured Slave nodes"
 
-          printf '%s\n' 'Host *' '  IdentityFile ~/.ssh/id_deploy' '  IdentitiesOnly yes' '  StrictHostKeyChecking accept-new' > ~/.ssh/config
+          printf '%s\n' 'Host *' '  IdentityFile ~/.ssh/id_deploy' '  IdentitiesOnly yes' '  StrictHostKeyChecking accept-new' '  ControlMaster auto' '  ControlPersist 120' '  ControlPath ~/.ssh/control-%C' > ~/.ssh/config
           chmod 600 ~/.ssh/config
           [ -z "$SSH_JUMP_HOST" ] || echo "::add-mask::${SSH_JUMP_HOST}"
           for HOST in ${HOSTS_TO_DEPLOY}; do
