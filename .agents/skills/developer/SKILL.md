@@ -1,15 +1,15 @@
 ---
-name: codex
+name: developer
 description: >-
-  Fullstack implementation, testing, and debugging guide for Codex in Avari Keys.
+  Fullstack implementation, testing, and debugging guide for developers in Avari Keys.
   Use this skill when developing Go backend logic (Master/Slave), writing pure Go SQLite queries,
   implementing React/TypeScript/Tailwind UI components, updating mockClient.ts,
   or writing unit and contract tests.
 ---
 
-# Codex Developer & Tester Skill (Avari Keys)
+# Fullstack Developer Skill (Avari Keys)
 
-This skill provides implementation standards, coding guidelines, and verification procedures for the **Codex** agent acting as the **Fullstack Developer and Tester** in the Avari Keys project.
+This skill provides implementation standards, coding guidelines, and verification procedures for any agent acting as the **Fullstack Developer** in the Avari Keys project.
 
 ---
 
@@ -88,12 +88,12 @@ cd apps/frontend && npm run build
 
 ---
 
-## 4. Handoff Protocol to Antigravity (Orchestrator)
+## 4. Handoff Protocol to Orchestrator
 
 When completing a task, formulate the handoff:
 
 ```markdown
-### Handoff: [Codex -> Antigravity]
+### Handoff: [Developer -> Orchestrator]
 - **Ветка**: `feature/TASK-XXX-...`
 - **Задача**: `_docs/tasks/TASK-XXX.md`
 - **Выполненные изменения**: [Краткое описание реализации]

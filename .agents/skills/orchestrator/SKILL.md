@@ -1,5 +1,5 @@
 ---
-name: antigravity
+name: orchestrator
 description: >-
   Orchestration, task planning, architecture design, Gitflow control, and release
   management for the Avari Keys project. Use this skill when breaking down tasks,
@@ -7,9 +7,9 @@ description: >-
   preparing handoffs, or cutting new releases.
 ---
 
-# Antigravity Orchestrator Skill (Avari Keys)
+# Orchestrator & Architect Skill (Avari Keys)
 
-This skill provides step-by-step procedures and runbooks for the **Antigravity** agent operating as the **Orchestrator and Architect** in the Avari Keys project.
+This skill provides step-by-step procedures and runbooks for any agent operating as the **Orchestrator and Architect** in the Avari Keys project.
 
 ---
 
@@ -18,7 +18,7 @@ This skill provides step-by-step procedures and runbooks for the **Antigravity**
 - **System Architecture**: Enforce architectural invariants (Zero-CGo, Decoy safety, key isolation, mock-first frontend, Curve25519 telemetry).
 - **Task Lifecycle**: Deconstruct features into discrete tasks, maintain [`_docs/TASKS.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/TASKS.md) and task specifications in `_docs/tasks/`.
 - **Gitflow Oversight**: Manage branching (`develop`, `feature/TASK-XXX-...`, `release/vX.Y.Z`, `main`), review diffs, and ensure zero regressions.
-- **Agent Handoff**: Formulate clear, actionable directives for Codex (Developer / Implementer role).
+- **Agent Handoff**: Formulate clear, actionable directives for the Developer / Implementer role.
 - **Release Management**: Bump versions, update documentation, generate release notes (`_docs/RELEASE-vX.Y.Z.md`), and tag releases.
 
 ---
@@ -48,12 +48,12 @@ When receiving a new feature request or architectural change:
 
 ---
 
-## 3. Handoff Protocol to Codex (Developer)
+## 3. Handoff Protocol to Developer
 
-When delegating implementation to Codex, use the standard handoff format:
+When delegating implementation to the Developer role, use the standard handoff format:
 
 ```markdown
-### Handoff: [Antigravity -> Codex]
+### Handoff: [Orchestrator -> Developer]
 - **Ветка**: `feature/TASK-XXX-<slug>`
 - **Спецификация задачи**: [`_docs/tasks/TASK-XXX-<slug>.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/tasks/TASK-XXX-<slug>.md)
 - **Целевые файлы**:

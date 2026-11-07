@@ -3,6 +3,9 @@ import { animatedPortal as createPortal } from './animatedPortal';
 import { Sparkles, HelpCircle, X, ChevronRight, ChevronDown, BookOpen, RotateCcw, Shield } from 'lucide-react';
 import { MASCOT_FAQ_QUESTIONS } from '../utils/faqData';
 
+export const MASCOT_IMAGE_SRC = '/assets/mascot.png?v=1.2.0';
+export const MASCOT_AVATAR_SRC = '/assets/mascot_avatar.png?v=1.2.0';
+
 // Mascot Avatar sub-component
 export function MascotAvatar({ 
   size = 'md', 
@@ -33,7 +36,7 @@ export function MascotAvatar({
       )}
       <div className={`relative ${sizeClasses[size]} rounded-full overflow-hidden border-2 border-[#D9B96E] bg-[#0A1D26] shadow-xl shadow-black/80 transition-transform duration-300 group-hover:scale-105`}>
         <img 
-          src="/assets/mascot_avatar.png" 
+          src={MASCOT_AVATAR_SRC} 
           alt="Ари" 
           className="w-full h-full object-cover filter contrast-[1.05]"
         />
@@ -87,7 +90,7 @@ export function MascotFigure({
         {/* Character Card / Cutout Frame */}
         <div className="relative w-full h-full rounded-3xl overflow-hidden border-2 border-[#D9B96E]/80 bg-gradient-to-b from-[#102833]/90 via-[#0A1D26]/95 to-[#06141B] shadow-2xl shadow-black/90 transition-all duration-300 group-hover:border-[#F0D48D] group-hover:shadow-[#D9B96E]/20">
           <img 
-            src="/assets/mascot.png" 
+            src={MASCOT_IMAGE_SRC} 
             alt="Avari Companion" 
             className="w-full h-full object-cover object-top filter contrast-[1.08] transition-transform duration-500 group-hover:scale-105"
           />
@@ -307,7 +310,7 @@ export function MascotModalCompanion({
         className="relative flex justify-center items-end cursor-pointer group"
       >
         <img 
-          src="/assets/mascot.png" 
+          src={MASCOT_IMAGE_SRC} 
           alt="Ари" 
           className="w-52 sm:w-60 lg:w-72 max-h-[460px] object-contain object-bottom filter drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)] drop-shadow-[0_0_20px_rgba(217,185,110,0.25)] transition-transform duration-300 group-hover:scale-105 pointer-events-none"
         />
@@ -375,7 +378,7 @@ export function MascotAuthCompanion({
       {/* Pure Cutout Mascot (No frame/container box, natural shadow & soft glow) */}
       <div className="relative flex justify-center items-end cursor-pointer group">
         <img 
-          src="/assets/mascot.png" 
+          src={MASCOT_IMAGE_SRC} 
           alt="Ари" 
           className="w-52 sm:w-60 lg:w-72 max-h-[460px] object-contain object-bottom filter drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)] drop-shadow-[0_0_20px_rgba(217,185,110,0.25)] transition-transform duration-300 group-hover:scale-105 pointer-events-none"
         />
@@ -414,7 +417,7 @@ export function FloatingMascot({
         >
           <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden">
             <img 
-              src="/assets/mascot_avatar.png" 
+              src={MASCOT_AVATAR_SRC} 
               alt="Ари" 
               className="w-full h-full object-cover filter contrast-[1.05]"
             />
@@ -434,7 +437,7 @@ export function FloatingMascot({
             <div className="flex items-center justify-between pb-3 border-b border-[#1C3945]">
               <div className="flex items-center space-x-2.5">
                 <div className="w-8 h-8 rounded-full overflow-hidden border border-[#D9B96E] bg-[#06141B] shrink-0">
-                  <img src="/assets/mascot_avatar.png" alt="Ари" className="w-full h-full object-cover" />
+                  <img src={MASCOT_AVATAR_SRC} alt="Ари" className="w-full h-full object-cover" />
                 </div>
                 <span className="font-serif font-bold text-sm sm:text-base text-[#F2F0E8]">Хранитель Ари</span>
               </div>
@@ -511,7 +514,7 @@ export function FloatingMascot({
         <div className="relative flex-shrink-0 transition-transform duration-300 group-hover:scale-110">
           <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-[#D9B96E] bg-[#0A1D26] shadow-2xl shadow-black/90 group-hover:border-[#F0D48D] group-hover:shadow-[0_0_25px_rgba(217,185,110,0.4)] transition-all duration-300">
             <img 
-              src="/assets/mascot_avatar.png" 
+              src={MASCOT_AVATAR_SRC} 
               alt="Ари" 
               className="w-full h-full object-cover filter contrast-[1.05] pointer-events-none"
             />

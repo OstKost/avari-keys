@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, ArrowRight, ArrowLeft, Check, X, Smartphone, Zap, QrCode } from 'lucide-react';
-import { MascotAvatar } from './MascotAssistant';
+import { MascotAvatar, MASCOT_IMAGE_SRC } from './MascotAssistant';
 
 export interface OnboardingStep {
   step: number;
@@ -87,7 +87,7 @@ export function OnboardingTour({
       {/* Standing Cutout Mascot to the left of the dialog card */}
       <div className="hidden sm:flex flex-col items-center shrink-0 select-none">
         <img 
-          src="/assets/mascot.png" 
+          src={MASCOT_IMAGE_SRC} 
           alt="Avari Companion" 
           className="w-28 sm:w-36 max-h-48 object-contain object-bottom filter drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] drop-shadow-[0_0_15px_rgba(217,185,110,0.25)] pointer-events-none"
         />

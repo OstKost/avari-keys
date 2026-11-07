@@ -72,10 +72,11 @@
 
 ```text
 avari-keys-mvp/
-├── .agents/                    # Локальные скиллы агентов (Antigravity & Codex)
+├── .agents/                    # Локальные скиллы по ролям
 │   └── skills/
-│       ├── antigravity/        # Скилл оркестратора (планирование, Gitflow, релизы)
-│       └── codex/              # Скилл разработчика (Go, React, mockClient, тесты)
+│       ├── orchestrator/       # Скилл оркестратора (планирование, Gitflow, релизы)
+│       ├── developer/          # Скилл разработчика (Go, React, mockClient, тесты)
+│       └── qa-tester/          # Скилл тестировщика (go test, vet, build-linux)
 ├── apps/
 │   ├── backend/                # Go 1.22+ backend
 │   │   ├── cmd/
@@ -171,8 +172,8 @@ gitGraph
 
 | Роль | Основная зона ответственности | Локальный скилл |
 |---|---|---|
-| **Оркестратор / Архитектор** | Декомпозиция задач, ведение [`_docs/TASKS.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/TASKS.md), контроль Gitflow, архитектурные решения, координация, подготовка релизов. | [`antigravity`](file:///.agents/skills/antigravity/SKILL.md) |
-| **Разработчик / Исполнитель** | Написание Go и React кода, реализация DTO, синхронизация `client.ts` и `mockClient.ts`, модульные и контрактные тесты, фиксы багов. | [`codex`](file:///.agents/skills/codex/SKILL.md) |
+| **Оркестратор / Архитектор** | Декомпозиция задач, ведение [`_docs/TASKS.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/TASKS.md), контроль Gitflow, архитектурные решения, координация, подготовка релизов. | [`orchestrator`](file:///.agents/skills/orchestrator/SKILL.md) |
+| **Разработчик / Исполнитель** | Написание Go и React кода, реализация DTO, синхронизация `client.ts` и `mockClient.ts`, модульные и контрактные тесты, фиксы багов. | [`developer`](file:///.agents/skills/developer/SKILL.md) |
 | **Тестировщик / Верификатор** | Запуск тестов (`go test -race`), статический анализ (`go vet`), Zero-CGO Linux кросс-компиляция, сборка фронтенда (`npm run build`). | [`qa-tester`](file:///.agents/skills/qa-tester/SKILL.md) |
 
 ### Универсальные наборы под классы моделей
@@ -181,17 +182,17 @@ gitGraph
 
 #### 1. Heavyweight / Reasoning модели (Gemini 1.5/2.0/3.0 Pro, Claude 3.5 Sonnet / Opus, OpenAI o1/o3-mini)
 - **Целевые роли**: **Оркестратор / Архитектор** либо **Сложный рефакторинг ядра**.
-- **Активные скиллы**: [`antigravity`](file:///.agents/skills/antigravity/SKILL.md) + [`codex`](file:///.agents/skills/codex/SKILL.md).
+- **Активные скиллы**: [`orchestrator`](file:///.agents/skills/orchestrator/SKILL.md) + [`developer`](file:///.agents/skills/developer/SKILL.md).
 - **Сильные стороны**: Анализ граничных условий, проектирование контрактов API, сложных SQLite миграций, декомпозиция крупных фич, подготовка handoff и аудит безопасности.
 
 #### 2. Code Specialist модели (Codex, Claude 3.5 Sonnet, DeepSeek-Coder, Qwen Coder)
 - **Целевая роль**: **Fullstack-разработчик (Go Backend + React Frontend)**.
-- **Активный скилл**: [`codex`](file:///.agents/skills/codex/SKILL.md).
+- **Активный скилл**: [`developer`](file:///.agents/skills/developer/SKILL.md).
 - **Сильные стороны**: Идиоматичный Go 1.22+, Zero-CGO чистый SQLite, изоляция build-тегов Linux/Darwin, строгая синхронизация `mockClient.ts`, разработка Cyber-Fantasy UI компонентов.
 
 #### 3. Fast / High-Throughput модели (Gemini Flash / Flash-Lite, GPT-4o-mini, Claude Haiku)
 - **Целевые роли**: **QA-инженер / Тестировщик**, **точечные UI-правки**, **генерация мок-данных**.
-- **Активные скиллы**: [`qa-tester`](file:///.agents/skills/qa-tester/SKILL.md) (основной) или [`codex`](file:///.agents/skills/codex/SKILL.md) (для точечных правок).
+- **Активные скиллы**: [`qa-tester`](file:///.agents/skills/qa-tester/SKILL.md) (основной) или [`developer`](file:///.agents/skills/developer/SKILL.md) (для точечных правок).
 - **Сильные стороны**: Мгновенный запуск и разбор логов тестов, исправление линтер-ошибок, верстка CSS-стилей, наполнение демо-данных без лишнего расхода квот.
 
 ---
@@ -202,13 +203,13 @@ gitGraph
 
 ```mermaid
 flowchart LR
-    A["👑 Pro Model<br/><b>Оркестратор (antigravity)</b><br/>Декомпозиция & Контракты"] --> B["⚡ Sonnet / Codex<br/><b>Разработчик (codex)</b><br/>Реализация Go & React + Mock"]
+    A["👑 Pro Model<br/><b>Оркестратор (orchestrator)</b><br/>Декомпозиция & Контракты"] --> B["⚡ Sonnet / Codex<br/><b>Разработчик (developer)</b><br/>Реализация Go & React + Mock"]
     B --> C["🚀 Flash / Mini<br/><b>Тестировщик (qa-tester)</b><br/>make test, lint, build-linux"]
     C --> A
 ```
 
-1. **Фаза планирования и архитектуры**: Модель класса **Pro** (Gemini Pro / Sonnet / o1) со скиллом [`antigravity`](file:///.agents/skills/antigravity/SKILL.md).
-2. **Фаза кодинга**: Модель класса **Code Specialist** (Codex / Sonnet / Pro) со скиллом [`codex`](file:///.agents/skills/codex/SKILL.md).
+1. **Фаза планирования и архитектуры**: Модель класса **Pro** (Gemini Pro / Sonnet / o1) со скиллом [`orchestrator`](file:///.agents/skills/orchestrator/SKILL.md).
+2. **Фаза кодинга**: Модель класса **Code Specialist** (Codex / Sonnet / Pro) со скиллом [`developer`](file:///.agents/skills/developer/SKILL.md).
 3. **Фаза верификации и тестов**: Модель класса **Fast** (Flash / GPT-4o-mini) со скиллом [`qa-tester`](file:///.agents/skills/qa-tester/SKILL.md).
 
 ---
