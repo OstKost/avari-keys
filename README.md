@@ -86,9 +86,7 @@
 ### 3. Модальное окно ключа: AmneziaWG QR-код и параметры обфускации
 > Генерация QR-кода на лету для мобильного приложения AmneziaWG, подсветка параметров защиты от DPI (`Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1-H4`), копирование и скачивание `.conf`:
 
-<div align="center">
-  <img src="_docs/screenshots/03-key-qr-modal.png" alt="QR код ключа AmneziaWG" width="85%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
-</div>
+
 
 ---
 

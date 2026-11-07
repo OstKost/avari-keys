@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -118,10 +120,10 @@ func NewServer(cfg Config, s *storage.Storage) *Server {
 	srv.telegramBot = telegram.NewBot(tgCfg)
 
 	hcCfg := monitor.Config{
-		Storage:     s,
-		Bot:         srv.telegramBot,
-		Interval:    cfg.HealthCheckInterval,
-		Timeout:     cfg.HealthCheckTimeout,
+		Storage:  s,
+		Bot:      srv.telegramBot,
+		Interval: cfg.HealthCheckInterval,
+		Timeout:  cfg.HealthCheckTimeout,
 		LogActivity: func(category models.AuditLogCategory, action string, details string) {
 			_ = s.CreateAuditLog(context.Background(), &models.AuditLog{
 				Username:  "system_monitor",
@@ -157,7 +159,6 @@ func (s *Server) StopBackgroundWorkers() {
 		s.telegramBot.Stop()
 	}
 }
-
 
 // Handler returns the HTTP handler with global middleware.
 func (s *Server) Handler() http.Handler {
@@ -253,7 +254,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v0.8.6",
+		Version: "v0.9.0",
 	})
 }
 
@@ -418,7 +419,6 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 // User: Nodes & Keys
 func (s *Server) handleListActiveNodes(w http.ResponseWriter, r *http.Request) {
 	nodes, err := s.storage.ListActiveNodesPublic(r.Context())
@@ -430,11 +430,23 @@ func (s *Server) handleListActiveNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetTelegramProxies(w http.ResponseWriter, r *http.Request) {
-	// Proxies list. FIN (S2) is preconfigured with tg-ws-proxy
-	secret := "ee9cbceb37d7e8416b6ffaa076a610be1f73322e61766172692e646576"
-	server := "s2.avari.dev"
+	secret := os.Getenv("TELEGRAM_PROXY_SECRET")
+	server := os.Getenv("TELEGRAM_PROXY_SERVER")
 	port := 8443
-	link := fmt.Sprintf("tg://proxy?server=%s&port=%d&secret=%s", server, port, secret)
+	if raw := os.Getenv("TELEGRAM_PROXY_PORT"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 65535 {
+			s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Invalid proxy port"})
+			return
+		}
+		port = n
+	}
+	if server == "" || secret == "" {
+		s.writeJSON(w, http.StatusOK, []models.TelegramProxyInfo{})
+		return
+	}
+	params := url.Values{"server": {server}, "port": {strconv.Itoa(port)}, "secret": {secret}}
+	link := "tg://proxy?" + params.Encode()
 
 	proxies := []models.TelegramProxyInfo{
 		{
@@ -901,33 +913,12 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 // Admin: Nodes
 func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
-	nodes, err := s.storage.ListNodes(r.Context())
+	nodes, err := s.healthChecker.CheckAllNodes(r.Context())
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-
-	res := []models.NodeWithStatus{}
-	for _, n := range nodes {
-		slaveCli := client.NewSlaveClient(n.APIURL, n.APIKey)
-		start := time.Now()
-		health, hErr := slaveCli.CheckHealth(r.Context())
-		latency := time.Since(start).Milliseconds()
-		isOnline := hErr == nil && health != nil && health.Status == "ok"
-		if !isOnline {
-			latency = 0
-		}
-		if isOnline && health != nil && health.HysteriaAvailable {
-			n.HasHysteria = true
-		}
-		res = append(res, models.NodeWithStatus{
-			Node:      n,
-			Online:    isOnline,
-			LatencyMs: latency,
-		})
-	}
-
-	s.writeJSON(w, http.StatusOK, res)
+	s.writeJSON(w, http.StatusOK, nodes)
 }
 
 func (s *Server) handleAdminRestartNode(w http.ResponseWriter, r *http.Request) {
@@ -1097,7 +1088,6 @@ func (s *Server) handleAdminSwitchNodeEgress(w http.ResponseWriter, r *http.Requ
 		Message: fmt.Sprintf("Cascade egress on node '%s' switched to %s", node.Name, req.Interface),
 	})
 }
-
 
 func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
@@ -1961,8 +1951,3 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, data any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
-
-
-
-
-

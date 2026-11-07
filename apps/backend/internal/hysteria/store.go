@@ -33,7 +33,7 @@ type Store struct {
 
 func NewStore(filePath string, server string, port int) (*Store, error) {
 	if server == "" {
-		server = "s2.avari.dev"
+		return nil, fmt.Errorf("HYSTERIA_SERVER or NODE_DOMAIN is required")
 	}
 	if port <= 0 {
 		port = 443
@@ -209,7 +209,7 @@ func (s *Store) Authenticate(auth string) (bool, string) {
 
 func (s *Store) buildResponse(u HysteriaUser) *models.ClientResponse {
 	// Format hysteria2 URI
-	// hysteria2://password@s2.avari.dev:443/?sni=s2.avari.dev&insecure=0#u.Name
+	// hysteria2://password@vpn.example.net:443/?sni=vpn.example.net&insecure=0#u.Name
 	uri := fmt.Sprintf("hysteria2://%s@%s:%d/?sni=%s&insecure=0#%s", u.Password, s.server, s.port, s.server, u.Name)
 
 	configYAML := fmt.Sprintf(`server: %s:%d

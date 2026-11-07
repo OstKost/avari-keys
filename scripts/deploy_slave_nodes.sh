@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/apps/backend"
-TARGET_HOSTS="${1:-157.22.252.225 185.213.240.136 157.228.142.20 157.228.130.7}"
+TARGET_HOSTS="${1:-${SLAVE_HOSTS:?Set SLAVE_HOSTS or pass target hosts}}"
 SSH_USER="${SSH_USER:-root}"
 SSH_PORT="${SSH_PORT:-22}"
 

@@ -1,4 +1,4 @@
-# 🚀 Безопасный CI/CD пайплайн (GitHub Actions -> VPS 176.53.174.118 / keys.avari.dev)
+# 🚀 Безопасный CI/CD пайплайн (GitHub Actions -> VPS 192.0.2.10 / keys.example.net)
 
 Настроен автоматический, безопасный и атомарный процесс непрерывной интеграции и доставки (CI/CD) на базе **GitHub Actions**.
 
@@ -18,8 +18,8 @@ flowchart TD
 
     subgraph CD_Auto["2. Автоматический деплой на push в main"]
         D --> E{"Push в main / master?"}
-        E -- Да --> F["Деплой Frontend SPA на Master VPS (176.53.174.118)"]
-        E -- Да --> G["Деплой avari-master на Master VPS (176.53.174.118)"]
+        E -- Да --> F["Деплой Frontend SPA на Master VPS (192.0.2.10)"]
+        E -- Да --> G["Деплой avari-master на Master VPS (192.0.2.10)"]
         E -- Да --> H["Атомарный деплой avari-slave на ВСЕ Slave-ноды"]
     end
 
@@ -35,7 +35,7 @@ flowchart TD
 |---|---|---|
 | **Frontend Web SPA** | **Автоматически** при каждом push/merge в `main` | Атомарный swap статики в `/var/www/avari-keys/frontend` на Master сервере. |
 | **Master API (`avari-master`)** | **Автоматически** при push в `main` (или вручную) | Обновляет бинарник в `/usr/local/bin/avari-master` и перезапускает systemd сервис `avari-master`. |
-| **Slave API (`avari-slave`)** | **Автоматически** при push в `main` (или вручную) | Атомарно обновляет бинарник и перезапускает `avari-slave` на всех нодах сети (`176.53.174.118`, `185.213.240.136`, `157.228.142.20`, `157.228.130.7`). |
+| **Slave API (`avari-slave`)** | **Автоматически** при push в `main` (или вручную) | Атомарно обновляет бинарник и перезапускает `avari-slave` на всех нодах сети (`192.0.2.10`, `192.0.2.21`, `192.0.2.22`, `192.0.2.23`). |
 
 ---
 
@@ -51,17 +51,17 @@ flowchart TD
 
 ---
 
-## 📋 Первоначальная настройка сервера (176.53.174.118)
+## 📋 Первоначальная настройка сервера (192.0.2.10)
 
 ### Шаг 1. Настройка SSH-доступа для GitHub Actions
 
 На локальном компьютере или сервере:
 ```bash
 # Скопировать публичный ключ на сервер:
-ssh-copy-id -i ~/.ssh/github_deploy_key.pub root@176.53.174.118
+ssh-copy-id -i ~/.ssh/github_deploy_key.pub root@192.0.2.10
 
 # Проверить подключение:
-ssh -i ~/.ssh/github_deploy_key root@176.53.174.118 "echo 'SSH доступ успешно настроен!'"
+ssh -i ~/.ssh/github_deploy_key root@192.0.2.10 "echo 'SSH доступ успешно настроен!'"
 ```
 
 *Если ключ создается с нуля:*
@@ -73,7 +73,7 @@ ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_deploy_key -N 
 
 ### Шаг 2. Создание директорий и Systemd-сервиса на VPS
 
-Выполните на сервере `176.53.174.118`:
+Выполните на сервере `192.0.2.10`:
 ```bash
 # Создание рабочих директорий
 mkdir -p /opt/avari-keys/data /var/www/avari-keys/frontend
@@ -85,9 +85,9 @@ systemctl enable avari-master
 
 ---
 
-### Шаг 3. Настройка OpenResty Manager / Nginx для keys.avari.dev
+### Шаг 3. Настройка OpenResty Manager / Nginx для keys.example.net
 
-В OpenResty Manager (или конфигурационном файле `/etc/nginx/conf.d/keys.avari.dev.conf`):
+В OpenResty Manager (или конфигурационном файле `/etc/nginx/conf.d/keys.example.net.conf`):
 
 1. **Статика фронтенда**:
    - `root`: `/var/www/avari-keys/frontend`
@@ -95,7 +95,7 @@ systemctl enable avari-master
    - `try_files`: `$uri $uri/ /index.html;`
 2. **Reverse Proxy для Master API**:
    - `location /api/` $\to$ `http://127.0.0.1:8080` (с поддержкой WebSocket и передачей заголовков `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`).
-3. Шаблон готовой конфигурации находится в [`deploy/openresty/keys.avari.dev.conf`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/deploy/openresty/keys.avari.dev.conf).
+3. Шаблон готовой конфигурации находится в [`deploy/openresty/keys.example.net.conf`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/deploy/openresty/keys.example.net.conf).
 
 ---
 
@@ -108,7 +108,7 @@ systemctl enable avari-master
 | Название секрета | Обязательно? | Значение по умолчанию | Описание |
 |---|---|---|---|
 | **`SSH_PRIVATE_KEY`** | **Да (Критично)** | *(нет)* | Полное содержимое приватного ключа `~/.ssh/github_deploy_key` (включая строки `-----BEGIN OPENSSH PRIVATE KEY-----` и `-----END OPENSSH PRIVATE KEY-----`). |
-| `SSH_HOST` | Нет | `176.53.174.118` | IP-адрес или домен (`keys.avari.dev`). |
+| `SSH_HOST` | Да | — | IP-адрес или домен (`keys.example.net`). |
 | `SSH_USER` | Нет | `root` | Пользователь на сервере. |
 | `SSH_PORT` | Нет | `22` | Порт SSH. |
 
@@ -125,7 +125,7 @@ systemctl enable avari-master
 3. Нажмите синюю кнопку **Run workflow**:
    - **Branch**: `main` (или нужная ветка).
    - **Компонент для деплоя**: `all`, `master-api`, `frontend-only`, `slave-api`.
-   - **IP/Хост целевого VPS**: по умолчанию `176.53.174.118`.
+   - **IP/Хост целевого VPS**: задаётся секретом `SSH_HOST`.
 4. Нажмите зеленую кнопку **Run workflow**.
 
 ---

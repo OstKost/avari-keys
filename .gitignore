@@ -46,3 +46,8 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Private deployment inventory
+*.private.json
+*.private.env
+__pycache__/
