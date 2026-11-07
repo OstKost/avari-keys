@@ -2,7 +2,7 @@
 
   <img src="apps/frontend/public/assets/logo_detailed.png" alt="Avari Keys Logo" width="120" style="border-radius: 50%; filter: drop-shadow(0 0 20px rgba(217,185,110,0.4));" />
 
-  # AVARI KEYS MVP
+  # AVARI KEYS
   ### 🛡️ Распределенная система оркестрации и управления AmneziaWG и Hysteria 2 VPN-ключами
 
   [![Release](https://img.shields.io/badge/Release-v1.2.0-gold?style=for-the-badge&logo=git&logoColor=white)](./_docs/RELEASE-v1.2.0.md)
