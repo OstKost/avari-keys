@@ -35,10 +35,12 @@ type Bot struct {
 	nodeLister  func(ctx context.Context) ([]models.NodeWithStatus, error)
 	statsLister func(ctx context.Context) (*models.DashboardStatsResponse, error)
 
-	stopChan  chan struct{}
-	isRunning bool
-	wg        sync.WaitGroup
-	mu        sync.RWMutex
+	lifecycleMu sync.Mutex // serializes worker start/stop/reload, never held by the worker
+	pollCancel  context.CancelFunc
+	stopChan    chan struct{}
+	isRunning   bool
+	wg          sync.WaitGroup
+	mu          sync.RWMutex
 }
 
 // Config holds Telegram bot parameters.
@@ -173,13 +175,24 @@ func (b *Bot) ValidateToken(token string) (username string, firstName string, er
 
 // UpdateConfig updates bot credentials and hot-reloads the polling worker.
 func (b *Bot) UpdateConfig(ctx context.Context, s models.TelegramSettings) error {
+	b.lifecycleMu.Lock()
+	defer b.lifecycleMu.Unlock()
+	b.mu.Lock()
+	token := strings.TrimSpace(s.BotToken)
+	restart := b.token != token || b.enabled != s.Enabled
+	wasRunning := false
+	if restart {
+		wasRunning = b.stopPollingLocked()
+	}
+	b.mu.Unlock()
+	// The exiting worker reads settings under mu, so never wait while holding it.
+	// Keep old credentials until it exits to avoid sending old replies as the new bot.
+	if wasRunning {
+		b.wg.Wait()
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	tokenChanged := b.token != s.BotToken
-	enabledChanged := b.enabled != s.Enabled
-
-	b.token = strings.TrimSpace(s.BotToken)
+	b.token = token
 	b.botUsername = strings.TrimSpace(s.BotUsername)
 	b.adminSecret = strings.TrimSpace(s.AdminSecret)
 	b.enabled = s.Enabled
@@ -187,64 +200,61 @@ func (b *Bot) UpdateConfig(ctx context.Context, s models.TelegramSettings) error
 	b.notifyOnNodeRecover = s.NotifyOnNodeRecover
 	b.notifyOnNewUser = s.NotifyOnNewUser
 	b.notifyOnBillingReminders = s.NotifyOnBillingReminders
-
-	// Hot reload polling worker if token or enabled status changed
-	if tokenChanged || enabledChanged {
-		if b.isRunning {
-			close(b.stopChan)
-			b.wg.Wait()
-			b.isRunning = false
-			log.Printf("[TELEGRAM] Stopped previous polling worker")
-		}
-
-		if b.enabled && b.token != "" {
-			b.stopChan = make(chan struct{})
-			b.isRunning = true
-			b.wg.Add(1)
-			// Always run polling with long-lived background context
-			go b.pollUpdates(context.Background())
-			log.Printf("[TELEGRAM] Hot-reloaded and started polling worker for @%s", b.botUsername)
-		}
+	if restart {
+		b.startPollingLocked()
 	}
-
 	return nil
 }
 
-// Start launches the background polling worker.
+// Start launches the long-lived polling worker. Worker lifetime is controlled by Stop.
 func (b *Bot) Start(ctx context.Context) {
+	b.lifecycleMu.Lock()
+	defer b.lifecycleMu.Unlock()
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.startPollingLocked()
+}
 
-	if !b.enabled || b.token == "" {
-		log.Println("[TELEGRAM] Bot token not provided or bot disabled, Telegram notifications inactive")
+// startPollingLocked requires both lifecycleMu and mu.
+func (b *Bot) startPollingLocked() {
+	if b.isRunning || !b.enabled || b.token == "" {
 		return
 	}
-
-	if b.isRunning {
-		return
-	}
-
+	ctx, cancel := context.WithCancel(context.Background())
+	b.pollCancel = cancel
 	b.stopChan = make(chan struct{})
 	b.isRunning = true
 	b.wg.Add(1)
-	// Always run polling with long-lived background context
-	go b.pollUpdates(context.Background())
+	go b.pollUpdates(ctx)
 	log.Printf("[TELEGRAM] Bot @%s started successfully (Polling)", b.botUsername)
 }
 
-// Stop gracefully terminates the polling loop.
-func (b *Bot) Stop() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
+// stopPollingLocked signals the worker without waiting and requires both locks.
+func (b *Bot) stopPollingLocked() bool {
 	if !b.isRunning {
-		return
+		return false
 	}
-
 	close(b.stopChan)
-	b.wg.Wait()
+	if b.pollCancel != nil {
+		b.pollCancel()
+		b.pollCancel = nil
+	}
 	b.isRunning = false
-	log.Printf("[TELEGRAM] Bot @%s stopped", b.botUsername)
+	return true
+}
+
+// Stop cancels in-flight long polling and waits without holding the settings lock.
+func (b *Bot) Stop() {
+	b.lifecycleMu.Lock()
+	defer b.lifecycleMu.Unlock()
+	b.mu.Lock()
+	running := b.stopPollingLocked()
+	username := b.botUsername
+	b.mu.Unlock()
+	if running {
+		b.wg.Wait()
+		log.Printf("[TELEGRAM] Bot @%s stopped", username)
+	}
 }
 
 // InlineKeyboardButton represents an inline keyboard button in Telegram Bot API.
@@ -335,7 +345,9 @@ func (b *Bot) pollUpdates(ctx context.Context) {
 		url := fmt.Sprintf("%s/bot%s/getUpdates?timeout=25&offset=%d", apiBase, token, offset)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			time.Sleep(3 * time.Second)
+			if !waitPolling(ctx, 3*time.Second) {
+				return
+			}
 			continue
 		}
 
@@ -353,17 +365,24 @@ func (b *Bot) pollUpdates(ctx context.Context) {
 		resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			time.Sleep(3 * time.Second)
+			if !waitPolling(ctx, 3*time.Second) {
+				return
+			}
 			continue
 		}
 
 		var updateRes TGUpdatesResponse
 		if err := json.Unmarshal(body, &updateRes); err != nil || !updateRes.OK {
-			time.Sleep(2 * time.Second)
+			if !waitPolling(ctx, 2*time.Second) {
+				return
+			}
 			continue
 		}
 
 		for _, upd := range updateRes.Result {
+			if ctx.Err() != nil {
+				return
+			}
 			offset = upd.UpdateID + 1
 			if upd.Message != nil && upd.Message.Text != "" {
 				b.handleIncomingMessage(ctx, upd.Message.Chat.ID, upd.Message.From, upd.Message.Text)
@@ -372,6 +391,18 @@ func (b *Bot) pollUpdates(ctx context.Context) {
 				b.handleCallbackQuery(ctx, upd.CallbackQuery)
 			}
 		}
+	}
+}
+
+// waitPolling makes retry backoff interruptible during shutdown or hot reload.
+func waitPolling(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -1610,4 +1641,3 @@ func (b *Bot) BroadcastNews(item models.NewsItem) error {
 
 	return b.BroadcastAlert(msg)
 }
-

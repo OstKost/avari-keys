@@ -56,12 +56,12 @@ sequenceDiagram
 
 ### Экран 1: Подключение к серверам (Server Credentials)
 - **Сервер M0 (РФ)**:
-  - `Host / IP`: (например, `157.22.252.225`)
+  - `Host / IP`: (например, `192.0.2.20`)
   - `SSH Port`: по умолчанию `22`
   - `SSH User`: по умолчанию `root`
   - `Auth Method`: `SSH Key (~/.ssh/id_ed25519)` или `Password`
 - **Сервер S1 (EU)**:
-  - `Host / IP`: (например, `185.213.240.136`)
+  - `Host / IP`: (например, `192.0.2.21`)
   - `SSH Port`: `22`
   - `SSH User`: `root`
   - `Auth Method`: `SSH Key` / `Password`

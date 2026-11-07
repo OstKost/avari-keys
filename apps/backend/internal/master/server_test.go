@@ -22,6 +22,8 @@ import (
 
 func setupTestEnvironment(t *testing.T) (*master.Server, *httptest.Server, *storage.Storage, func()) {
 	t.Helper()
+	t.Setenv("HYSTERIA_SERVER", "vpn.example.test")
+	t.Setenv("HYSTERIA_USERS_PATH", filepath.Join(t.TempDir(), "hysteria.json"))
 	tmpDir, err := os.MkdirTemp("", "avari-master-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -1298,6 +1300,8 @@ func TestBackupServersAndPROTierFlow(t *testing.T) {
 }
 
 func TestTelegramProxiesEndpoint(t *testing.T) {
+	t.Setenv("TELEGRAM_PROXY_SERVER", "s2.example.net")
+	t.Setenv("TELEGRAM_PROXY_SECRET", "test-secret")
 	masterSrv, _, _, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
@@ -1339,7 +1343,7 @@ func TestTelegramProxiesEndpoint(t *testing.T) {
 	}
 
 	p := proxies[0]
-	if p.Server != "s2.avari.dev" || p.Port != 8443 || !strings.Contains(p.Link, "tg://proxy") {
+	if p.Server != "s2.example.net" || p.Port != 8443 || !strings.Contains(p.Link, "tg://proxy") {
 		t.Fatalf("unexpected proxy info: %+v", p)
 	}
 }
@@ -1518,12 +1522,3 @@ func TestPasswordResetEndpointsFlow(t *testing.T) {
 		t.Fatalf("expected 401 Unauthorized for rejected password, got %d", rec.Code)
 	}
 }
-
-
-
-
-
-
-
-
-

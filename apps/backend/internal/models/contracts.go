@@ -22,7 +22,7 @@ type ClientCreateRequest struct {
 type ClientResponse struct {
 	Name      string `json:"name"`
 	Config    string `json:"config"`
-	Protocol  string `json:"protocol,omitempty"`     // "awg" or "hysteria2"
+	Protocol  string `json:"protocol,omitempty"`    // "awg" or "hysteria2"
 	QRCode    string `json:"qr_code,omitempty"`     // Base64 PNG or SVG data URI for AWG/Hysteria
 	VPNURI    string `json:"vpn_uri,omitempty"`     // AmneziaVPN URI (vpn://...) or hysteria2://
 	VPNQRCode string `json:"vpn_qr_code,omitempty"` // Base64 PNG or SVG data URI for AmneziaVPN / Hysteria
@@ -91,9 +91,18 @@ type SwitchEgressRequest struct {
 }
 
 // EgressStatusResponse represents the active and available egress routes for a cascade node.
-type EgressStatusResponse struct {
-	ActiveInterface     string   `json:"active_interface"`
-	AvailableInterfaces []string `json:"available_interfaces"`
-	Details             string   `json:"details,omitempty"`
+type EgressTarget struct {
+	Interface string `json:"interface"`
+	Node      string `json:"node"`
+	Label     string `json:"label"`
+	Endpoint  string `json:"endpoint"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 
+type EgressStatusResponse struct {
+	Targets             []EgressTarget `json:"targets,omitempty"`
+	ActiveInterface     string         `json:"active_interface"`
+	AvailableInterfaces []string       `json:"available_interfaces"`
+	Details             string         `json:"details,omitempty"`
+}

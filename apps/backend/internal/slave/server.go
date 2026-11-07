@@ -13,6 +13,7 @@ import (
 
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/hysteria"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/netprobe"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
 )
 
@@ -25,6 +26,7 @@ type Config struct {
 
 // Server is the HTTP server for Slave API.
 type Server struct {
+	probes   *netprobe.Collector
 	cfg      Config
 	runner   runner.AWGRunner
 	hysteria *hysteria.Store
@@ -51,18 +53,9 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 			}
 			hyServer := os.Getenv("HYSTERIA_SERVER")
 			if hyServer == "" {
-				// Fallback to NODE_DOMAIN or system hostname if set, else default s2.avari.dev
-				if nodeDomain := os.Getenv("NODE_DOMAIN"); nodeDomain != "" {
-					hyServer = nodeDomain
-				} else {
-					hName, _ := os.Hostname()
-					if strings.Contains(hName, ".") {
-						hyServer = hName
-					} else {
-						hyServer = "s2.avari.dev"
-					}
-				}
+				hyServer = os.Getenv("NODE_DOMAIN")
 			}
+
 			hyPort := 443
 			if portStr := os.Getenv("HYSTERIA_PORT"); portStr != "" {
 				if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
@@ -80,6 +73,7 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 
 	s := &Server{
 		cfg:      cfg,
+		probes:   netprobe.NewCollector("S0"),
 		runner:   r,
 		hysteria: hyStore,
 		mux:      http.NewServeMux(),
@@ -109,6 +103,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/hysteria/auth", s.handleHysteriaAuth)
 
 	// 4. Protected API Routes
+	s.mux.Handle("GET /api/v1/network/probes", s.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.writeJSON(w, http.StatusOK, s.probes.Samples()) })))
 	s.mux.Handle("POST /api/v1/clients", s.authMiddleware(http.HandlerFunc(s.handleCreateClient)))
 	s.mux.Handle("GET /api/v1/clients", s.authMiddleware(http.HandlerFunc(s.handleListClients)))
 	s.mux.Handle("GET /api/v1/clients/{name}", s.authMiddleware(http.HandlerFunc(s.handleGetClient)))
@@ -120,7 +115,6 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleGetCascadeEgress)))
 	s.mux.Handle("POST /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleSwitchCascadeEgress)))
 }
-
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +172,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Service:           "avari-slave",
 		AWGAvailable:      healthy,
 		HysteriaAvailable: hyAvail,
-		Version:           "v0.8.6",
+		Version:           "v0.9.0",
 	})
 }
 
@@ -419,4 +413,3 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, data any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
-

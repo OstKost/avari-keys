@@ -239,6 +239,7 @@ func TestCascadeEgressEndpoints(t *testing.T) {
 }
 
 func TestHysteriaClientAndAuth(t *testing.T) {
+	t.Setenv("HYSTERIA_SERVER", "vpn.example.test")
 	srv, apiKey := setupTestSlave()
 
 	// 1. Create Hysteria client
@@ -264,7 +265,7 @@ func TestHysteriaClientAndAuth(t *testing.T) {
 		t.Fatalf("unexpected client response: %+v", created)
 	}
 
-	// 2. Parse password from URI: hysteria2://<pwd>@s2.avari.dev:443/...
+	// 2. Parse password from URI: hysteria2://<pwd>@s2.example.net:443/...
 	uriParts := strings.Split(strings.TrimPrefix(created.VPNURI, "hysteria2://"), "@")
 	if len(uriParts) < 2 {
 		t.Fatalf("malformed hysteria uri: %s", created.VPNURI)
@@ -317,4 +318,3 @@ func TestHysteriaClientAndAuth(t *testing.T) {
 		t.Fatalf("expected 200 OK on delete client, got %d", rec.Code)
 	}
 }
-

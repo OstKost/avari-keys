@@ -304,7 +304,9 @@ func (c *SlaveClient) SwitchCascadeEgress(ctx context.Context, devName string) e
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", c.apiKey)
 
-	resp, err := c.httpClient.Do(req)
+	switchClient := *c.httpClient
+	switchClient.Timeout = 45 * time.Second
+	resp, err := switchClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -318,3 +320,24 @@ func (c *SlaveClient) SwitchCascadeEgress(ctx context.Context, devName string) e
 	return nil
 }
 
+// NetworkProbes returns only the configured and cached probes from the gateway.
+func (c *SlaveClient) NetworkProbes(ctx context.Context) ([]models.NetworkProbe, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/network/probes", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gateway probes returned %d", resp.StatusCode)
+	}
+	var result []models.NetworkProbe
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}

@@ -262,16 +262,16 @@ PersistentKeepalive = 25`,
     month_traffic_bytes: 471859200,
     total_traffic_formatted: '450.00 MB',
     month_traffic_formatted: '450.00 MB',
-    config: `server: s2.avari.dev:443
+    config: `server: s2.example.net:443
 auth: demo_hysteria_secret_token_123
 tls:
-  sni: s2.avari.dev
+  sni: s2.example.net
   insecure: false
 bandwidth:
   up: 50 mbps
   down: 200 mbps
 fastOpen: true`,
-    vpn_uri: 'hysteria2://demo_hysteria_secret_token_123@s2.avari.dev:443/?sni=s2.avari.dev&insecure=0#u1_macbook',
+    vpn_uri: 'hysteria2://demo_hysteria_secret_token_123@s2.example.net:443/?sni=s2.example.net&insecure=0#u1_macbook',
     created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
   },
   {
@@ -659,10 +659,10 @@ export const mockApi = {
         id: 's2-fin',
         name: 'Финляндия (FIN)',
         country_code: 'FIN',
-        server: 's2.avari.dev',
+        server: 's2.example.net',
         port: 8443,
-        secret: 'ee9cbceb37d7e8416b6ffaa076a610be1f73322e61766172692e646576',
-        link: 'tg://proxy?server=s2.avari.dev&port=8443&secret=ee9cbceb37d7e8416b6ffaa076a610be1f73322e61766172692e646576',
+        secret: 'demo_proxy_secret',
+        link: 'tg://proxy?server=s2.example.net&port=8443&secret=demo_proxy_secret',
         status: 'online',
       },
     ];
@@ -698,11 +698,11 @@ PersistentKeepalive = 25`;
     let vpnUri = `vpn://eyJob3N0TmFtZSI6IjE5OC41MS4xMDAuJHtub2RlSWR9IiwiZGVzY3JpcHRpb24iOiJBdmFyaSBLZXlzICR7ZGV2aWNlTmFtZX0iLCJjb25maWciOiJ7XCJkbnMxXCI6XCIxLjEuMS4xXCIsXCJwb3J0XCI6NTE4MjAsXCJwcm90b2NvbFwiOlwiYXdnXCJ9In0=`;
 
     if (protocol === 'hysteria2') {
-      vpnUri = `hysteria2://demo_password_123@s2.avari.dev:443/?sni=s2.avari.dev&insecure=0#${clientName}`;
-      config = `server: s2.avari.dev:443
+      vpnUri = `hysteria2://demo_password_123@s2.example.net:443/?sni=s2.example.net&insecure=0#${clientName}`;
+      config = `server: s2.example.net:443
 auth: demo_password_123
 tls:
-  sni: s2.avari.dev
+  sni: s2.example.net
   insecure: false
 bandwidth:
   up: 50 mbps
@@ -900,11 +900,12 @@ bandwidth:
     };
   },
 
-  async getNodeEgress(_id: number): Promise<{ active_interface: string; available_interfaces: string[]; details?: string }> {
+  async getNodeEgress(_id: number) {
     await new Promise((resolve) => setTimeout(resolve, 200));
     return {
       active_interface: 'awg1',
       available_interfaces: ['awg1', 'awg3'],
+      targets: [{interface:'awg1',node:'S1',label:'S1 — Германия',endpoint:'192.0.2.21',available:true},{interface:'awg3',node:'S2',label:'S2 — Финляндия',endpoint:'192.0.2.22',available:false,reason:'Нет связи'}],
       details: 'Mock active egress dev in table 100 is awg1',
     };
   },
