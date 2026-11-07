@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createPortal } from 'react-dom';
+import { animatedPortal as createPortal } from './animatedPortal';
 import { Sparkles, HelpCircle, X, ChevronRight, ChevronDown, BookOpen, RotateCcw, Shield } from 'lucide-react';
 import { MASCOT_FAQ_QUESTIONS } from '../utils/faqData';
 

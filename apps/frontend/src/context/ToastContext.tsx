@@ -90,7 +90,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
 
       {/* Top-Right Toast Container */}
-      <div className="fixed top-5 right-5 z-[100] flex flex-col space-y-3 max-w-sm w-full pointer-events-none sm:max-w-md">
+      <div className="fixed top-5 right-5 z-[2000] flex flex-col space-y-3 max-w-sm w-full pointer-events-none sm:max-w-md">
         {toasts.map((t) => (
           <div
             key={t.id}

@@ -145,3 +145,9 @@ code, pre, .font-mono {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+.modal-presence > .fixed { animation: modal-enter 200ms ease-out both; }
+.modal-leaving > .fixed { animation: modal-exit 150ms ease-in both; pointer-events: none; }
+@keyframes modal-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes modal-exit { from { opacity: 1; } to { opacity: 0; transform: translateY(8px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .modal-presence > .fixed { animation: none; } }

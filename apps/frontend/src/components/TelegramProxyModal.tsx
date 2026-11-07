@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { animatedPortal as createPortal } from './animatedPortal';
 import { X, Send, Copy, Check, ExternalLink, ShieldCheck, Globe, Wifi } from 'lucide-react';
 import QRCode from 'qrcode';
 import { TelegramProxyInfo } from '../types';
