@@ -279,6 +279,7 @@ jobs:
       - name: 🚀 Deploy avari-slave to All Nodes & Restart
         env:
           SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS }}
+          SSH_JUMP_HOST: ${{ secrets.SSH_JUMP_HOST }}
           CASCADE_GATEWAY_HOST: ${{ secrets.CASCADE_GATEWAY_HOST }}
           NETWORK_PROBE_INTERFACE: ${{ secrets.CASCADE_PUBLIC_INTERFACE }}
           CASCADE_EGRESS_CONFIG: ${{ secrets.CASCADE_EGRESS_CONFIG }}
@@ -290,8 +291,8 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           DEPLOY_TMP="/tmp/avari-slave-${RUN_ID}"
-          SSH_OPTS="-i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
-          SCP_OPTS="-i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+          SSH_BASE_OPTS="-i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
+          SCP_BASE_OPTS="-O -i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
           : "${SLAVE_HOSTS:?SLAVE_HOSTS secret is required}"
           # Determine which hosts to deploy to
@@ -304,7 +305,16 @@ jobs:
           for MASKED_HOST in ${HOSTS_TO_DEPLOY}; do echo "::add-mask::${MASKED_HOST}"; done
           echo "==> Deploying configured Slave nodes"
 
+          printf '%s\n' 'Host *' '  IdentityFile ~/.ssh/id_deploy' '  IdentitiesOnly yes' '  StrictHostKeyChecking accept-new' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          [ -z "$SSH_JUMP_HOST" ] || echo "::add-mask::${SSH_JUMP_HOST}"
           for HOST in ${HOSTS_TO_DEPLOY}; do
+            SSH_OPTS="$SSH_BASE_OPTS"
+            SCP_OPTS="$SCP_BASE_OPTS"
+            if [ -n "$SSH_JUMP_HOST" ] && [ "$HOST" != "$SSH_JUMP_HOST" ]; then
+              SSH_OPTS="$SSH_OPTS -J ${SSH_USER}@${SSH_JUMP_HOST}:${SSH_PORT}"
+              SCP_OPTS="$SCP_OPTS -J ${SSH_USER}@${SSH_JUMP_HOST}:${SSH_PORT}"
+            fi
             echo ""
             echo "=================================================="
             echo "==> [Node: ${HOST}] Connecting & Deploying avari-slave..."
@@ -312,8 +322,8 @@ jobs:
             ssh-keyscan -p "${SSH_PORT}" -H "${HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
             ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || {
-              echo "⚠️ Warning: Failed to connect to ${HOST}, skipping..."
-              continue
+              echo "Error: configured Slave host is unreachable; deployment failed"
+              exit 1
             }
 
             if [ "$HOST" = "$CASCADE_GATEWAY_HOST" ]; then
@@ -339,7 +349,7 @@ jobs:
 
             scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${HOST}:${DEPLOY_TMP}/avari-slave
             
-            ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave && rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && (systemctl is-active --quiet avari-slave && systemctl restart avari-slave && echo '✅ avari-slave restarted successfully on ${HOST}!' || echo 'ℹ️ avari-slave is not active on ${HOST}')"
+            ssh ${SSH_OPTS} ${SSH_USER}@${HOST} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave && rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && systemctl is-active --quiet avari-slave && systemctl restart avari-slave && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'"
           done
 
           echo ""
