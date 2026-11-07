@@ -4,6 +4,7 @@
 
 :root {
   color-scheme: dark;
+  interpolate-size: allow-keywords;
 }
 
 html {
