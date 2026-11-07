@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Key, Server, Users, LogOut, Plus, QrCode as QrIcon, Trash2, Smartphone, Laptop, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send } from 'lucide-react';
+import { Key, Server, Users, LogOut, Plus, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send } from 'lucide-react';
 import { api, isMockMode, setMockMode } from './api/client';
 import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem, TelegramProxyInfo, ProtocolType } from './types';
 import { AuthModal } from './components/AuthModal';
@@ -21,8 +21,8 @@ import { BillingReminderModal } from './components/BillingReminderModal';
 import { TelegramBanner } from './components/TelegramBanner';
 import { NewsBanner } from './components/NewsBanner';
 import { NewsPage } from './components/NewsPage';
+import { ClientKeysView } from './components/ClientKeysView';
 import { Tooltip } from './components/Tooltip';
-import { formatNodeRouting } from './utils/country';
 import { FloatingMascot, MascotFaqModal } from './components/MascotAssistant';
 import { OnboardingTour } from './components/OnboardingTour';
 import { TabType, ADMIN_TABS, resolveTabFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
@@ -767,95 +767,11 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {(keys || []).map((k) => (
-                    <div
-                      key={k.id}
-                      className="bg-[#0D222C]/90 border border-[#1C3945] hover:border-[#D9B96E]/50 rounded-2xl p-5 shadow-xl hover:shadow-2xl hover:shadow-[#D9B96E]/5 flex flex-col justify-between transition-all duration-300 group"
-                    >
-                      <div>
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center space-x-3">
-                            <div className="bg-[#102833] p-2.5 rounded-xl text-[#D9B96E] border border-[#1C3945] group-hover:border-[#D9B96E]/40 transition">
-                              {k.device_name.toLowerCase().includes('phone') || k.device_name.toLowerCase().includes('iphone') ? (
-                                <Smartphone className="w-5 h-5" />
-                              ) : (
-                                <Laptop className="w-5 h-5" />
-                              )}
-                            </div>
-                            <div>
-                              <h4 className="font-serif font-bold text-[#F2F0E8] text-base group-hover:text-gold-gradient transition">
-                                {k.device_name}
-                              </h4>
-                              <span className="text-sm text-[#718187] font-mono tracking-wider">{k.client_name}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col items-end gap-1">
-                            <span
-                              className={`text-sm font-mono font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full ${
-                                k.node_type === 'cascade'
-                                  ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40 shadow-sm'
-                                  : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40 shadow-sm'
-                              }`}
-                            >
-                              {formatNodeRouting(k.node_type || 'direct', k.node_country_code).fullText}
-                            </span>
-                            {k.protocol === 'hysteria2' ? (
-                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-950/80 text-violet-300 border border-violet-500/40 shadow-sm">
-                                Hysteria 2
-                              </span>
-                            ) : (
-                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 shadow-sm">
-                                AWG
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="text-sm text-[#A8B4B7] space-y-2 mb-5 bg-[#06141B]/70 p-3.5 rounded-xl border border-[#1C3945]/70 font-sans">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-[#718187]">Сервер:</span>
-                            <span className="text-[#F2F0E8] font-medium truncate max-w-[180px]">{k.node_name || 'Node'}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-[#718187]">Трафик:</span>
-                            <span className="text-[#F2F0E8] font-mono text-sm">
-                              {k.total_traffic_formatted || '0 B'} <span className="text-[#718187]">({k.month_traffic_formatted || '0 B'}/мес)</span>
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-[#718187]">Срок действия:</span>
-                            <span className="text-emerald-400 font-mono text-sm">∞ Бессрочный</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-[#718187]">Создан:</span>
-                            <span className="text-[#A8B4B7] font-mono text-sm">{new Date(k.created_at).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2 pt-3 border-t border-[#1C3945]/80">
-                        <button
-                          onClick={() => handleViewKey(k.id)}
-                          className="flex-1 flex items-center justify-center space-x-2 bg-[#102833] hover:bg-[#1C3945] text-[#D9B96E] hover:text-[#F0D48D] border border-[#D9B96E]/30 hover:border-[#D9B96E]/60 font-mono text-sm uppercase tracking-wider py-2.5 px-3 rounded-xl transition shadow-sm"
-                        >
-                          <QrIcon className="w-4 h-4" />
-                          <span>QR & Конфиг</span>
-                        </button>
-                        <Tooltip content="Отозвать VPN-ключ">
-                          <button
-                            onClick={() => setKeyToDelete(k)}
-                            aria-label="Отозвать ключ"
-                            className="p-2.5 text-[#718187] hover:text-rose-400 bg-[#06141B] hover:bg-rose-950/30 rounded-xl border border-[#1C3945] hover:border-rose-800/60 transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </Tooltip>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <ClientKeysView
+                  keys={keys || []}
+                  onViewKey={handleViewKey}
+                  onDeleteKey={setKeyToDelete}
+                />
               )}
             </div>
           )}

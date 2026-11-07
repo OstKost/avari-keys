@@ -1,13 +1,14 @@
 {
   "name": "avari-keys-frontend",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:mock": "VITE_USE_MOCK=true vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "screenshots": "node scripts/generate_all_showcase.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
