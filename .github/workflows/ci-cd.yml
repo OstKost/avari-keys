@@ -222,17 +222,17 @@ jobs:
           $SSH_CMD "install -m 755 ${DEPLOY_TMP}/avari-master /usr/local/bin/avari-master && rm -rf ${DEPLOY_TMP}"
 
           # Keep addresses outside the checkout and build artifacts.
-          python3 - <<'PYENV' | $SSH_CMD 'umask 077; mkdir -p /etc/systemd/system/avari-master.service.d; cat > /etc/systemd/system/avari-master.service.d/runtime.conf'
+          python3 -c '
           import os
-          print('[Service]')
-          for key in ('NETWORK_PROBE_TARGETS', 'TELEGRAM_PROXY_SERVER', 'TELEGRAM_PROXY_SECRET', 'TELEGRAM_PROXY_PORT', 'JWT_SECRET', 'NETWORK_PROBE_INTERFACE'):
-              value = os.environ.get(key, '')
+          print("[Service]")
+          for key in ("NETWORK_PROBE_TARGETS", "TELEGRAM_PROXY_SERVER", "TELEGRAM_PROXY_SECRET", "TELEGRAM_PROXY_PORT", "JWT_SECRET", "NETWORK_PROBE_INTERFACE"):
+              value = os.environ.get(key, "")
               if not value:
-                  raise SystemExit('Missing runtime secret: ' + key)
-              if '\n' in value or '\r' in value:
-                  raise SystemExit('Invalid multiline runtime secret: ' + key)
-              print('Environment="' + key + '=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
-          PYENV
+                  raise SystemExit("Missing runtime secret: " + key)
+              if "\n" in value or "\r" in value:
+                  raise SystemExit("Invalid multiline runtime secret: " + key)
+              print("Environment=\"" + key + "=" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("%", "%%") + "\"")
+          ' | $SSH_CMD 'umask 077; mkdir -p /etc/systemd/system/avari-master.service.d; cat > /etc/systemd/system/avari-master.service.d/runtime.conf'
           echo "==> Restarting avari-master service..."
           $SSH_CMD "systemctl daemon-reload && systemctl restart avari-master"
           sleep 2
@@ -332,18 +332,18 @@ jobs:
               : "${NETWORK_PROBE_TARGETS:?Missing probe targets secret}"
               : "${CASCADE_EGRESS_CONFIG:?Missing cascade registry secret}"
               printf '%s' "$CASCADE_EGRESS_CONFIG" | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/avari-keys; cat > /etc/avari-keys/egress.json' || return 1
-              python3 - <<'PYENV' | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf' || return 1
+              python3 -c '
               import os
-              print('[Service]')
-              iface = os.environ['NETWORK_PROBE_INTERFACE']
-              if not iface or not iface.replace('_','').replace('-','').replace('.','').isalnum():
-                  raise SystemExit('Invalid public network interface')
-              print('Environment="NETWORK_PROBE_INTERFACE=' + iface + '"')
-              value = os.environ['NETWORK_PROBE_TARGETS']
-              if '\n' in value or '\r' in value:
-                  raise SystemExit('Probe inventory must be single-line JSON')
-              print('Environment="NETWORK_PROBE_TARGETS=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
-              PYENV
+              print("[Service]")
+              iface = os.environ.get("NETWORK_PROBE_INTERFACE", "").strip()
+              if not iface or not iface.replace("_","").replace("-","").replace(".","").isalnum():
+                  raise SystemExit("Invalid public network interface")
+              print("Environment=\"NETWORK_PROBE_INTERFACE=" + iface + "\"")
+              value = os.environ.get("NETWORK_PROBE_TARGETS", "")
+              if "\n" in value or "\r" in value:
+                  raise SystemExit("Probe inventory must be single-line JSON")
+              print("Environment=\"NETWORK_PROBE_TARGETS=" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("%", "%%") + "\"")
+              ' | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf' || return 1
               ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP}" || return 1
               scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/ || return 1
               ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null" || return 1
