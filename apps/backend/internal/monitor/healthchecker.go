@@ -170,12 +170,13 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 
 	var wg sync.WaitGroup
 	type nodeResult struct {
-		node      models.Node
-		online    bool
-		latencyMs int64
-		health    *models.HealthResponse
-		stats     *models.StatsSummaryResponse
-		err       error
+		activeEgress string
+		node         models.Node
+		online       bool
+		latencyMs    int64
+		health       *models.HealthResponse
+		stats        *models.StatsSummaryResponse
+		err          error
 	}
 
 	resultsChan := make(chan nodeResult, len(nodes))
@@ -226,13 +227,31 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 				statsCancel()
 			}
 
+			activeEgress := ""
+			if isOnline && n.Type == "cascade" {
+				egressCtx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+				status, err := slaveCli.GetCascadeEgress(egressCtx)
+				cancel()
+				if err == nil && status != nil {
+					for _, target := range status.Targets {
+						if target.Interface == status.ActiveInterface {
+							activeEgress = target.Label
+							if activeEgress == "" {
+								activeEgress = target.Node
+							}
+							break
+						}
+					}
+				}
+			}
 			resultsChan <- nodeResult{
-				node:      n,
-				health:    health,
-				online:    isOnline,
-				latencyMs: latency,
-				stats:     statsResp,
-				err:       hErr,
+				activeEgress: activeEgress,
+				node:         n,
+				health:       health,
+				online:       isOnline,
+				latencyMs:    latency,
+				stats:        statsResp,
+				err:          hErr,
 			}
 		}(node)
 	}
@@ -451,6 +470,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 		}
 
 		nodeDashboardList = append(nodeDashboardList, models.NodeDashboardInfo{
+			ActiveEgress:          res.activeEgress,
 			ID:                    n.ID,
 			Name:                  n.Name,
 			Type:                  n.Type,

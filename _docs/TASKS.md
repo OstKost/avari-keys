@@ -25,7 +25,8 @@
 | | | | | [TASK-025](./tasks/TASK-025-cicd-server-migration.md) |
 | | | | | [TASK-027](./tasks/TASK-027-news-and-announcements-system.md) |
 | | | | | [TASK-028](./tasks/TASK-028-backup-servers-and-pro-tier.md) |
-| | | | | [TASK-053](./tasks/TASK-053-password-reset-flow.md) |
+| | | | | [TASK-058](./tasks/TASK-058-s5p-premium-dashboard.md) |
+| | | | | [TASK-059](./tasks/TASK-059-route-preservation-and-chibi-mascot.md) |
 
 ---
 
@@ -63,3 +64,6 @@
 - **TASK-055**: ✅ Independent public network/server monitoring, S4 onboarding, persistent cascade selection, private runtime inventory and v0.9.0 release.
 
 - **TASK-057**: ✅ v1.0.0: current cascade labels, switch feedback, expandable server diagnostics and portal modal animations.
+
+- **[TASK-058](./tasks/TASK-058-s5p-premium-dashboard.md)**: ✅ S5P PRO-only direct/cascade ingress, isolated telemetry and current dashboard egress.
+- **[TASK-059](./tasks/TASK-059-route-preservation-and-chibi-mascot.md)**: ✅ HTML5 History API навигация и сохранение роутов/вкладок при перезагрузке, милый чиби-маскот Ари.

@@ -113,7 +113,9 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/v1/backup", s.authMiddleware(http.HandlerFunc(s.handleBackup)))
 	s.mux.Handle("POST /api/v1/restore", s.authMiddleware(http.HandlerFunc(s.handleRestore)))
 	s.mux.Handle("GET /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleGetCascadeEgress)))
-	s.mux.Handle("POST /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleSwitchCascadeEgress)))
+	if os.Getenv("CASCADE_EGRESS_ENABLED") != "false" {
+		s.mux.Handle("POST /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleSwitchCascadeEgress)))
+	}
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -172,7 +174,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Service:           "avari-slave",
 		AWGAvailable:      healthy,
 		HysteriaAvailable: hyAvail,
-		Version:           "v1.0.0",
+		Version:           "v1.1.0",
 	})
 }
 

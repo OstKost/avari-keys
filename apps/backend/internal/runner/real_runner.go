@@ -458,7 +458,7 @@ func (r *RealRunner) GetStats(ctx context.Context) (*models.StatsSummaryResponse
 	}
 
 	// 4. Fallback if CLI dump was completely unavailable: try manage_amneziawg.sh stats --json
-	if len(res.Peers) == 0 {
+	if len(res.Peers) == 0 && os.Getenv("AWG_INTERFACE") == "" {
 		cmd := exec.CommandContext(ctx, "bash", r.scriptPath, "stats", "--json")
 		cmd.Dir = filepath.Dir(r.scriptPath)
 		var stdout bytes.Buffer
@@ -502,6 +502,9 @@ func (r *RealRunner) readProcNetDevStats() (int64, int64, error) {
 		}
 		parts := strings.SplitN(line, ":", 2)
 		iface := strings.TrimSpace(parts[0])
+		if selected := os.Getenv("AWG_INTERFACE"); selected != "" && iface != selected {
+			continue
+		}
 		if !strings.HasPrefix(iface, "awg") && !strings.HasPrefix(iface, "wg") && !strings.HasPrefix(iface, "amnezia") {
 			continue
 		}
@@ -558,6 +561,24 @@ func (r *RealRunner) fetchAWGDump(ctx context.Context) []string {
 	binaries := findAWGBinaries()
 	if len(binaries) == 0 {
 		binaries = []string{"awg", "wg"}
+	}
+
+	// A dedicated premium ingress must report only its own peers and traffic.
+	if iface := os.Getenv("AWG_INTERFACE"); iface != "" {
+		for _, bin := range binaries {
+			out, err := exec.CommandContext(ctx, bin, "show", iface, "dump").Output()
+			if err != nil {
+				continue
+			}
+			var lines []string
+			for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+				if len(strings.Fields(line)) == 8 {
+					lines = append(lines, iface+"\t"+line)
+				}
+			}
+			return lines
+		}
+		return nil
 	}
 
 	// Detect candidate interfaces dynamically
@@ -676,6 +697,10 @@ func (r *RealRunner) buildClientMappings() (map[string]string, map[string]string
 		scriptDir,
 	}
 
+	if os.Getenv("AWG_INTERFACE") != "" {
+		clientDirs = []string{r.configsDir, filepath.Join(scriptDir, "clients"), scriptDir}
+	}
+
 	for _, dir := range clientDirs {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.conf"))
 		if err != nil {
@@ -739,8 +764,14 @@ func (r *RealRunner) buildClientMappings() (map[string]string, map[string]string
 		scriptDir,
 	}
 
+	serverPattern := "*.conf"
+	if iface := os.Getenv("AWG_INTERFACE"); iface != "" {
+		serverPattern = iface + ".conf"
+		serverConfDirs = []string{"/etc/amnezia/amneziawg", scriptDir}
+	}
+
 	for _, dir := range serverConfDirs {
-		matches, err := filepath.Glob(filepath.Join(dir, "*.conf"))
+		matches, err := filepath.Glob(filepath.Join(dir, serverPattern))
 		if err != nil {
 			continue
 		}
@@ -807,13 +838,8 @@ func (r *RealRunner) buildClientMappings() (map[string]string, map[string]string
 }
 
 func (r *RealRunner) RestartAWG(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "systemctl", "restart", "awg-quick@awg0")
-	if err := cmd.Run(); err != nil {
-		// Fallback: try restart via manage_amneziawg.sh if script supports it
-		cmd2 := exec.CommandContext(ctx, "bash", r.scriptPath, "restart")
-		if err2 := cmd2.Run(); err2 != nil {
-			return fmt.Errorf("failed to restart AWG service: %w", err)
-		}
+	if err := exec.CommandContext(ctx, "bash", r.scriptPath, "restart").Run(); err != nil {
+		return fmt.Errorf("failed to restart AWG service via configured manager: %w", err)
 	}
 	return nil
 }
@@ -861,7 +887,11 @@ func (r *RealRunner) SwitchEgress(ctx context.Context, devName string) error {
 }
 
 func (r *RealRunner) GetEgressStatus(ctx context.Context) (*models.EgressStatusResponse, error) {
-	output, err := exec.CommandContext(ctx, "/usr/local/libexec/avari-egress", "status").Output()
+	helper := os.Getenv("AWG_EGRESS_HELPER")
+	if helper == "" {
+		helper = "/usr/local/libexec/avari-egress"
+	}
+	output, err := exec.CommandContext(ctx, helper, "status").Output()
 	if err != nil {
 		return nil, fmt.Errorf("egress status failed: %w", err)
 	}

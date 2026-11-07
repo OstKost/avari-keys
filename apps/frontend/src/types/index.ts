@@ -146,6 +146,7 @@ export interface TopologyTrafficBreakdown {
 }
 
 export interface NodeDashboardInfo {
+  active_egress?: string;
   id: number;
   name: string;
   type: 'cascade' | 'direct';

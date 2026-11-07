@@ -53,6 +53,10 @@ func main() {
 	}
 	defer store.Close()
 
+	if err := store.EnsureDefaultAnnouncements(context.Background()); err != nil {
+		log.Printf("[MASTER] Notice: Failed to ensure default announcements: %v", err)
+	}
+
 	cfg := master.Config{
 		Port:                port,
 		JWTSecret:           jwtSecret,

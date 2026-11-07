@@ -314,7 +314,7 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
               <div className="flex justify-between items-center bg-[#06141B]/70 p-3 rounded-xl border border-[#1C3945]/70">
                 <div className="flex items-center space-x-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <span className="text-[#F2F0E8] font-medium">Каскад (M0-&gt;S1):</span>
+                  <span className="text-[#F2F0E8] font-medium">Каскадные подключения:</span>
                 </div>
                 <span className="font-mono text-[#D9B96E]">
                   {stats.topology_breakdown.cascade_traffic_formatted}
@@ -324,7 +324,7 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
               <div className="flex justify-between items-center bg-[#06141B]/70 p-3 rounded-xl border border-[#1C3945]/70">
                 <div className="flex items-center space-x-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#6EA8C4]" />
-                  <span className="text-[#F2F0E8] font-medium">Прямой шлюз (S2):</span>
+                  <span className="text-[#F2F0E8] font-medium">Прямые подключения:</span>
                 </div>
                 <span className="font-mono text-[#6EA8C4]">
                   {stats.topology_breakdown.direct_traffic_formatted}
@@ -334,7 +334,7 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
           </div>
 
           <div className="mt-6 pt-4 border-t border-[#1C3945]/80 text-sm text-[#718187] font-mono">
-            Двухуровневый каскад M0-&gt;S1 защищает входящий IP клиента и скрывает адрес выходного узла.
+            Состав кластера и доступность узлов загружаются из мониторинга. Премиум-узлы доступны для выпуска ключей с тарифом PRO.
           </div>
         </div>
 
@@ -344,7 +344,7 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
             <div className="flex items-center space-x-2">
               <Server className="w-4 h-4 text-[#D9B96E]" />
               <h4 className="font-serif font-bold text-[#F2F0E8] text-base">
-                Кластер серверов AmneziaWG
+                Серверы AWG и Hysteria 2
               </h4>
             </div>
 
@@ -369,7 +369,7 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
                         <h5 className="font-serif font-bold text-sm text-[#F2F0E8] group-hover:text-gold-gradient transition">
                           {n.name}
                         </h5>
-                        <span className="text-sm text-[#718187] font-mono">ID #{n.id}</span>
+                        <span className="text-sm text-[#718187] font-mono">ID #{n.id}{n.is_backup ? ' · PRO' : ''}</span>
                       </div>
                     </div>
 
@@ -380,11 +380,17 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
                           : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40'
                       }`}
                     >
-                      {formatNodeRouting(n.type, n.country_code).fullText}
+                      {n.type === 'cascade' ? 'Каскад' : formatNodeRouting(n.type, n.country_code).fullText}
                     </span>
                   </div>
 
                   <div className="space-y-2 text-sm font-sans text-[#A8B4B7] bg-[#0A1D26]/70 p-3.5 rounded-xl border border-[#1C3945]/50">
+                    {n.type === 'cascade' && (
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-sm text-[#718187]">Выход каскада:</span>
+                        <span className="font-mono text-sm text-[#D9B96E]">{n.active_egress || 'Не подтверждён'}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-[#718187]">Статус:</span>
                       <div className="flex items-center space-x-1.5">

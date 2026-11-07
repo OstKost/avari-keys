@@ -1873,3 +1873,64 @@ func (s *Storage) DeleteNews(ctx context.Context, id int64) error {
 	return nil
 }
 
+// EnsureDefaultAnnouncements populates initial announcements if the table is empty.
+func (s *Storage) EnsureDefaultAnnouncements(ctx context.Context) error {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM announcements`).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	news := []struct {
+		title      string
+		content    string
+		category   string
+		pinned     int
+		authorName string
+	}{
+		{
+			title:      "Горячее переключение каскада: выбор выходного узла на лету",
+			content:    "Реализовали гибкое управление выходом каскадных туннелей M0! Теперь администраторы могут на лету переключать зарубежный шлюз выхода (S1, S2, S3, S4) прямо из панели управления в ручном режиме. Клиентам не нужно перевыпускать конфигурации или менять настройки на устройствах — переключение происходит бесшовно. Автоматический failover уже в разработке.",
+			category:   "general",
+			pinned:     1,
+			authorName: "Forve",
+		},
+		{
+			title:      "Забыли пароль? Запущена функция быстрого сброса",
+			content:    "На экране входа появилась кнопка «Забыли пароль?». Теперь при утере доступа не нужно писать в ЛС: укажите логин и желаемый пароль — администратор мгновенно получит уведомление в Telegram с кнопками быстрого подтверждения. Ваши VPN-ключи и профиль остаются в полной сохранности.",
+			category:   "keys",
+			pinned:     0,
+			authorName: "Forve",
+		},
+		{
+			title:      "Возвращение легенды: сервер VDSina добавлен в кластер как S4",
+			content:    "Восстановили и вернули в строй наш проверенный временем сервер VDSina. Он интегрирован в архитектуру кластера под номером S4 и работает как дополнительный стабильный шлюз. Узел полностью готов к работе и доступен для прямого подключения и каскадных маршрутов.",
+			category:   "general",
+			pinned:     0,
+			authorName: "Forve",
+		},
+		{
+			title:      "Сбой серверов S1 и S2: блокировка IP и подготовка к замене",
+			content:    "Серверы S1 и S2 в настоящий момент остаются недоступными из-за блокировки на уровне IP-адресов. Мы уже занимаемся подбором альтернативных площадок и в ближайшее время заменим эти серверы на новые узлы. Рекомендуем пока переключиться на доступные локации (S3 / S4).",
+			category:   "incident",
+			pinned:     0,
+			authorName: "Forve",
+		},
+	}
+
+	for _, n := range news {
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO announcements (title, content, category, is_pinned, author_name, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		`, n.title, n.content, n.category, n.pinned, n.authorName)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
