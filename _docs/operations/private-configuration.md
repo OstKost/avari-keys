@@ -9,3 +9,5 @@ Master runtime uses NETWORK_PROBE_TARGETS and TELEGRAM_PROXY_* from systemd envi
 Each slave requires NODE_DOMAIN or HYSTERIA_SERVER when Hysteria is enabled, with HYSTERIA_PORT as configured. Missing domains never fall back to another production node. Telegram proxies return an empty list until configured.
 
 Before a release, scan tracked text and images against the private inventory. Do not upload production screenshots or runtime databases as GitHub artifacts. Endpoint values necessarily remain visible to authorized VPN clients and administrators.
+
+SSH_JUMP_HOST optionally routes Slave deployments through an operator-configured reachable gateway using ProxyJump. The deployment key is authorized on the gateway and each target. A failed connection or inactive service fails the deployment; targets are never silently skipped.
