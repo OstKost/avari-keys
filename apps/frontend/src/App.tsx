@@ -25,12 +25,33 @@ import { Tooltip } from './components/Tooltip';
 import { formatNodeRouting } from './utils/country';
 import { FloatingMascot, MascotFaqModal } from './components/MascotAssistant';
 import { OnboardingTour } from './components/OnboardingTour';
+import { TabType, ADMIN_TABS, resolveTabFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
 
 export default function App() {
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'keys' | 'dashboard' | 'news' | 'nodes' | 'users' | 'all-keys' | 'logs' | 'profile' | 'billing' | 'settings'>('keys');
+  const [activeTab, setActiveTab] = useState<TabType>(() => resolveTabFromUrl());
+
+  const navigateToTab = (tab: TabType, replace = false) => {
+    let target = tab;
+    if (ADMIN_TABS.includes(target) && currentUser && currentUser.role !== 'admin') {
+      target = 'keys';
+    }
+    setActiveTab(target);
+    try {
+      const targetPath = tabToPath(target);
+      if (replace) {
+        window.history.replaceState({ tab: target }, '', targetPath);
+      } else if (window.location.pathname !== targetPath) {
+        window.history.pushState({ tab: target }, '', targetPath);
+      }
+      localStorage.setItem('avari_active_tab', target);
+    } catch {
+      // Ignore history/storage errors
+    }
+    updateDocumentTitle(target);
+  };
 
   // News State
   const [newsList, setNewsList] = useState<NewsItem[]>([]);
@@ -91,6 +112,38 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Synchronize route and title with browser history (popstate)
+  useEffect(() => {
+    const handlePopState = () => {
+      const resolved = resolveTabFromUrl(currentUser?.role);
+      setActiveTab(resolved);
+      updateDocumentTitle(resolved);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentUser]);
+
+  // Synchronize route and canonical URL when user logs in or profile changes
+  useEffect(() => {
+    if (currentUser) {
+      const resolved = resolveTabFromUrl(currentUser.role);
+      setActiveTab(resolved);
+      updateDocumentTitle(resolved);
+      const canonical = tabToPath(resolved);
+      if (window.location.pathname !== canonical && window.location.pathname !== '/') {
+        try {
+          window.history.replaceState({ tab: resolved }, '', canonical);
+        } catch {}
+      }
+    }
+  }, [currentUser]);
+
+  // Ensure document title matches current tab on mount and tab switch
+  useEffect(() => {
+    updateDocumentTitle(activeTab);
+  }, [activeTab]);
+
   // Load keys & nodes & news when user logs in
   const loadDashboardData = async (silent = false) => {
     if (!currentUser) return;
@@ -138,7 +191,7 @@ export default function App() {
   };
 
   const handleOpenNewsTab = () => {
-    setActiveTab('news');
+    navigateToTab('news');
     setHasUnreadNews(false);
     if (newsList.length > 0) {
       const maxId = Math.max(...newsList.map((n) => n.id));
@@ -147,7 +200,7 @@ export default function App() {
   };
 
   const handleStartOnboarding = () => {
-    setActiveTab('keys');
+    navigateToTab('keys');
     setShowOnboarding(true);
     setOnboardingStep(1);
   };
@@ -174,6 +227,10 @@ export default function App() {
     api.logout();
     setMockMode(false);
     setCurrentUser(null);
+    navigateToTab('keys', true);
+    try {
+      localStorage.removeItem('avari_active_tab');
+    } catch {}
     toast.info('Вы успешно вышли из системы');
   };
 
@@ -297,7 +354,7 @@ export default function App() {
           {/* User Profile & Logout */}
           <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
             <button
-              onClick={() => setActiveTab('profile')}
+              onClick={() => navigateToTab('profile')}
               title="Перейти в Мой профиль"
               className="text-right hidden sm:block px-3 py-1.5 rounded-xl hover:bg-[#102833] border border-transparent hover:border-[#1C3945] transition group cursor-pointer"
             >
@@ -341,7 +398,7 @@ export default function App() {
               </div>
 
               <button
-                onClick={() => setActiveTab('keys')}
+                onClick={() => navigateToTab('keys')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'keys'
                     ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -353,7 +410,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('dashboard')}
+                onClick={() => navigateToTab('dashboard')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'dashboard'
                     ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -380,7 +437,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('billing')}
+                onClick={() => navigateToTab('billing')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'billing'
                     ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -395,7 +452,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('profile')}
+                onClick={() => navigateToTab('profile')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'profile'
                     ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -415,7 +472,7 @@ export default function App() {
               </div>
 
               <button
-                onClick={() => setActiveTab('nodes')}
+                onClick={() => navigateToTab('nodes')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'nodes'
                     ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
@@ -427,7 +484,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('users')}
+                onClick={() => navigateToTab('users')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'users'
                     ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
@@ -439,7 +496,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('all-keys')}
+                onClick={() => navigateToTab('all-keys')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'all-keys'
                     ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
@@ -451,7 +508,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('logs')}
+                onClick={() => navigateToTab('logs')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'logs'
                     ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
@@ -463,7 +520,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('settings')}
+                onClick={() => navigateToTab('settings')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                   activeTab === 'settings'
                     ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
@@ -478,7 +535,7 @@ export default function App() {
         ) : (
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
             <button
-              onClick={() => setActiveTab('keys')}
+              onClick={() => navigateToTab('keys')}
               className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                 activeTab === 'keys'
                   ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -490,7 +547,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => navigateToTab('dashboard')}
               className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                 activeTab === 'dashboard'
                   ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -517,7 +574,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('billing')}
+              onClick={() => navigateToTab('billing')}
               className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                 activeTab === 'billing'
                   ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -532,7 +589,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('profile')}
+              onClick={() => navigateToTab('profile')}
               className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
                 activeTab === 'profile'
                   ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
@@ -806,7 +863,7 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <NetworkDashboard
               currentUser={currentUser}
-              onNavigateTab={(tab) => setActiveTab(tab)}
+              onNavigateTab={(tab) => navigateToTab(tab)}
             />
           )}
           {activeTab === 'news' && (
@@ -863,7 +920,7 @@ export default function App() {
           }}
           onOpenBillingTab={() => {
             setDismissedReminder(true);
-            setActiveTab('billing');
+            navigateToTab('billing');
           }}
         />
       )}
