@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { animatedPortal as createPortal } from './animatedPortal';
 import { X, Copy, Check, Download, QrCode as QrIcon, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap, ShieldCheck, HelpCircle } from 'lucide-react';
 import QRCode from 'qrcode';
 import { ClientConfigDetail } from '../types';

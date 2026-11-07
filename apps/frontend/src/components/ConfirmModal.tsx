@@ -1,5 +1,5 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
+import { animatedPortal as createPortal } from './animatedPortal';
 import { AlertTriangle, Trash2, HelpCircle, X } from 'lucide-react';
 
 export interface ConfirmModalProps {

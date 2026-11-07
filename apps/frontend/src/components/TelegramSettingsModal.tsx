@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { animatedPortal as createPortal } from './animatedPortal';
 import {
   X,
   Bot,
