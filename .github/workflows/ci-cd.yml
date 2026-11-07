@@ -333,17 +333,17 @@ jobs:
               : "${CASCADE_EGRESS_CONFIG:?Missing cascade registry secret}"
               printf '%s' "$CASCADE_EGRESS_CONFIG" | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/avari-keys; cat > /etc/avari-keys/egress.json' || return 1
               python3 - <<'PYENV' | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf' || return 1
-import os
-print('[Service]')
-iface = os.environ['NETWORK_PROBE_INTERFACE']
-if not iface or not iface.replace('_','').replace('-','').replace('.','').isalnum():
-    raise SystemExit('Invalid public network interface')
-print('Environment="NETWORK_PROBE_INTERFACE=' + iface + '"')
-value = os.environ['NETWORK_PROBE_TARGETS']
-if '\n' in value or '\r' in value:
-    raise SystemExit('Probe inventory must be single-line JSON')
-print('Environment="NETWORK_PROBE_TARGETS=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
-PYENV
+              import os
+              print('[Service]')
+              iface = os.environ['NETWORK_PROBE_INTERFACE']
+              if not iface or not iface.replace('_','').replace('-','').replace('.','').isalnum():
+                  raise SystemExit('Invalid public network interface')
+              print('Environment="NETWORK_PROBE_INTERFACE=' + iface + '"')
+              value = os.environ['NETWORK_PROBE_TARGETS']
+              if '\n' in value or '\r' in value:
+                  raise SystemExit('Probe inventory must be single-line JSON')
+              print('Environment="NETWORK_PROBE_TARGETS=' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"')
+              PYENV
               ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP}" || return 1
               scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/ || return 1
               ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null" || return 1
