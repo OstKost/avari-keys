@@ -1,5 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Key, Trash2, Search, Filter, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Key,
+  Trash2,
+  Search,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  X,
+} from 'lucide-react';
 import { api } from '../api/client';
 import { ClientConfigSummary, AdminNode } from '../types';
 import { ConfirmModal } from './ConfirmModal';
@@ -7,6 +16,8 @@ import { useToast } from '../context/ToastContext';
 import { Loader } from './Loader';
 import { Tooltip } from './Tooltip';
 import { formatNodeRouting } from '../utils/country';
+
+type KeyActivityFilter = 'all' | 'online' | 'active_week' | 'zombies' | 'never';
 
 export function AdminAllKeys() {
   const { toast } = useToast();
@@ -17,8 +28,9 @@ export function AdminAllKeys() {
   // Filters & Pagination
   const [search, setSearch] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState<number | undefined>(undefined);
+  const [activityFilter, setActivityFilter] = useState<KeyActivityFilter>('all');
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(15);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -89,7 +101,7 @@ export function AdminAllKeys() {
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
-    setPage(1); // reset to page 1 on search
+    setPage(1);
   };
 
   const handleNodeFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -103,34 +115,144 @@ export function AdminAllKeys() {
     setPage(1);
   };
 
+  // Local filtering by activity (Handshake status)
+  const filteredKeys = useMemo(() => {
+    if (activityFilter === 'all') return keys;
+
+    return keys.filter((k) => {
+      const hs = (k.last_handshake || '').toLowerCase();
+      const isNever = !hs || hs.includes('не') || hs.includes('never');
+
+      if (activityFilter === 'never') return isNever;
+      if (activityFilter === 'online') {
+        return !isNever && (hs.includes('сек') || hs.includes('мин') || hs.includes('min') || hs.includes('sec'));
+      }
+      if (activityFilter === 'active_week') {
+        return !isNever && !hs.includes('мес') && !hs.includes('month');
+      }
+      if (activityFilter === 'zombies') {
+        return isNever || hs.includes('мес') || hs.includes('month');
+      }
+      return true;
+    });
+  }, [keys, activityFilter]);
+
+  // Rough subnet capacity indicator (/24 typically gives 253 usable client slots)
+  const subnetCapacityPercent = Math.min(100, Math.round((totalCount / 253) * 100));
+
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div className="space-y-5 animate-fadeIn">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h3 className="font-serif text-xl font-bold text-[#F2F0E8] flex items-center space-x-2">
             <Key className="w-5 h-5 text-[#D9B96E]" />
             <span>Сводный реестр и аудит VPN-ключей</span>
           </h3>
           <p className="text-sm text-[#A8B4B7] mt-1 font-sans">
-            Мониторинг активности, учет трафика (Total / Monthly) и управление ключами по всем узлам сети.
+            Мониторинг активности (Handshake), учет трафика, детекция спящих пиров и пул IP-адресов.
           </p>
+        </div>
+
+        {/* IP Pool Allocation Badge */}
+        <div className="flex items-center space-x-3 px-3.5 py-2 rounded-2xl bg-[#06141B] border border-[#1C3945] text-xs font-mono">
+          <div className="space-y-1">
+            <div className="flex justify-between items-center text-[11px] text-[#A8B4B7]">
+              <span>Занято IP-адресов:</span>
+              <span className="font-bold text-[#F2F0E8] ml-2">{totalCount} / 253 ({subnetCapacityPercent}%)</span>
+            </div>
+            <div className="w-36 h-1.5 bg-[#102833] rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  subnetCapacityPercent > 80
+                    ? 'bg-rose-500'
+                    : subnetCapacityPercent > 50
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-400'
+                }`}
+                style={{ width: `${Math.max(5, subnetCapacityPercent)}%` }}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+      {/* Activity Filter Pills */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+        <button
+          onClick={() => setActivityFilter('all')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold whitespace-nowrap transition ${
+            activityFilter === 'all'
+              ? 'bg-[#D9B96E] text-[#06141B] shadow-sm'
+              : 'bg-[#0A1D26] text-[#A8B4B7] hover:text-[#F2F0E8] border border-[#1C3945]'
+          }`}
+        >
+          Все ({totalCount})
+        </button>
+
+        <button
+          onClick={() => setActivityFilter('online')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold whitespace-nowrap transition flex items-center space-x-1.5 ${
+            activityFilter === 'online'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-[#0A1D26] text-[#A8B4B7] hover:text-[#F2F0E8] border border-[#1C3945]'
+          }`}
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Онлайн (&lt;15 мин)</span>
+        </button>
+
+        <button
+          onClick={() => setActivityFilter('active_week')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold whitespace-nowrap transition ${
+            activityFilter === 'active_week'
+              ? 'bg-cyan-600 text-white shadow-sm'
+              : 'bg-[#0A1D26] text-[#A8B4B7] hover:text-[#F2F0E8] border border-[#1C3945]'
+          }`}
+        >
+          Активны за 7 дней
+        </button>
+
+        <button
+          onClick={() => setActivityFilter('zombies')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold whitespace-nowrap transition flex items-center space-x-1.5 ${
+            activityFilter === 'zombies'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : 'bg-[#0A1D26] text-amber-300 hover:text-amber-200 border border-amber-600/40'
+          }`}
+        >
+          <span>💤 Спящие зомби (&gt;30 дней)</span>
+        </button>
+
+        <button
+          onClick={() => setActivityFilter('never')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold whitespace-nowrap transition ${
+            activityFilter === 'never'
+              ? 'bg-slate-700 text-white shadow-sm'
+              : 'bg-[#0A1D26] text-[#718187] hover:text-[#A8B4B7] border border-[#1C3945]'
+          }`}
+        >
+          Никогда не подключались
+        </button>
+      </div>
+
+      {/* Search & Node Selectors */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="md:col-span-2 relative">
           <Search className="w-4 h-4 text-[#718187] absolute left-3.5 top-3.5" />
           <input
             type="text"
             value={search}
             onChange={handleSearchChange}
-            placeholder="Поиск по устройству, имени пира или ноде..."
+            placeholder="Поиск по устройству, имени пира, логину пользователя..."
             className="w-full bg-[#06141B] border border-[#1C3945] focus:border-[#D9B96E] rounded-xl pl-10 pr-10 py-2.5 text-sm text-[#F2F0E8] placeholder-[#718187] focus:outline-none transition shadow-inner font-sans"
           />
           {search && (
             <button
-              onClick={() => { setSearch(''); setPage(1); }}
+              onClick={() => {
+                setSearch('');
+                setPage(1);
+              }}
               className="absolute right-3.5 top-3.5 text-[#718187] hover:text-[#F2F0E8]"
             >
               <X className="w-4 h-4" />
@@ -172,7 +294,7 @@ export function AdminAllKeys() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#1C3945]/70 bg-[#0A1D26]/40 font-sans">
-            {(keys || []).map((k) => (
+            {filteredKeys.map((k) => (
               <tr key={k.id} className="hover:bg-[#102833]/50 transition duration-150">
                 <td className="px-5 py-3.5 text-[#718187] font-mono text-sm">#{k.id}</td>
                 <td className="px-5 py-3.5">
@@ -188,16 +310,16 @@ export function AdminAllKeys() {
                       </span>
                     )}
                   </div>
-                  <div className="text-sm font-mono text-[#D9B96E] mt-0.5">{k.client_name}</div>
+                  <div className="text-xs font-mono text-[#D9B96E] mt-0.5">{k.client_name}</div>
                 </td>
                 <td className="px-5 py-3.5 text-sm font-mono">
                   <span className="font-semibold text-[#F2F0E8]">{k.username || 'User'}</span>
-                  <span className="text-[#D9B96E]">#{k.user_id}</span>
+                  <span className="text-[#D9B96E] ml-1">#{k.user_id}</span>
                 </td>
                 <td className="px-5 py-3.5">
                   <div className="flex flex-col items-start gap-1">
                     <span
-                      className={`text-sm font-mono font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-md ${
+                      className={`text-xs font-mono font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md ${
                         k.node_type === 'cascade'
                           ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
                           : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40'
@@ -205,26 +327,32 @@ export function AdminAllKeys() {
                     >
                       {formatNodeRouting(k.node_type || 'direct', k.node_country_code).fullText}
                     </span>
-                    <span className="text-sm font-mono text-[#A8B4B7] max-w-[190px] truncate" title={k.node_name}>
+                    <span className="text-xs font-mono text-[#A8B4B7] max-w-[190px] truncate" title={k.node_name}>
                       {k.node_name || 'Node'}
                     </span>
                   </div>
                 </td>
                 <td className="px-5 py-3.5">
-                  <div className="flex items-center space-x-1.5 text-sm font-mono text-[#A8B4B7]">
-                    <span className={`w-2 h-2 rounded-full ${k.last_handshake && !k.last_handshake.includes('Не') ? 'bg-emerald-400 animate-pulse' : 'bg-[#718187]'}`} />
+                  <div className="flex items-center space-x-1.5 text-xs font-mono text-[#A8B4B7]">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        k.last_handshake && !k.last_handshake.includes('Не')
+                          ? 'bg-emerald-400 animate-pulse'
+                          : 'bg-[#718187]'
+                      }`}
+                    />
                     <span>{k.last_handshake || 'Не подключался'}</span>
                   </div>
                 </td>
                 <td className="px-5 py-3.5">
-                  <div className="text-sm font-mono font-semibold text-[#F2F0E8]">
+                  <div className="text-xs font-mono font-semibold text-[#F2F0E8]">
                     {k.total_traffic_formatted || '0 B'}
                   </div>
-                  <div className="text-sm font-mono text-[#718187]">
+                  <div className="text-[11px] font-mono text-[#718187]">
                     Месяц: {k.month_traffic_formatted || '0 B'}
                   </div>
                 </td>
-                <td className="px-5 py-3.5 text-sm text-[#718187] font-mono">
+                <td className="px-5 py-3.5 text-xs text-[#718187] font-mono">
                   {new Date(k.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-5 py-3.5 text-right">
@@ -240,13 +368,13 @@ export function AdminAllKeys() {
                 </td>
               </tr>
             ))}
-            {loading && (
-              <Loader size="table" colSpan={8} text="Загрузка реестра VPN-ключей..." />
-            )}
-            {(keys || []).length === 0 && !loading && (
+            {loading && <Loader size="table" colSpan={8} text="Загрузка реестра VPN-ключей..." />}
+            {filteredKeys.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} className="text-center py-12 text-[#718187] text-sm font-mono uppercase tracking-wider">
-                  {search || selectedNodeId ? 'По заданным фильтрам ключи не найдены.' : 'Пока не выпущено ни одной конфигурации.'}
+                <td colSpan={8} className="text-center py-12 text-[#718187] text-xs font-mono uppercase tracking-wider">
+                  {search || selectedNodeId || activityFilter !== 'all'
+                    ? 'По заданным фильтрам ключи не найдены.'
+                    : 'Пока не выпущено ни одной конфигурации.'}
                 </td>
               </tr>
             )}
@@ -256,22 +384,22 @@ export function AdminAllKeys() {
 
       {/* Pagination Bar */}
       {totalCount > 0 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2 py-2 text-sm text-[#A8B4B7] font-mono">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2 py-2 text-xs sm:text-sm text-[#A8B4B7] font-mono">
           <div className="flex flex-wrap items-center gap-3">
-            <div>
+            <span>
               Показано {(page - 1) * limit + 1}–{Math.min(page * limit, totalCount)} из {totalCount} ключей
-            </div>
-            <div className="flex items-center space-x-2 text-xs text-[#718187]">
-              <span>По:</span>
+            </span>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-[#718187]">Строк:</span>
               <select
                 value={limit}
                 onChange={handleLimitChange}
-                className="bg-[#06141B] border border-[#1C3945] rounded-lg px-2 py-1 text-xs text-[#D9B96E] font-mono focus:outline-none cursor-pointer"
+                className="bg-[#06141B] border border-[#1C3945] rounded-lg px-2 py-1 text-xs text-[#F2F0E8] focus:outline-none focus:border-[#D9B96E]"
               >
                 <option value={10}>10</option>
+                <option value={15}>15</option>
                 <option value={25}>25</option>
                 <option value={50}>50</option>
-                <option value={100}>100</option>
               </select>
             </div>
           </div>
@@ -279,56 +407,31 @@ export function AdminAllKeys() {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="flex items-center space-x-1 px-3.5 py-2 rounded-lg border border-[#1C3945] bg-[#102833] hover:bg-[#1C3945] text-[#F2F0E8] disabled:opacity-40 disabled:hover:bg-[#102833] disabled:cursor-not-allowed cursor-pointer transition shadow-sm"
+              disabled={page <= 1}
+              className="p-2 rounded-xl border border-[#1C3945] bg-[#0A1D26] hover:bg-[#102833] text-[#A8B4B7] hover:text-[#F2F0E8] disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span>Назад</span>
             </button>
-
-            {/* Page number buttons */}
-            <div className="flex items-center space-x-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-                .map((p, idx, arr) => {
-                  const prev = arr[idx - 1];
-                  const showEllipsis = prev && p - prev > 1;
-                  return (
-                    <div key={p} className="flex items-center space-x-1">
-                      {showEllipsis && <span className="px-1 text-[#718187]">...</span>}
-                      <button
-                        onClick={() => setPage(p)}
-                        className={`min-w-[36px] h-9 px-2.5 rounded-lg border text-sm font-mono font-bold transition cursor-pointer ${
-                          page === p
-                            ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] border-[#D9B96E] shadow-md shadow-[#D9B96E]/20'
-                            : 'bg-[#06141B] border-[#1C3945] text-[#A8B4B7] hover:text-[#F2F0E8] hover:bg-[#102833]'
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    </div>
-                  );
-                })}
-            </div>
-
+            <span className="px-2 text-xs">
+              Стр. {page} из {totalPages}
+            </span>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="flex items-center space-x-1 px-3.5 py-2 rounded-lg border border-[#1C3945] bg-[#102833] hover:bg-[#1C3945] text-[#F2F0E8] disabled:opacity-40 disabled:hover:bg-[#102833] disabled:cursor-not-allowed cursor-pointer transition shadow-sm"
+              className="p-2 rounded-xl border border-[#1C3945] bg-[#0A1D26] hover:bg-[#102833] text-[#A8B4B7] hover:text-[#F2F0E8] disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
-              <span>Вперед</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* Revoke Key Confirm Modal */}
+      {/* Confirm Revoke Key Modal */}
       <ConfirmModal
         isOpen={Boolean(keyToDelete)}
-        title="Отозвать и удалить ключ?"
+        title="Отозвать и удалить VPN-ключ?"
         variant="danger"
-        confirmText="Да, отозвать ключ"
+        confirmText="Да, удалить ключ"
         cancelText="Отмена"
         isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
@@ -336,10 +439,13 @@ export function AdminAllKeys() {
         message={
           keyToDelete && (
             <div>
-              Вы собираетесь безвозвратно отозвать ключ устройства{' '}
+              Вы собираетесь отозвать VPN-конфигурацию{' '}
               <strong className="text-[#F2F0E8]">«{keyToDelete.device_name}»</strong> (клиент{' '}
-              <code className="text-[#D9B96E] font-mono">{keyToDelete.client_name}</code>, User #{keyToDelete.user_id}).
-              Конфигурация на стороне пользователя и на ноде будет аннулирована.
+              <span className="font-mono text-[#D9B96E]">{keyToDelete.client_name}</span>) пользователя{' '}
+              <strong className="text-[#F2F0E8]">«{keyToDelete.username || `User #${keyToDelete.user_id}`}»</strong>.
+              <p className="mt-2 text-sm text-[#A8B4B7]">
+                Устройство будет немедленно отключено от сервера и больше не сможет передавать зашифрованный трафик.
+              </p>
             </div>
           )
         }
@@ -347,4 +453,3 @@ export function AdminAllKeys() {
     </div>
   );
 }
-

@@ -4,6 +4,7 @@ export type TabType =
   | 'news' 
   | 'billing' 
   | 'profile' 
+  | 'overview'
   | 'nodes' 
   | 'users' 
   | 'all-keys' 
@@ -11,7 +12,19 @@ export type TabType =
   | 'settings'
   | 'miniapp';
 
-export const ADMIN_TABS: readonly TabType[] = ['nodes', 'users', 'all-keys', 'logs', 'settings'] as const;
+export type AppMode = 'client' | 'admin';
+
+export const ADMIN_TABS: readonly TabType[] = ['overview', 'nodes', 'users', 'all-keys', 'logs', 'settings'] as const;
+
+export const CLIENT_TABS: readonly TabType[] = ['keys', 'dashboard', 'news', 'billing', 'profile'] as const;
+
+export function isAdminTab(tab: TabType): boolean {
+  return ADMIN_TABS.includes(tab);
+}
+
+export function isClientTab(tab: TabType): boolean {
+  return CLIENT_TABS.includes(tab);
+}
 
 export const TAB_TITLES: Record<TabType, string> = {
   keys: 'Мои устройства — Avari Keys',
@@ -19,6 +32,7 @@ export const TAB_TITLES: Record<TabType, string> = {
   news: 'Новости — Avari Keys',
   billing: 'Биллинг и взносы — Avari Keys',
   profile: 'Мой профиль — Avari Keys',
+  overview: 'Центр управления — Avari Keys Admin',
   nodes: 'Серверы кластера — Avari Keys Admin',
   users: 'Управление пользователями — Avari Keys Admin',
   'all-keys': 'Все VPN-ключи — Avari Keys Admin',
@@ -50,6 +64,8 @@ export function tabToPath(tab: TabType, nodeId?: number | null): string {
       return '/billing';
     case 'profile':
       return '/profile';
+    case 'overview':
+      return '/admin/overview';
     case 'nodes':
       return '/admin/nodes';
     case 'users':
@@ -113,6 +129,11 @@ export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
       case '/profile':
         detectedTab = 'profile';
         break;
+      case '/admin':
+      case '/admin/overview':
+      case '/overview':
+        detectedTab = 'overview';
+        break;
       case '/admin/nodes':
       case '/nodes':
         detectedTab = 'nodes';
@@ -149,12 +170,14 @@ export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
   if (!detectedTab && hash) {
     const validTabs: TabType[] = [
       'keys', 'dashboard', 'news', 'billing', 'profile',
-      'nodes', 'users', 'all-keys', 'logs', 'settings', 'miniapp',
+      'overview', 'nodes', 'users', 'all-keys', 'logs', 'settings', 'miniapp',
     ];
     if (validTabs.includes(hash as TabType)) {
       detectedTab = hash as TabType;
     } else if (hash === 'network') {
       detectedTab = 'dashboard';
+    } else if (hash === 'admin' || hash === 'admin/overview') {
+      detectedTab = 'overview';
     } else if (hash === 'admin/keys' || hash === 'admin/all-keys') {
       detectedTab = 'all-keys';
     } else if (hash === 'tma' || hash === 'app') {
@@ -182,7 +205,7 @@ export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
       const saved = localStorage.getItem('avari_active_tab') as TabType | null;
       const validTabs: TabType[] = [
         'keys', 'dashboard', 'news', 'billing', 'profile',
-        'nodes', 'users', 'all-keys', 'logs', 'settings', 'miniapp',
+        'overview', 'nodes', 'users', 'all-keys', 'logs', 'settings', 'miniapp',
       ];
       if (saved && validTabs.includes(saved)) {
         detectedTab = saved;

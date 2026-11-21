@@ -27,7 +27,9 @@ import { FloatingMascot, MascotFaqModal, MASCOT_IMAGE_SRC } from './components/M
 import { OnboardingTour } from './components/OnboardingTour';
 import { ServerDetailPage } from './components/ServerDetailPage';
 import { TelegramMiniApp } from './components/TelegramMiniApp';
-import { TabType, ADMIN_TABS, resolveRouteFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
+import { AdminOverview } from './components/AdminOverview';
+import { EgressPanicBar } from './components/EgressPanicBar';
+import { TabType, AppMode, ADMIN_TABS, isAdminTab, resolveRouteFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
 
 export default function App() {
   const { toast } = useToast();
@@ -37,10 +39,28 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>(() => initialRoute.tab);
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(() => initialRoute.nodeId || null);
 
+  const [appMode, setAppMode] = useState<AppMode>(() => {
+    if (typeof window !== 'undefined') {
+      if (isAdminTab(initialRoute.tab)) return 'admin';
+      const saved = localStorage.getItem('avari_app_mode') as AppMode | null;
+      if (saved === 'admin' || saved === 'client') return saved;
+    }
+    return 'client';
+  });
+
+  const [adminPendingCount, setAdminPendingCount] = useState(0);
+
   const navigateToTab = (tab: TabType, replace = false, nodeId: number | null = null) => {
     let target = tab;
-    if (ADMIN_TABS.includes(target) && currentUser && currentUser.role !== 'admin') {
-      target = 'keys';
+    if (ADMIN_TABS.includes(target)) {
+      if (currentUser && currentUser.role !== 'admin') {
+        target = 'keys';
+      } else {
+        setAppMode('admin');
+        try {
+          localStorage.setItem('avari_app_mode', 'admin');
+        } catch {}
+      }
     }
     setActiveTab(target);
     setSelectedNodeId(nodeId);
@@ -56,6 +76,24 @@ export default function App() {
       // Ignore history/storage errors
     }
     updateDocumentTitle(target);
+  };
+
+  const handleSwitchMode = (mode: AppMode) => {
+    if (currentUser?.role !== 'admin') return;
+    setAppMode(mode);
+    try {
+      localStorage.setItem('avari_app_mode', mode);
+    } catch {}
+
+    if (mode === 'admin') {
+      if (!isAdminTab(activeTab)) {
+        navigateToTab('overview');
+      }
+    } else {
+      if (isAdminTab(activeTab)) {
+        navigateToTab('keys');
+      }
+    }
   };
 
   // News State
@@ -121,6 +159,9 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       const resolved = resolveRouteFromUrl(currentUser?.role);
+      if (isAdminTab(resolved.tab)) {
+        setAppMode('admin');
+      }
       setActiveTab(resolved.tab);
       setSelectedNodeId(resolved.nodeId || null);
       updateDocumentTitle(resolved.tab);
@@ -129,6 +170,20 @@ export default function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [currentUser]);
+
+  // Keep admin pending tasks count updated
+  useEffect(() => {
+    if (currentUser?.role === 'admin') {
+      api.getAdminUsers()
+        .then((usersList) => {
+          const count = (Array.isArray(usersList) ? usersList : []).filter(
+            (u) => !u.is_active || u.has_pending_password_reset
+          ).length;
+          setAdminPendingCount(count);
+        })
+        .catch(() => {});
+    }
+  }, [currentUser, activeTab]);
 
   // Synchronize route and canonical URL when user logs in or profile changes
   useEffect(() => {
@@ -363,6 +418,38 @@ export default function App() {
 
           {/* User Profile & Logout */}
           <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
+            {/* Mode Switcher for Admin */}
+            {currentUser.role === 'admin' && (
+              <div className="flex items-center bg-[#06141B] p-1 rounded-2xl border border-[#1C3945] shadow-inner shrink-0 mr-1 sm:mr-3">
+                <button
+                  onClick={() => handleSwitchMode('client')}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-mono text-xs font-semibold transition ${
+                    appMode === 'client'
+                      ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] shadow-md font-bold'
+                      : 'text-[#A8B4B7] hover:text-[#F2F0E8]'
+                  }`}
+                >
+                  <UserIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Клиент</span>
+                </button>
+
+                <button
+                  onClick={() => handleSwitchMode('admin')}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-mono text-xs font-semibold transition ${
+                    appMode === 'admin'
+                      ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white shadow-md shadow-purple-900/40 font-bold'
+                      : 'text-[#A8B4B7] hover:text-[#F2F0E8]'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="hidden sm:inline">Центр управления</span>
+                  {adminPendingCount > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
+                  )}
+                </button>
+              </div>
+            )}
+
             <button
               onClick={() => navigateToTab('profile')}
               title="Перейти в Мой профиль"
@@ -398,88 +485,21 @@ export default function App() {
       <main className="flex-1 max-w-[1680px] mx-auto px-3 sm:px-6 lg:px-10 py-5 sm:py-8 w-full">
         
         {/* Navigation Tabs */}
-        {currentUser.role === 'admin' ? (
-          <div className="space-y-2.5 pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80">
-            {/* Row 1: User / Common Pages */}
+        {currentUser.role === 'admin' && appMode === 'admin' ? (
+          <div className="space-y-4 pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80">
+            {/* Admin Tabs */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
-              <div className="hidden sm:flex items-center space-x-1.5 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-[#A8B4B7]/70 bg-[#06141B]/80 rounded-lg border border-[#1C3945]/50 shrink-0">
-                <UserIcon className="w-3.5 h-3.5 text-[#D9B96E]" />
-                <span>Клиент</span>
-              </div>
-
               <button
-                onClick={() => navigateToTab('keys')}
+                onClick={() => navigateToTab('overview')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-                  activeTab === 'keys'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
+                  activeTab === 'overview'
+                    ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white font-bold shadow-lg shadow-purple-500/25 border border-purple-400/30'
                     : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
                 }`}
               >
-                <Key className="w-4 h-4" />
-                <span>Мои устройства</span>
+                <Sparkles className="w-4 h-4 text-purple-300" />
+                <span>Сводка (Mission Control)</span>
               </button>
-
-              <button
-                onClick={() => navigateToTab('dashboard')}
-                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-                  activeTab === 'dashboard'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-                }`}
-              >
-                <Radio className="w-4 h-4" />
-                <span>Статус сети</span>
-              </button>
-
-              <button
-                onClick={handleOpenNewsTab}
-                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-                  activeTab === 'news'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-                }`}
-              >
-                <Newspaper className="w-4 h-4" />
-                <span>Новости</span>
-                {hasUnreadNews && (
-                  <span className="w-2 h-2 rounded-full bg-[#F0D48D] shadow-sm shadow-[#F0D48D] animate-pulse ml-0.5" />
-                )}
-              </button>
-
-              <button
-                onClick={() => navigateToTab('billing')}
-                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-                  activeTab === 'billing'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-                }`}
-              >
-                <CreditCard className="w-4 h-4" />
-                <span>Биллинг</span>
-                {billingStatus?.is_due && (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse ml-0.5" />
-                )}
-              </button>
-
-              <button
-                onClick={() => navigateToTab('profile')}
-                className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
-                  activeTab === 'profile'
-                    ? 'bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold shadow-lg shadow-[#D9B96E]/20'
-                    : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
-                }`}
-              >
-                <UserIcon className="w-4 h-4" />
-                <span>Мой профиль</span>
-              </button>
-            </div>
-
-            {/* Row 2: Administration Only Pages */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap pt-1">
-              <div className="hidden sm:flex items-center space-x-1.5 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-purple-300/80 bg-purple-950/40 rounded-lg border border-purple-800/40 shrink-0">
-                <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
-                <span>Админ</span>
-              </div>
 
               <button
                 onClick={() => navigateToTab('nodes')}
@@ -503,6 +523,11 @@ export default function App() {
               >
                 <Users className="w-4 h-4" />
                 <span>Пользователи</span>
+                {adminPendingCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-950 text-amber-300 font-bold border border-amber-500/50 animate-pulse ml-0.5">
+                    {adminPendingCount}
+                  </span>
+                )}
               </button>
 
               <button
@@ -513,7 +538,7 @@ export default function App() {
                     : 'text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]'
                 }`}
               >
-                <Sparkles className="w-4 h-4" />
+                <Key className="w-4 h-4" />
                 <span>Все ключи</span>
               </button>
 
@@ -550,6 +575,9 @@ export default function App() {
                 <span>Telegram App</span>
               </button>
             </div>
+
+            {/* Panic Bar / Egress Quick-Switch Bar */}
+            <EgressPanicBar onNavigateNodes={() => navigateToTab('nodes')} />
           </div>
         ) : (
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
@@ -808,6 +836,9 @@ export default function App() {
               currentUser={currentUser}
               onNewsRead={() => setHasUnreadNews(false)}
             />
+          )}
+          {activeTab === 'overview' && (
+            <AdminOverview onNavigateTab={(tab, nodeId) => navigateToTab(tab, false, nodeId)} />
           )}
           {activeTab === 'nodes' && (
             selectedNodeId ? (
