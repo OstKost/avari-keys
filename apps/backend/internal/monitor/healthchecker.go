@@ -632,6 +632,194 @@ func (h *HealthChecker) CheckAllNodes(ctx context.Context) ([]models.NodeWithSta
 	return res, nil
 }
 
+// GetNodeDetail returns complete runtime diagnostics, stats, egress and peers for a single node.
+func (h *HealthChecker) GetNodeDetail(ctx context.Context, id int64) (*models.NodeDetailResponse, error) {
+	if h.storage == nil {
+		return nil, fmt.Errorf("storage is not initialized")
+	}
+
+	node, err := h.storage.GetNodeByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	h.mu.RLock()
+	isOnline, exists := h.nodeStates[node.ID]
+	latency := h.nodeLatencies[node.ID]
+	status, hasStatus := h.serverStatuses[node.ID]
+	probes := append([]models.NetworkProbe{}, h.networkProbes[node.ID]...)
+	h.mu.RUnlock()
+
+	if !hasStatus {
+		status = models.StatusDetail{State: "unknown", Reason: "Нет результатов фоновой проверки сервера"}
+	} else if time.Since(status.CheckedAt) > 3*h.interval {
+		status.State = "yellow"
+		status.Reason = "Результат проверки сервера устарел"
+	}
+
+	slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
+
+	// If never checked before, do an initial live ping
+	if !exists {
+		pingCtx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+		start := time.Now()
+		health, hErr := slaveCli.CheckHealth(pingCtx)
+		latency = time.Since(start).Milliseconds()
+		cancel()
+		isOnline = hErr == nil && health != nil && health.Status == "ok"
+		if !isOnline {
+			latency = 0
+		}
+	}
+
+	var health *models.HealthResponse
+	var stats *models.StatsSummaryResponse
+	var egress *models.EgressStatusResponse
+
+	if isOnline {
+		cctx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+		health, _ = slaveCli.CheckHealth(cctx)
+		cancel()
+
+		sctx, scancel := context.WithTimeout(ctx, h.nodeTimeout)
+		stats, _ = slaveCli.GetStats(sctx)
+		scancel()
+
+		if node.Type == "cascade" {
+			ectx, ecancel := context.WithTimeout(ctx, h.nodeTimeout)
+			egress, _ = slaveCli.GetCascadeEgress(ectx)
+			ecancel()
+		}
+	}
+
+	clientKeys, _ := h.storage.ListClientConfigsByNodeID(ctx, id)
+
+	return &models.NodeDetailResponse{
+		NodeWithStatus: models.NodeWithStatus{
+			Node:          *node,
+			Online:        isOnline,
+			LatencyMs:     latency,
+			ServerStatus:  status,
+			NetworkStatus: netprobe.Aggregate(probes, time.Now()),
+			NetworkProbes: probes,
+		},
+		Health:     health,
+		Stats:      stats,
+		Egress:     egress,
+		ClientKeys: clientKeys,
+	}, nil
+}
+
+// DiagnoseNode runs a live diagnostic probe, latency check, and refreshes the node's cached status.
+func (h *HealthChecker) DiagnoseNode(ctx context.Context, id int64) (*models.NodeDetailResponse, error) {
+	if h.storage == nil {
+		return nil, fmt.Errorf("storage is not initialized")
+	}
+
+	node, err := h.storage.GetNodeByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
+
+	pingCtx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+	start := time.Now()
+	health, hErr := slaveCli.CheckHealth(pingCtx)
+	latency := time.Since(start).Milliseconds()
+	cancel()
+
+	isOnline := hErr == nil && health != nil && health.Status == "ok"
+	if !isOnline {
+		latency = 0
+	}
+
+	var status models.StatusDetail
+	if isOnline {
+		status = models.StatusDetail{
+			State:     "green",
+			CheckedAt: time.Now().UTC(),
+			Reason:    fmt.Sprintf("Служба активна, время отклика API %d ms", latency),
+		}
+	} else {
+		errMsg := "Сервер не отвечает на запросы Slave API"
+		if hErr != nil {
+			errMsg = hErr.Error()
+		}
+		status = models.StatusDetail{
+			State:     "red",
+			CheckedAt: time.Now().UTC(),
+			Reason:    errMsg,
+		}
+	}
+
+	var stats *models.StatsSummaryResponse
+	var egress *models.EgressStatusResponse
+	var remoteProbes []models.NetworkProbe
+
+	if isOnline {
+		sctx, scancel := context.WithTimeout(ctx, h.nodeTimeout)
+		stats, _ = slaveCli.GetStats(sctx)
+		scancel()
+
+		if node.Type == "cascade" {
+			ectx, ecancel := context.WithTimeout(ctx, h.nodeTimeout)
+			egress, _ = slaveCli.GetCascadeEgress(ectx)
+			ecancel()
+
+			pctx, pcancel := context.WithTimeout(ctx, h.nodeTimeout)
+			remoteProbes, _ = slaveCli.NetworkProbes(pctx)
+			pcancel()
+		}
+	}
+
+	// Run netprobe checks if configured
+	targets := netprobe.TargetsFromEnv()
+	var matchedTargets []netprobe.Target
+	for _, t := range targets {
+		if t.NodeID == node.ID {
+			matchedTargets = append(matchedTargets, t)
+		}
+	}
+
+	var localProbes []models.NetworkProbe
+	if len(matchedTargets) > 0 {
+		localProbes = netprobe.Run(ctx, "M0", matchedTargets)
+	}
+
+	for _, rp := range remoteProbes {
+		rp.Source = "S0"
+		localProbes = append(localProbes, rp)
+	}
+
+	h.mu.Lock()
+	h.nodeStates[node.ID] = isOnline
+	h.nodeLatencies[node.ID] = latency
+	h.serverStatuses[node.ID] = status
+	if len(localProbes) > 0 {
+		h.networkProbes[node.ID] = localProbes
+	}
+	allProbes := append([]models.NetworkProbe{}, h.networkProbes[node.ID]...)
+	h.mu.Unlock()
+
+	clientKeys, _ := h.storage.ListClientConfigsByNodeID(ctx, id)
+
+	return &models.NodeDetailResponse{
+		NodeWithStatus: models.NodeWithStatus{
+			Node:          *node,
+			Online:        isOnline,
+			LatencyMs:     latency,
+			ServerStatus:  status,
+			NetworkStatus: netprobe.Aggregate(allProbes, time.Now()),
+			NetworkProbes: allProbes,
+		},
+		Health:     health,
+		Stats:      stats,
+		Egress:     egress,
+		ClientKeys: clientKeys,
+	}, nil
+}
+
 func formatBytes(bytes int64) string {
 	if bytes < 1024 {
 		return fmt.Sprintf("%d B", bytes)

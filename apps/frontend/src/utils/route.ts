@@ -25,10 +25,18 @@ export const TAB_TITLES: Record<TabType, string> = {
   settings: 'Настройки системы — Avari Keys Admin',
 };
 
+export interface ResolvedRoute {
+  tab: TabType;
+  nodeId?: number;
+}
+
 /**
- * Returns canonical pathname for a given tab.
+ * Returns canonical pathname for a given tab, optionally with a specific node ID.
  */
-export function tabToPath(tab: TabType): string {
+export function tabToPath(tab: TabType, nodeId?: number | null): string {
+  if (tab === 'nodes' && nodeId) {
+    return `/admin/nodes/${nodeId}`;
+  }
   switch (tab) {
     case 'keys':
       return '/keys';
@@ -56,60 +64,79 @@ export function tabToPath(tab: TabType): string {
 }
 
 /**
- * Resolves current tab from URL pathname, hash, or localStorage fallback.
+ * Resolves current route (tab and optional node ID) from URL pathname, hash, or localStorage fallback.
  * Checks permissions if user role is provided.
  */
-export function resolveTabFromUrl(userRole?: string): TabType {
+export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
   const path = (window.location.pathname || '').toLowerCase().replace(/\/$/, '') || '/';
   const hash = (window.location.hash || '').toLowerCase().replace(/^#\/?/, '');
 
   let detectedTab: TabType | null = null;
+  let detectedNodeId: number | undefined = undefined;
 
-  // 1. Pathname match (explicit subpaths)
-  switch (path) {
-    case '/keys':
-      detectedTab = 'keys';
-      break;
-    case '/dashboard':
-    case '/network':
-      detectedTab = 'dashboard';
-      break;
-    case '/news':
-      detectedTab = 'news';
-      break;
-    case '/billing':
-      detectedTab = 'billing';
-      break;
-    case '/profile':
-      detectedTab = 'profile';
-      break;
-    case '/admin/nodes':
-    case '/nodes':
-      detectedTab = 'nodes';
-      break;
-    case '/admin/users':
-    case '/users':
-      detectedTab = 'users';
-      break;
-    case '/admin/keys':
-    case '/admin/all-keys':
-    case '/all-keys':
-      detectedTab = 'all-keys';
-      break;
-    case '/admin/logs':
-    case '/logs':
-      detectedTab = 'logs';
-      break;
-    case '/admin/settings':
-    case '/settings':
-      detectedTab = 'settings';
-      break;
-    default:
-      detectedTab = null;
-      break;
+  // 1. Check for specific node route, e.g. /admin/nodes/3 or /nodes/3
+  const nodeMatch = path.match(/^(?:\/admin)?\/nodes\/(\d+)$/);
+  if (nodeMatch) {
+    detectedTab = 'nodes';
+    detectedNodeId = parseInt(nodeMatch[1], 10);
   }
 
-  // 2. Hash match fallback (e.g. /#billing or /#news or #dashboard)
+  // 2. Check for hash node match, e.g. #/admin/nodes/3 or #nodes/3
+  if (!detectedTab && hash) {
+    const hashNodeMatch = hash.match(/^(?:admin\/)?nodes\/(\d+)$/);
+    if (hashNodeMatch) {
+      detectedTab = 'nodes';
+      detectedNodeId = parseInt(hashNodeMatch[1], 10);
+    }
+  }
+
+  // 3. Pathname match (explicit subpaths)
+  if (!detectedTab) {
+    switch (path) {
+      case '/keys':
+        detectedTab = 'keys';
+        break;
+      case '/dashboard':
+      case '/network':
+        detectedTab = 'dashboard';
+        break;
+      case '/news':
+        detectedTab = 'news';
+        break;
+      case '/billing':
+        detectedTab = 'billing';
+        break;
+      case '/profile':
+        detectedTab = 'profile';
+        break;
+      case '/admin/nodes':
+      case '/nodes':
+        detectedTab = 'nodes';
+        break;
+      case '/admin/users':
+      case '/users':
+        detectedTab = 'users';
+        break;
+      case '/admin/keys':
+      case '/admin/all-keys':
+      case '/all-keys':
+        detectedTab = 'all-keys';
+        break;
+      case '/admin/logs':
+      case '/logs':
+        detectedTab = 'logs';
+        break;
+      case '/admin/settings':
+      case '/settings':
+        detectedTab = 'settings';
+        break;
+      default:
+        detectedTab = null;
+        break;
+    }
+  }
+
+  // 4. Hash match fallback (e.g. /#billing or /#news or #dashboard)
   if (!detectedTab && hash) {
     const validTabs: TabType[] = [
       'keys', 'dashboard', 'news', 'billing', 'profile',
@@ -124,7 +151,7 @@ export function resolveTabFromUrl(userRole?: string): TabType {
     }
   }
 
-  // 3. Fallback from localStorage if at root path '/'
+  // 5. Fallback from localStorage if at root path '/'
   if (!detectedTab) {
     try {
       const saved = localStorage.getItem('avari_active_tab') as TabType | null;
@@ -140,21 +167,35 @@ export function resolveTabFromUrl(userRole?: string): TabType {
     }
   }
 
-  // 4. Default to keys
+  // 6. Default to keys
   const finalTab = detectedTab || 'keys';
 
   // Permission check for admin tabs
   if (ADMIN_TABS.includes(finalTab) && userRole && userRole !== 'admin') {
-    return 'keys';
+    return { tab: 'keys' };
   }
 
-  return finalTab;
+  return { tab: finalTab, nodeId: detectedNodeId };
 }
 
 /**
- * Updates document.title based on tab.
+ * Resolves current tab from URL pathname, hash, or localStorage fallback.
+ * Checks permissions if user role is provided.
  */
-export function updateDocumentTitle(tab: TabType): void {
+export function resolveTabFromUrl(userRole?: string): TabType {
+  return resolveRouteFromUrl(userRole).tab;
+}
+
+/**
+ * Updates document.title based on tab or specific node.
+ */
+export function updateDocumentTitle(tab: TabType, nodeName?: string): void {
+  if (tab === 'nodes' && nodeName) {
+    if (typeof document !== 'undefined') {
+      document.title = `${nodeName} — Сервер кластера — Avari Keys Admin`;
+    }
+    return;
+  }
   const title = TAB_TITLES[tab] || 'Avari Keys — Управление AmneziaWG';
   if (typeof document !== 'undefined') {
     document.title = title;

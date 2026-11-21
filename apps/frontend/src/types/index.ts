@@ -41,6 +41,25 @@ export interface AdminNode {
   network_probes?: NetworkProbe[];
 }
 
+export interface NodeDetailResponse extends AdminNode {
+  health?: {
+    status: string;
+    service: string;
+    awg_available: boolean;
+    hysteria_available?: boolean;
+    version?: string;
+  };
+  stats?: {
+    active_peers: number;
+    uptime: string;
+    total_rx: number;
+    total_tx: number;
+    peers?: Record<string, any>;
+  };
+  egress?: EgressStatusResponse;
+  client_keys?: ClientConfigSummary[];
+}
+
 export type ProtocolType = 'awg' | 'hysteria2';
 
 export interface TelegramProxyInfo {

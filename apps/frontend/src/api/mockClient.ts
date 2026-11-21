@@ -2,6 +2,7 @@ import {
   User,
   NodePublic,
   AdminNode,
+  NodeDetailResponse,
   ClientConfigSummary,
   ClientConfigDetail,
   PaginatedKeysResponse,
@@ -819,6 +820,104 @@ bandwidth:
       ...n,
       latency_ms: n.online ? Math.floor(20 + Math.random() * 25) : undefined,
     }));
+  },
+
+  async getAdminNode(id: number): Promise<NodeDetailResponse> {
+    const node = mockNodes.find((n) => n.id === id);
+    if (!node) {
+      throw new Error(`Node #${id} not found`);
+    }
+
+    const matchedKeys = mockKeys
+      .filter((k) => k.node_id === id)
+      .map((k) => ({
+        id: k.id,
+        user_id: k.user_id,
+        username: mockUsers.find((u) => u.id === k.user_id)?.username || 'user',
+        node_id: k.node_id,
+        client_name: k.client_name,
+        device_name: k.device_name,
+        node_name: k.node_name,
+        node_type: k.node_type,
+        node_country_code: node.country_code,
+        protocol: k.protocol,
+        last_handshake: k.last_handshake || '5 минут назад',
+        total_traffic_bytes: k.total_traffic_bytes,
+        month_traffic_bytes: k.month_traffic_bytes,
+        total_traffic_formatted: k.total_traffic_formatted,
+        month_traffic_formatted: k.month_traffic_formatted,
+        created_at: k.created_at,
+      }));
+
+    return {
+      ...node,
+      latency_ms: node.online ? Math.floor(22 + Math.random() * 15) : undefined,
+      server_status: node.server_status || {
+        state: node.online ? 'green' : 'red',
+        checked_at: new Date().toISOString(),
+        reason: node.online ? 'Служба AWG активна, отклик в норме' : 'Узел не отвечает на запросы Slave API',
+      },
+      network_status: node.network_status || {
+        state: 'green',
+        checked_at: new Date().toISOString(),
+        reason: 'Все контрольные точки M0/S0 доступны',
+      },
+      network_probes: node.network_probes || [
+        {
+          node_id: node.id,
+          source: 'M0 (Москва)',
+          interface: 'eth0',
+          state: 'green',
+          checked_at: new Date().toISOString(),
+          checks: [
+            { kind: 'dns', target: `s${node.id}.vpn.test`, ok: true, latency_ms: 6 },
+            { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: node.latency_ms || 25 },
+            { kind: 'tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: (node.latency_ms || 25) + 2 },
+            { kind: 'udp_awg', target: `192.0.2.${20 + node.id}:51820`, ok: true, latency_ms: node.latency_ms || 25 },
+          ],
+        },
+        {
+          node_id: node.id,
+          source: 'S0 (Зарубеж)',
+          interface: 'awg0',
+          state: 'green',
+          checked_at: new Date().toISOString(),
+          checks: [
+            { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: 12 },
+            { kind: 'tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: 14 },
+          ],
+        },
+      ],
+      health: {
+        status: node.online ? 'ok' : 'degraded',
+        service: 'amneziawg-slave',
+        awg_available: node.online,
+        hysteria_available: Boolean(node.has_hysteria),
+        version: '1.2.1',
+      },
+      stats: {
+        active_peers: matchedKeys.length,
+        uptime: '18 дней, 4 часа',
+        total_rx: 18450124000,
+        total_tx: 29810450000,
+      },
+      egress: node.type === 'cascade' ? {
+        active_interface: 'awg1',
+        available_interfaces: ['awg1', 'awg3', 'awg4', 'awg5'],
+        targets: [
+          { interface: 'awg1', node: 'S1', label: 'S1 Нидерланды (Амстердам)', endpoint: '192.0.2.20:51821', available: true },
+          { interface: 'awg3', node: 'S3', label: 'S3 Германия (Франкфурт)', endpoint: '192.0.2.22:51820', available: true },
+          { interface: 'awg4', node: 'S4', label: 'S4 Швеция (Стокгольм)', endpoint: '192.0.2.24:51820', available: true },
+          { interface: 'awg5', node: 'S5P', label: 'S5P Нидерланды PRO (Амстердам)', endpoint: '192.0.2.26:51820', available: true },
+        ],
+      } : undefined,
+      client_keys: matchedKeys,
+    };
+  },
+
+  async diagnoseAdminNode(id: number): Promise<NodeDetailResponse> {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return this.getAdminNode(id);
   },
 
   async addAdminNode(

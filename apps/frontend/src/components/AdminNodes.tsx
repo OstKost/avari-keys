@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { animatedPortal as createPortal } from './animatedPortal';
 import {
   Server,
+  Activity,
   Plus,
   Trash2,
   RefreshCw,
@@ -50,7 +51,11 @@ function NodeHealthBadge({ label, status }: { label: string; status?: AdminNode[
   );
 }
 
-export function AdminNodes() {
+interface AdminNodesProps {
+  onSelectNode?: (nodeId: number) => void;
+}
+
+export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const { toast } = useToast();
   const [nodes, setNodes] = useState<AdminNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -797,7 +802,18 @@ export function AdminNodes() {
                 <tr key={node.id} className="hover:bg-[#102833]/50 transition duration-150">
                   <td className="px-5 py-3.5">
                     <div className="space-y-2 min-w-[190px]">
-                      <div className="font-semibold text-[#F2F0E8]">{node.name}</div>
+                      {onSelectNode ? (
+                        <button
+                          onClick={() => onSelectNode(node.id)}
+                          className="font-semibold text-[#F2F0E8] hover:text-[#D9B96E] transition text-left cursor-pointer flex items-center space-x-1.5 group"
+                          title="Открыть страницу сервера с подробной диагностикой"
+                        >
+                          <span>{node.name}</span>
+                          <ExternalLink className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#D9B96E]" />
+                        </button>
+                      ) : (
+                        <div className="font-semibold text-[#F2F0E8]">{node.name}</div>
+                      )}
                       <button className="text-xs text-[#D9B96E]" aria-expanded={!!expandedNodes[node.id]} onClick={() => setExpandedNodes(prev => ({...prev, [node.id]: !prev[node.id]}))}>{expandedNodes[node.id] ? 'Скрыть подробности' : 'Подробнее'}</button>
                       <NodeHealthBadge label="Сервер" status={node.server_status} />
                       <NodeHealthBadge label="Сеть" status={node.network_status} />
@@ -915,6 +931,19 @@ export function AdminNodes() {
                   {/* Actions */}
                   <td className="px-5 py-3.5 text-right">
                     <div className="flex items-center justify-end space-x-1.5">
+                      {/* Server Detail Page & Diagnostics */}
+                      {onSelectNode && (
+                        <Tooltip content="Страница сервера и диагностика">
+                          <button
+                            onClick={() => onSelectNode(node.id)}
+                            aria-label="Страница сервера и диагностика"
+                            className="p-2 rounded-xl border border-[#1C3945] bg-[#102833]/80 text-[#38BDF8] hover:bg-[#1C3945] hover:text-[#7DD3FC] transition"
+                          >
+                            <Activity className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
+                      )}
+
                       {/* Egress Switcher (Only for Cascade nodes) */}
                       {node.type === 'cascade' && (
                         <Tooltip content="Управление выходом каскада">
