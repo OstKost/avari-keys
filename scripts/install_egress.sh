@@ -10,7 +10,8 @@ cp -a /root/awg/awg-routing.sh /etc/systemd/system/awg-routing.service "$BACKUP/
 for path in /etc/avari-keys/egress.json /root/awg/egress-selected.env /usr/local/libexec/avari-egress; do
   [[ ! -e "$path" ]] || cp -a "$path" "$BACKUP/"
 done
-install -m 700 "$BASE/avari-egress.py" /usr/local/libexec/avari-egress
+# Point /usr/local/libexec/avari-egress to the native Go avari-slave binary
+ln -sf /usr/local/bin/avari-slave /usr/local/libexec/avari-egress
 python3 - <<'PY'
 import json, pathlib, re, subprocess
 registry = pathlib.Path('/etc/avari-keys/egress.json')
