@@ -673,8 +673,38 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
           </div>
         )}
 
-        <div className="mt-4 pt-3 border-t border-[#1C3945]/70 text-xs text-[#718187] font-mono leading-relaxed">
-          💡 <strong>Примечание оператора:</strong> Диагностика выполняется из внутренней сети кластера (M0 РФ и S0 Зарубеж). Результат проверки отражает доступность канала с этих серверов и не гарантирует одинаковое поведение у всех мобильных операторов связи.
+        <div className="mt-5 pt-4 border-t border-[#1C3945]/70 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-sans">
+            <div className="bg-[#06141B] p-3 rounded-xl border border-[#1C3945]/70">
+              <div className="font-bold text-[#F2F0E8] flex items-center space-x-1.5 mb-1">
+                <span>🇷🇺</span>
+                <span>Зонд M0 (Москва)</span>
+              </div>
+              <p className="text-[#A8B4B7] text-[11px] leading-relaxed">
+                Проверяет маршрут <strong>изнутри РФ</strong> через физический сетевой интерфейс. Успех (PASS) подтверждает, что IP и порты сервера не заблокированы ТСПУ на магистралях РФ.
+              </p>
+            </div>
+
+            <div className="bg-[#06141B] p-3 rounded-xl border border-[#1C3945]/70">
+              <div className="font-bold text-[#F2F0E8] flex items-center space-x-1.5 mb-1">
+                <span>🌐</span>
+                <span>Зонд S0 (Зарубеж)</span>
+              </div>
+              <p className="text-[#A8B4B7] text-[11px] leading-relaxed">
+                Контрольная точка в дата-центре Европы. Позволяет точно отличить аварию у хостинг-провайдера от точечной блокировки в РФ (если S0 доступен, а M0 нет — это фильтрация ТСПУ).
+              </p>
+            </div>
+
+            <div className="bg-[#06141B] p-3 rounded-xl border border-[#1C3945]/70">
+              <div className="font-bold text-[#F2F0E8] flex items-center space-x-1.5 mb-1">
+                <span>🛡️</span>
+                <span>Защита от DPI</span>
+              </div>
+              <p className="text-[#A8B4B7] text-[11px] leading-relaxed">
+                Клиентские пакеты AmneziaWG маскируются пресетом мусорных данных (Jc/Jmin/Jmax) и заголовками H1–H4, делая трафик нераспознаваемым для сигнатурных анализаторов.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -881,6 +911,11 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-3 text-[11px] text-[#718187] font-mono flex items-center justify-between flex-wrap gap-2">
+            <span>● Зеленый индикатор: устройство передавало трафик менее 3 минут назад через провайдера</span>
+            <span>Телеметрия Curve25519 & Delta Engine</span>
           </div>
         </div>
       </div>
