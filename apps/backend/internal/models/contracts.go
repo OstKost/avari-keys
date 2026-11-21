@@ -90,14 +90,26 @@ type SwitchEgressRequest struct {
 	Interface string `json:"interface"` // e.g. "awg1" or "awg3"
 }
 
+// TargetProbeResult represents the check outcome for an individual probed service.
+type TargetProbeResult struct {
+	Name   string `json:"name"`             // "ip", "telegram", "chatgpt", "grok", "meta"
+	Target string `json:"target"`           // "api.ipify.org", "api.telegram.org", etc.
+	OK     bool   `json:"ok"`
+	Status int    `json:"status,omitempty"` // HTTP status code (e.g. 200, 302, 403)
+	Error  string `json:"error,omitempty"`
+}
+
 // EgressStatusResponse represents the active and available egress routes for a cascade node.
 type EgressTarget struct {
-	Interface string `json:"interface"`
-	Node      string `json:"node"`
-	Label     string `json:"label"`
-	Endpoint  string `json:"endpoint"`
-	Available bool   `json:"available"`
-	Reason    string `json:"reason,omitempty"`
+	Interface    string              `json:"interface"`
+	Node         string              `json:"node"`
+	Label        string              `json:"label"`
+	Endpoint     string              `json:"endpoint"`
+	Available    bool                `json:"available"`
+	Reason       string              `json:"reason,omitempty"`
+	PassedChecks int                 `json:"passed_checks,omitempty"`
+	TotalChecks  int                 `json:"total_checks,omitempty"`
+	Checks       []TargetProbeResult `json:"checks,omitempty"`
 }
 
 type EgressStatusResponse struct {

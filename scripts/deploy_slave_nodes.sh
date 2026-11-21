@@ -44,6 +44,8 @@ for HOST in ${TARGET_HOSTS}; do
     ssh -p "${SSH_PORT}" -o StrictHostKeyChecking=accept-new "${SSH_USER}@${HOST}" 'bash -s' << 'REMOTE_EOF'
 chmod +x /usr/local/bin/avari-slave.new
 mv /usr/local/bin/avari-slave.new /usr/local/bin/avari-slave
+mkdir -p /usr/local/libexec
+ln -sf /usr/local/bin/avari-slave /usr/local/libexec/avari-egress
 if systemctl is-active --quiet avari-slave; then
     systemctl restart avari-slave
     echo "✅ avari-slave restarted successfully!"

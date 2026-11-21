@@ -88,16 +88,17 @@ func (m *Manager) GetStatus(ctx context.Context) (*models.EgressStatusResponse, 
 		wg.Add(1)
 		go func(idx int, target TargetConfig) {
 			defer wg.Done()
-			pErr := ProbeTarget(ctx, m.cfg, target, m.prober)
+			report := RunTargetProbe(ctx, m.cfg, target, m.prober)
 			t := models.EgressTarget{
-				Interface: target.Interface,
-				Node:      target.Node,
-				Label:     target.Label,
-				Endpoint:  target.Endpoint,
-				Available: pErr == nil,
-			}
-			if pErr != nil {
-				t.Reason = pErr.Error()
+				Interface:    target.Interface,
+				Node:         target.Node,
+				Label:        target.Label,
+				Endpoint:     target.Endpoint,
+				Available:    report.Available,
+				Reason:       report.Reason,
+				PassedChecks: report.PassedChecks,
+				TotalChecks:  report.TotalChecks,
+				Checks:       report.Checks,
 			}
 			targets[idx] = t
 		}(i, entry)

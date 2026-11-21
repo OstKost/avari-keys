@@ -206,8 +206,28 @@ export interface DashboardStats {
   generated_at: string;
 }
 
+export interface TargetProbeResult {
+  name: string;
+  target: string;
+  ok: boolean;
+  status?: number;
+  error?: string;
+}
+
+export interface EgressTarget {
+  interface: string;
+  node: string;
+  label: string;
+  endpoint: string;
+  available: boolean;
+  reason?: string;
+  passed_checks?: number;
+  total_checks?: number;
+  checks?: TargetProbeResult[];
+}
+
 export interface EgressStatusResponse {
-  targets?: { interface: string; node: string; label: string; endpoint: string; available: boolean; reason?: string }[];
+  targets?: EgressTarget[];
   active_interface: string;
   available_interfaces: string[];
   details?: string;
