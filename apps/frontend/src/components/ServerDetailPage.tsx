@@ -631,7 +631,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
             </div>
             <div className="text-[11px] text-[#718187] font-mono mt-2 pt-2 border-t border-[#1C3945]/60 flex justify-between">
               <span>Версия демона:</span>
-              <span className="text-[#F2F0E8]">{node.health?.version || '1.4.0'}</span>
+              <span className="text-[#F2F0E8]">{node.health?.version || '1.5.0'}</span>
             </div>
           </div>
         </div>
@@ -966,6 +966,32 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                           <span className="text-[#A8B4B7] truncate max-w-[120px]">{target.endpoint}</span>
                         </div>
                       </div>
+
+                      {/* Micro-badges for multi-target health checks */}
+                      {target.checks && target.checks.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2.5 pt-2 border-t border-[#1C3945]/40 text-[10px]">
+                          {target.checks.map((c) => (
+                            <span
+                              key={c.name}
+                              className={`px-1.5 py-0.5 rounded font-mono flex items-center gap-0.5 ${
+                                c.ok
+                                  ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
+                                  : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
+                              }`}
+                              title={c.error || `HTTP ${c.status || 200}`}
+                            >
+                              <span>{c.name.toUpperCase()}</span>
+                              <span>{c.ok ? '✓' : '✗'}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {!target.available && target.reason && (
+                        <div className="text-[10px] text-rose-400 font-sans mt-1.5 line-clamp-2 leading-tight" title={target.reason}>
+                          {target.reason}
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-4 pt-3 border-t border-[#1C3945]/50 flex items-center justify-between gap-2">
@@ -973,7 +999,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                         target.available ? 'text-emerald-400' : 'text-rose-400'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${target.available ? 'bg-emerald-400' : 'bg-rose-500'}`} />
-                        <span>{target.available ? 'Доступен' : 'Недоступен'}</span>
+                        <span>{target.available ? `Доступен (${target.passed_checks ?? 5}/${target.total_checks ?? 5})` : 'Недоступен'}</span>
                       </span>
 
                       <div className="flex items-center space-x-1.5">

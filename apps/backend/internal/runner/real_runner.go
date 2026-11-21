@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/egress"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 )
 
@@ -874,30 +875,34 @@ func (r *RealRunner) RestoreAWG(ctx context.Context, backupData string) error {
 	return nil
 }
 
-// SwitchEgress delegates the allowlisted, persistent transaction to a root-owned helper.
+// SwitchEgress delegates the allowlisted, persistent transaction to native Go manager or root-owned helper.
 func (r *RealRunner) SwitchEgress(ctx context.Context, devName string) error {
 	if !regexp.MustCompile(`^awg[1-9][0-9]*$`).MatchString(devName) {
 		return fmt.Errorf("invalid egress interface %q", devName)
 	}
-	output, err := exec.CommandContext(ctx, "/usr/local/libexec/avari-egress", "switch", devName).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("egress switch failed: %s: %w", strings.TrimSpace(string(output)), err)
+	if helper := os.Getenv("AWG_EGRESS_HELPER"); helper != "" {
+		output, err := exec.CommandContext(ctx, helper, "switch", devName).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("egress switch failed: %s: %w", strings.TrimSpace(string(output)), err)
+		}
+		return nil
 	}
-	return nil
+	mgr := egress.NewManager()
+	return mgr.Switch(ctx, devName)
 }
 
 func (r *RealRunner) GetEgressStatus(ctx context.Context) (*models.EgressStatusResponse, error) {
-	helper := os.Getenv("AWG_EGRESS_HELPER")
-	if helper == "" {
-		helper = "/usr/local/libexec/avari-egress"
+	if helper := os.Getenv("AWG_EGRESS_HELPER"); helper != "" {
+		output, err := exec.CommandContext(ctx, helper, "status").Output()
+		if err != nil {
+			return nil, fmt.Errorf("egress status failed: %w", err)
+		}
+		var status models.EgressStatusResponse
+		if err := json.Unmarshal(output, &status); err != nil {
+			return nil, fmt.Errorf("invalid egress status: %w", err)
+		}
+		return &status, nil
 	}
-	output, err := exec.CommandContext(ctx, helper, "status").Output()
-	if err != nil {
-		return nil, fmt.Errorf("egress status failed: %w", err)
-	}
-	var status models.EgressStatusResponse
-	if err := json.Unmarshal(output, &status); err != nil {
-		return nil, fmt.Errorf("invalid egress status: %w", err)
-	}
-	return &status, nil
+	mgr := egress.NewManager()
+	return mgr.GetStatus(ctx)
 }

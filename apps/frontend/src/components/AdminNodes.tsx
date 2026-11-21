@@ -2103,6 +2103,73 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     </div>
                   </div>
 
+                  {/* Detailed Target Health Badges */}
+                  <div className="space-y-2">
+                    <span className="block text-xs font-mono font-semibold text-[#A8B4B7] uppercase">
+                      Доступность направлений (кворум 3/5 + IP Safety Gate):
+                    </span>
+                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+                      {(egressStatus.targets || []).map((target) => (
+                        <div
+                          key={target.interface}
+                          className={`p-2.5 rounded-xl border text-xs font-mono transition-all ${
+                            target.available
+                              ? target.interface === egressStatus.active_interface
+                                ? 'bg-[#06141B] border-[#D9B96E]/50'
+                                : 'bg-[#06141B]/60 border-[#1C3945]'
+                              : 'bg-rose-950/20 border-rose-900/40 text-rose-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                            <span className="font-semibold text-[#F2F0E8] flex items-center gap-1.5">
+                              {target.label || target.node} ({target.interface})
+                              {target.interface === egressStatus.active_interface && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#D9B96E]/20 text-[#D9B96E] border border-[#D9B96E]/40 font-mono">
+                                  АКТИВЕН
+                                </span>
+                              )}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                target.available
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                              }`}
+                            >
+                              {target.available ? `ДОСТУПЕН (${target.passed_checks ?? 5}/${target.total_checks ?? 5})` : 'СБОЙ КВОРУМА'}
+                            </span>
+                          </div>
+
+                          {/* Micro-badges for checks */}
+                          {target.checks && target.checks.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-[#1C3945]/60 text-[10px]">
+                              {target.checks.map((c) => (
+                                <span
+                                  key={c.name}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5 ${
+                                    c.ok
+                                      ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
+                                      : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
+                                  }`}
+                                  title={c.error || `HTTP ${c.status || 200}`}
+                                >
+                                  <span>{c.name.toUpperCase()}</span>
+                                  <span>{c.ok ? '✓' : '✗'}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {!target.available && target.reason && (
+                            <div className="text-[11px] text-rose-400 font-sans mt-1 leading-snug">
+                              {target.reason}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Switch Target Options */}
                   <div>
                     <label className="block text-xs font-mono font-semibold text-[#A8B4B7] uppercase mb-2">
