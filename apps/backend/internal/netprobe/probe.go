@@ -122,19 +122,37 @@ func Check(ctx context.Context, source string, t Target) models.NetworkProbe {
 		p.Checks = append(p.Checks, c)
 	}
 	anyReachable := false
+	tcpFailed := false
+	icmpPassed := false
+	dnsFailed := !dns.OK
+
 	for _, c := range p.Checks {
 		if !c.OK {
 			p.State = "yellow"
+			if strings.HasSuffix(c.Kind, "_tcp") {
+				tcpFailed = true
+			}
 		}
 		if c.Kind != "dns" && c.OK {
 			anyReachable = true
+			if strings.HasSuffix(c.Kind, "_icmp") {
+				icmpPassed = true
+			}
 		}
 	}
 	if !anyReachable {
 		p.State = "red"
 	}
 	if p.State != "green" {
-		p.Reason = "Часть проверок публичной сети не проходит; это не доказывает блокировку"
+		if !anyReachable {
+			p.Reason = "Узел полностью недоступен по публичной сети (ICMP и TCP не отвечают)"
+		} else if dnsFailed {
+			p.Reason = "DNS не содержит настроенный публичный IP узла"
+		} else if tcpFailed && icmpPassed {
+			p.Reason = "TCP-порт (HTTP/S) заблокирован ТСПУ/провайдером. Замаскированный UDP-трафик VPN (AmneziaWG/Hysteria2) работает независимо"
+		} else {
+			p.Reason = "Часть проверок публичной сети не проходит; это не доказывает блокировку"
+		}
 	}
 	return p
 }
