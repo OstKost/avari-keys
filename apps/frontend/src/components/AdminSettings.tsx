@@ -38,6 +38,7 @@ export function AdminSettings() {
   const [botToken, setBotToken] = useState('');
   const [botUsername, setBotUsername] = useState('');
   const [adminSecret, setAdminSecret] = useState('');
+  const [webAppUrl, setWebAppUrl] = useState('');
   const [notifyOnNodeDown, setNotifyOnNodeDown] = useState(true);
   const [notifyOnNodeRecover, setNotifyOnNodeRecover] = useState(true);
   const [notifyOnNewUser, setNotifyOnNewUser] = useState(true);
@@ -66,6 +67,7 @@ export function AdminSettings() {
         setBotToken(tgSettings.bot_token || '');
         setBotUsername(tgSettings.bot_username || '');
         setAdminSecret(tgSettings.admin_secret || '');
+        setWebAppUrl(tgSettings.web_app_url || '');
         setNotifyOnNodeDown(tgSettings.notify_on_node_down ?? true);
         setNotifyOnNodeRecover(tgSettings.notify_on_node_recover ?? true);
         setNotifyOnNewUser(tgSettings.notify_on_new_user ?? true);
@@ -110,6 +112,7 @@ export function AdminSettings() {
         bot_token: botToken.trim(),
         bot_username: botUsername.trim(),
         admin_secret: adminSecret.trim(),
+        web_app_url: webAppUrl.trim(),
         notify_on_node_down: notifyOnNodeDown,
         notify_on_node_recover: notifyOnNodeRecover,
         notify_on_new_user: notifyOnNewUser,
@@ -341,6 +344,26 @@ export function AdminSettings() {
                     onChange={(e) => setAdminSecret(e.target.value)}
                     className="w-full bg-[#0A1D26] border border-[#1C3945] focus:border-[#D9B96E] rounded-xl px-3.5 py-2.5 text-sm text-[#F2F0E8] font-mono focus:outline-none placeholder:text-slate-600 transition"
                   />
+                </div>
+
+                {/* WebApp URL */}
+                <div className="col-span-1 sm:col-span-2">
+                  <label className="block text-xs font-mono font-semibold text-[#A8B4B7] uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>URL Telegram Mini App</span>
+                    <span className="text-[11px] text-[#718187] font-sans font-normal">
+                      Ссылка на веб-приложение (/miniapp)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="например: https://m0.vpn.test/miniapp"
+                    value={webAppUrl}
+                    onChange={(e) => setWebAppUrl(e.target.value)}
+                    className="w-full bg-[#0A1D26] border border-[#1C3945] focus:border-[#D9B96E] rounded-xl px-3.5 py-2.5 text-sm text-[#F2F0E8] font-mono focus:outline-none placeholder:text-slate-600 transition"
+                  />
+                  <p className="text-[11px] text-[#718187] mt-1 font-sans">
+                    Этот адрес будет открываться при нажатии на кнопку «🚀 Открыть Avari App» в боте и в меню WebApp.
+                  </p>
                 </div>
               </div>
 
