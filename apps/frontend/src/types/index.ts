@@ -35,10 +35,19 @@ export interface AdminNode {
   is_active: boolean;
   online: boolean;
   latency_ms?: number;
+  auto_failover_enabled?: boolean;
+  failover_priority?: string[];
   created_at: string;
   server_status?: NodeStatus;
   network_status?: NodeStatus;
   network_probes?: NetworkProbe[];
+}
+
+export interface FailoverRuntimeStatus {
+  in_cooldown: boolean;
+  cooldown_until?: string;
+  consecutive_failures: number;
+  failure_threshold: number;
 }
 
 export interface NodeDetailResponse extends AdminNode {
@@ -57,6 +66,7 @@ export interface NodeDetailResponse extends AdminNode {
     peers?: Record<string, any>;
   };
   egress?: EgressStatusResponse;
+  failover?: FailoverRuntimeStatus;
   client_keys?: ClientConfigSummary[];
 }
 

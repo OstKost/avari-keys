@@ -637,6 +637,101 @@ func TestAdminCascadeEgressSwitchFlow(t *testing.T) {
 	}
 }
 
+func TestAdminCascadeAutoFailoverSettingsFlow(t *testing.T) {
+	masterSrv, slaveHttpSrv, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Get admin token
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var loginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+	adminToken := loginResp.Token
+
+	// 2. Initial node detail has default AutoFailoverEnabled=false
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for get node detail, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var detail models.NodeDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode node detail: %v", err)
+	}
+	if detail.AutoFailoverEnabled {
+		t.Fatalf("expected default auto_failover_enabled to be false")
+	}
+
+	// 3. Update failover settings via POST /api/v1/admin/nodes/1/failover
+	failoverReq := models.NodeFailoverSettingsRequest{
+		AutoFailoverEnabled: true,
+		FailoverPriority:    []string{"awg4", "awg1", "awg3"},
+	}
+	body, _ := json.Marshal(failoverReq)
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/failover", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for update failover, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var updatedNode models.Node
+	if err := json.NewDecoder(rec.Body).Decode(&updatedNode); err != nil {
+		t.Fatalf("failed to decode updated node: %v", err)
+	}
+	if !updatedNode.AutoFailoverEnabled {
+		t.Fatalf("expected auto_failover_enabled to be true")
+	}
+	if len(updatedNode.FailoverPriority) != 3 || updatedNode.FailoverPriority[0] != "awg4" {
+		t.Fatalf("expected failover priority ['awg4', 'awg1', 'awg3'], got %v", updatedNode.FailoverPriority)
+	}
+
+	// 4. Verify node detail now reflects updated failover and runtime status
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+	var detailAfter models.NodeDetailResponse
+	_ = json.NewDecoder(rec.Body).Decode(&detailAfter)
+	if !detailAfter.AutoFailoverEnabled {
+		t.Fatalf("expected auto_failover_enabled in detail to be true")
+	}
+	if detailAfter.Failover == nil {
+		t.Fatalf("expected detail.Failover runtime status to be present for cascade node")
+	}
+	if detailAfter.Failover.ConsecutiveFailures != 0 {
+		t.Fatalf("expected consecutive failures to be 0")
+	}
+
+	// 5. Test rejection on direct node
+	directNode, err := store.CreateNode(context.Background(), "Direct Node", "direct", "DEU", "https://hetzner.com", slaveHttpSrv.URL, "slave-secret-123", false, false, false)
+	if err != nil {
+		t.Fatalf("failed to create direct node: %v", err)
+	}
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/v1/admin/nodes/%d/failover", directNode.ID), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when setting failover on direct node, got %d", rec.Code)
+	}
+}
+
 func TestBillingEndpoints(t *testing.T) {
 	masterSrv, _, store, cleanup := setupTestEnvironment(t)
 	defer cleanup()

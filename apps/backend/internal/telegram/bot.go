@@ -1376,6 +1376,50 @@ func (b *Bot) NotifyNodeRecovered(node models.Node, latencyMs int64) {
 	_ = b.BroadcastAlert(msg)
 }
 
+// NotifyCascadeFailover sends an automatic cascade egress failover notification to admins.
+func (b *Bot) NotifyCascadeFailover(node models.Node, oldIf, newIf, oldLabel, newLabel, reason string) {
+	if b == nil {
+		return
+	}
+	b.mu.RLock()
+	enabled := b.enabled
+	b.mu.RUnlock()
+
+	if !enabled {
+		return
+	}
+
+	if oldLabel == "" {
+		oldLabel = oldIf
+	}
+	if newLabel == "" {
+		newLabel = newIf
+	}
+	if reason == "" {
+		reason = "Шлюз не отвечает на запросы сетевого зонда"
+	}
+
+	msg := fmt.Sprintf(
+		"🔄 <b>[Avari Alert] АВТОПЕРЕКЛЮЧЕНИЕ КАСКАДА</b>\n"+
+			"━━━━━━━━━━━━━━━━━━━━━\n"+
+			"📍 <b>Входной каскад:</b> %s (ID #%d)\n"+
+			"⚠️ <b>Прежний шлюз:</b> %s (<code>%s</code>) — <i>сбой!</i>\n"+
+			"🔀 <b>Новый шлюз:</b> %s (<code>%s</code>)\n"+
+			"📋 <b>Причина:</b> <code>%s</code>\n"+
+			"⏱ <b>Время:</b> %s\n\n"+
+			"<i>Auto-Failover успешно переключил Egress маршрутизацию на резервный канал. Период охлаждения (Cooldown): 5 минут.</i>",
+		node.Name,
+		node.ID,
+		oldLabel,
+		oldIf,
+		newLabel,
+		newIf,
+		reason,
+		time.Now().Format("02.01.2006 15:04:05"),
+	)
+	_ = b.BroadcastAlert(msg)
+}
+
 // NotifyNewUser sends an alert about new user registration pending approval with inline action buttons.
 func (b *Bot) NotifyNewUser(user models.User) {
 	b.mu.RLock()
