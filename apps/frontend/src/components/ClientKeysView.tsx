@@ -72,7 +72,7 @@ export const ClientKeysView: React.FC<ClientKeysViewProps> = ({
   const isKeyActive = (lastHandshake?: string) => {
     if (!lastHandshake) return false;
     const lower = lastHandshake.toLowerCase();
-    return !lower.includes('не') && !lower.includes('never');
+    return !lower.includes('не') && !lower.includes('never') && !lower.includes('никогда');
   };
 
   return (

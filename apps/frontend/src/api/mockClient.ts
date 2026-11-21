@@ -53,6 +53,15 @@ let mockUsers: User[] = [
     is_pro: false,
     created_at: new Date(Date.now() - 3600000 * 3).toISOString(),
   },
+  {
+    id: 4,
+    username: 'charlie_vpn',
+    role: 'user',
+    is_active: true,
+    is_pro: false,
+    has_pending_password_reset: true,
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+  },
 ];
 
 let mockLogs: AuditLog[] = [
@@ -960,7 +969,7 @@ bandwidth:
         service: 'amneziawg-slave',
         awg_available: node.online,
         hysteria_available: Boolean(node.has_hysteria),
-        version: '1.5.1',
+        version: '1.6.0',
       },
       stats: {
         active_peers: matchedKeys.length,

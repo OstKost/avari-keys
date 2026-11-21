@@ -298,7 +298,7 @@ func TestCascadeAutoFailover(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/health", "/api/v1/health":
-			_, _ = w.Write([]byte(`{"status":"ok","service":"avari-slave","version":"v1.5.1"}`))
+			_, _ = w.Write([]byte(`{"status":"ok","service":"avari-slave","version":"v1.6.0"}`))
 			return
 		case "/api/v1/stats":
 			_, _ = w.Write([]byte(`{"total_rx":100,"total_tx":100,"peers":[]}`))

@@ -4,7 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
-| | | | | [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
+| | | | | [TASK-071](./tasks/TASK-071-admin-mission-control-and-ux-overhaul.md), [TASK-070](./tasks/TASK-070-mobile-first-key-setup.md), [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
 | | | | | [TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md) |
 | | | | | [TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md) |
 | | | | | [TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md) |
@@ -42,6 +42,7 @@
 
 ## 📌 Список задач с кратким статусом
 
+- **[TASK-071](./tasks/TASK-071-admin-mission-control-and-ux-overhaul.md)**: ✅ Двухрежимный интерфейс (Client / Admin Mission Control), Panic Bar Egress, топология каскада, User Drawer CRM и гигиена зомби-ключей.
 - **[TASK-001](./tasks/TASK-001-project-scaffolding.md)**: ✅ Базовый каркас проекта, Go-модули, Makefile, Frontend React/Vite scaffold.
 - **[TASK-002](./tasks/TASK-002-slave-api-core.md)**: ✅ Slave API демон с оберткой над `manage_amneziawg.sh`, токен-авторизацией и Decoy страницей.
 - **[TASK-003](./tasks/TASK-003-master-backend-auth-db.md)**: ✅ Master Backend — SQLite хранилище, регистрация, модерация админом `Forve`, JWT сессии.
@@ -87,4 +88,5 @@
 - **[TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md)**: ✅ Расширение мультипроверки Egress каскада (Grok, Meta) и кворум успешности 3 из 5.
 - **[TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md)**: ✅ Усиление Egress каскада: Fast Retry сбоев (30с), Safety Gate по IP, UI-детализация проверок и CI/CD автоматизация.
 - **[TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md)**: ✅ Разделение проверок TCP / UDP в сетевом мониторинге, аудит протоколов VPN и устойчивость маршрутизации Master.
+- **[TASK-070](./tasks/TASK-070-mobile-first-key-setup.md)**: ✅ Упрощенный мобильный сценарий создания профиля и пошаговый импорт в AmneziaWG для iPhone/Android.
 

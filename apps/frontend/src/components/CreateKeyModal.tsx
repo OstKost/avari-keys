@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { animatedPortal as createPortal } from './animatedPortal';
-import { X, Plus, Zap, Shield, ShieldCheck, Smartphone, HelpCircle, Lock, Sparkles } from 'lucide-react';
+import { X, Plus, Zap, Shield, ShieldCheck, Smartphone, HelpCircle, Lock, Sparkles, ChevronDown } from 'lucide-react';
 import { User, NodePublic, ProtocolType } from '../types';
 import { formatNodeRouting } from '../utils/country';
 import { MascotModalCompanion, MascotFaqModal } from './MascotAssistant';
@@ -15,15 +15,23 @@ interface Props {
 export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props) {
   const safeNodes = Array.isArray(nodes) ? nodes : [];
   const isUserProOrAdmin = Boolean(currentUser?.is_pro || currentUser?.role === 'admin');
-  const defaultNode = safeNodes.find((n) => !n.is_backup || isUserProOrAdmin) || safeNodes[0];
+  const mobileOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    ? 'iPhone'
+    : /Android/i.test(navigator.userAgent)
+      ? 'Android'
+      : '';
+  const defaultNode = (mobileOS && safeNodes.find((n) => n.is_mobile_optimized && (!n.is_backup || isUserProOrAdmin)))
+    || safeNodes.find((n) => !n.is_backup || isUserProOrAdmin)
+    || safeNodes[0];
   const [selectedNodeId, setSelectedNodeId] = useState<number>(defaultNode?.id || 0);
   const selectedNode = safeNodes.find((n) => n.id === selectedNodeId);
   const [protocol, setProtocol] = useState<ProtocolType>('awg');
-  const [deviceName, setDeviceName] = useState<string>('');
+  const [deviceName, setDeviceName] = useState<string>(mobileOS || 'Моё устройство');
   const [psk, setPsk] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFaq, setShowFaq] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Record<number, boolean>>({});
   const [showPskInfo, setShowPskInfo] = useState(false);
 
@@ -39,9 +47,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
   };
 
   const handleDeviceNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Only allow Latin letters, digits, underscore, and dash
-    const filtered = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
-    setDeviceName(filtered);
+    setDeviceName(e.target.value.slice(0, 64));
   };
 
   const handleSelectNode = (node: NodePublic) => {
@@ -75,8 +81,8 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
       return;
     }
 
-    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanName)) {
-      setError('Имя устройства может содержать только латинские буквы, цифры, дефис и подчеркивание (a-z, 0-9, _, -)');
+    if (cleanName.length > 64) {
+      setError('Название устройства должно быть не длиннее 64 символов');
       return;
     }
 
@@ -102,11 +108,6 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
           <MascotModalCompanion onClickFaq={() => setShowFaq(true)} />
         </div>
 
-        {/* Mascot on Mobile (Above modal, compact banner) */}
-        <div className="lg:hidden mb-3 w-full flex justify-center">
-          <MascotModalCompanion onClickFaq={() => setShowFaq(true)} compact={true} />
-        </div>
-
         {/* Modal Window Card */}
         <div className="w-full bg-[#0A1D26]/95 backdrop-blur-xl border border-[#1C3945] hover:border-[#D9B96E]/50 rounded-3xl p-4 sm:p-6 sm:p-8 shadow-2xl shadow-black/90 relative transition-all duration-300">
           <button
@@ -122,8 +123,8 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
               <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#F2F0E8] tracking-wide">Создать VPN Ключ</h3>
-              <p className="text-xs sm:text-sm text-[#A8B4B7] mt-0.5 font-sans">Выберите тип туннелирования и назовите устройство</p>
+              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#F2F0E8] tracking-wide">Подключить устройство</h3>
+              <p className="text-xs sm:text-sm text-[#A8B4B7] mt-0.5 font-sans">Создадим отдельный профиль. Обычно менять настройки не нужно.</p>
             </div>
           </div>
 
@@ -134,18 +135,58 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+            <div className="rounded-2xl border border-[#D9B96E]/25 bg-[#102833]/70 p-3.5 sm:p-4 flex items-start gap-3">
+              <Smartphone className="w-5 h-5 text-[#D9B96E] shrink-0 mt-0.5" />
+              <p className="text-xs sm:text-sm text-[#D9E1E3] leading-relaxed">
+                {mobileOS
+                  ? `Профиль будет создан для этого ${mobileOS === 'iPhone' ? 'iPhone' : 'Android-телефона'}. После создания скачайте файл и откройте его в AmneziaWG.`
+                  : 'Создайте отдельный профиль для каждого устройства. После создания скачайте файл или покажите QR-код на другом экране.'}
+              </p>
+            </div>
+
+            {/* Device label is optional in practice; prefilled so users can continue immediately. */}
+            <div>
+              <label className="block text-xs font-mono font-semibold text-[#D9B96E] uppercase tracking-wider mb-2" htmlFor="device-name">
+                Название устройства
+              </label>
+              <input
+                id="device-name"
+                type="text"
+                placeholder="Например, iPhone"
+                value={deviceName}
+                onChange={handleDeviceNameChange}
+                maxLength={64}
+                className="w-full bg-[#0D222C] border border-[#1C3945] focus:border-[#D9B96E] rounded-xl px-4 py-3 text-base text-[#F2F0E8] placeholder-[#718187] focus:outline-none focus:ring-1 focus:ring-[#D9B96E]/50 transition shadow-inner"
+                required
+              />
+              <p className="text-xs text-[#8C9BA0] font-sans mt-1.5">Можно оставить предложенное название. Каждый профиль работает на одном устройстве.</p>
+            </div>
+
+            <details
+              className="rounded-2xl border border-[#1C3945] bg-[#0D222C]"
+              open={showAdvanced}
+              onToggle={(event) => setShowAdvanced(event.currentTarget.open)}
+            >
+              <summary className="list-none flex items-center justify-between gap-3 p-3.5 cursor-pointer select-none text-sm text-[#D9E1E3]">
+                <span>
+                  Дополнительные настройки
+                  <span className="block text-xs text-[#8C9BA0] mt-0.5">Сервер, способ подключения и совместимость</span>
+                </span>
+                <ChevronDown className={`w-4 h-4 text-[#D9B96E] transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+              </summary>
+              <div className="px-3.5 pb-3.5 pt-1 space-y-4">
             {/* Informative Note for Backup / PRO Servers */}
             {hasBackupNodes && (
               <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-800/40 text-xs text-[#A8B4B7] flex items-start space-x-2.5">
                 <Sparkles className="w-4 h-4 text-purple-300 flex-shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
                   <span className="font-serif font-bold text-purple-200">
-                    Резервные серверы высокой надежности
+                    Резервные серверы
                   </span>
                   <p className="font-sans leading-relaxed text-[11px] text-[#A8B4B7]">
                     {isUserProOrAdmin
-                      ? 'Вам доступен выбор всех основных и запасных узлов сети для максимальной отказоустойчивости.'
-                      : 'Серверы с отметкой [Запасной (PRO)] обеспечивают дополнительную надежность и доступны на тарифе PRO.'}
+                      ? 'Вам доступны основные и резервные серверы.'
+                      : 'Резервные серверы доступны на тарифе PRO.'}
                   </p>
                 </div>
               </div>
@@ -264,17 +305,17 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                         <div className="mt-3 pt-3 border-t border-[#1C3945]/60 text-xs sm:text-sm text-[#A8B4B7] font-sans leading-relaxed animate-fadeIn">
                           {node.is_backup && (
                             <div className="text-purple-300 mb-1 font-medium flex items-center space-x-1">
-                              <span>🛡️ Запасной сервер для повышенной надежности (тариф PRO).</span>
+                              <span>Резервный сервер. Доступен на тарифе PRO.</span>
                             </div>
                           )}
                           {node.type === 'cascade' ? (
-                            <span>Вход через РФ, выход за рубежом — максимальная защита от блокировок и DPI провайдеров.</span>
+                            <span>Подключение проходит через два сервера: входной и зарубежный.</span>
                           ) : (
-                            <span>Прямой туннель к зарубежному серверу с минимальной задержкой.</span>
+                            <span>Подключение напрямую к зарубежному серверу.</span>
                           )}
                           {node.is_mobile_optimized && (
                             <div className="text-[#F0D48D] mt-1 font-medium flex items-center space-x-1">
-                              <span>⭐ Рекомендуется для смартфонов и мобильных операторов (порт 443/UDP).</span>
+                              <span>Оптимизирован для мобильных сетей.</span>
                             </div>
                           )}
                         </div>
@@ -312,7 +353,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                     <span className="font-serif font-bold text-sm text-[#F2F0E8]">AmneziaWG</span>
                   </div>
                   <p className="text-[11px] text-[#A8B4B7] leading-tight">
-                    WireGuard с обфускацией. Универсален для AmneziaVPN и WireGuard.
+                    Подходит для приложения AmneziaWG.
                   </p>
                 </button>
 
@@ -346,31 +387,11 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                   </div>
                   <p className="text-[11px] text-[#A8B4B7] leading-tight">
                     {selectedNode?.has_hysteria
-                      ? 'QUIC / UDP. Максимальная скорость при потерях и мобильном интернете.'
+                      ? 'Альтернативный протокол. Доступен только на некоторых серверах.'
                       : 'На данном сервере протокол Hysteria 2 не включен.'}
                   </p>
                 </button>
               </div>
-            </div>
-
-            {/* Device Name Input */}
-            <div>
-              <label className="block text-xs font-mono font-semibold text-[#D9B96E] uppercase tracking-wider mb-2">
-                Имя устройства / Заметка
-              </label>
-              <input
-                type="text"
-                placeholder="например: iphone_15, macbook-pro, home_pc"
-                value={deviceName}
-                onChange={handleDeviceNameChange}
-                pattern="^[a-zA-Z0-9_-]{1,64}$"
-                title="Только латинские буквы, цифры, дефис и знак подчеркивания"
-                className="w-full bg-[#0D222C] border border-[#1C3945] focus:border-[#D9B96E] rounded-xl px-4 py-3 text-sm sm:text-base text-[#F2F0E8] placeholder-[#718187] focus:outline-none focus:ring-1 focus:ring-[#D9B96E]/50 transition shadow-inner font-mono"
-                required
-              />
-              <p className="text-xs text-[#8C9BA0] font-sans mt-1.5">
-                * Разрешены латинские буквы (a-z, A-Z), цифры (0-9), дефис (-) и подчеркивание (_)
-              </p>
             </div>
 
             {/* PSK / Shadowrocket Option */}
@@ -426,6 +447,8 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                 </p>
               )}
             </div>
+              </div>
+            </details>
 
             <button
               type="submit"
@@ -437,7 +460,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
               ) : (
                 <>
                   <Zap className="w-5 h-5 fill-current" />
-                  <span>Сгенерировать ключ</span>
+                  <span>Создать профиль</span>
                 </>
               )}
             </button>
