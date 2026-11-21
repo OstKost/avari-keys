@@ -3,12 +3,17 @@ package master_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1701,3 +1706,187 @@ func TestPasswordResetEndpointsFlow(t *testing.T) {
 		t.Fatalf("expected 401 Unauthorized for rejected password, got %d", rec.Code)
 	}
 }
+
+func generateMiniAppInitData(botToken string, params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		if k != "hash" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var sb strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(params[k])
+	}
+	dataCheckString := sb.String()
+
+	secretMac := hmac.New(sha256.New, []byte("WebAppData"))
+	secretMac.Write([]byte(botToken))
+	secretKey := secretMac.Sum(nil)
+
+	hashMac := hmac.New(sha256.New, secretKey)
+	hashMac.Write([]byte(dataCheckString))
+	hash := hex.EncodeToString(hashMac.Sum(nil))
+
+	v := url.Values{}
+	for k, val := range params {
+		v.Set(k, val)
+	}
+	v.Set("hash", hash)
+	return v.Encode()
+}
+
+func TestTelegramMiniAppAuthFlow(t *testing.T) {
+	botToken := "test-bot-token-998877"
+	t.Setenv("TELEGRAM_BOT_TOKEN", botToken)
+	t.Setenv("TELEGRAM_BOT_USERNAME", "AvariMiniAppBot")
+
+	masterSrv, _, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	// Update storage settings and reload bot
+	ctx := context.Background()
+	_, _ = store.UpdateTelegramSettings(ctx, models.TelegramSettings{
+		Enabled:     true,
+		BotToken:    botToken,
+		BotUsername: "AvariMiniAppBot",
+		WebAppURL:   "https://m0.vpn.test/miniapp",
+	})
+	_ = masterSrv.GetTelegramBot().UpdateConfig(ctx, models.TelegramSettings{
+		Enabled:     true,
+		BotToken:    botToken,
+		BotUsername: "AvariMiniAppBot",
+		WebAppURL:   "https://m0.vpn.test/miniapp",
+	})
+
+	handler := masterSrv.Handler()
+
+	// 1. Create and activate a regular user
+	userAlice, err := store.CreateUser(ctx, "tma_alice", "hashed_pwd_alice")
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	_ = store.SetUserActive(ctx, userAlice.ID, true)
+
+	// Link Alice's Telegram chat (ChatID = 111222333)
+	aliceChatID := int64(111222333)
+	err = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        aliceChatID,
+		UserID:        &userAlice.ID,
+		Username:      "alice_telegram",
+		FirstName:     "Alice",
+		IsAdmin:       false,
+		AlertsEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to link alice chat: %v", err)
+	}
+
+	// 2. Test valid Mini App login for Alice
+	now := time.Now().Unix()
+	aliceParams := map[string]string{
+		"auth_date": fmt.Sprintf("%d", now),
+		"query_id":  "AAHdF6IQAAAAAN0XohDhrOrc",
+		"user":      fmt.Sprintf(`{"id":%d,"first_name":"Alice","username":"alice_telegram"}`, aliceChatID),
+	}
+	aliceInitData := generateMiniAppInitData(botToken, aliceParams)
+
+	authBody, _ := json.Marshal(models.TelegramMiniAppAuthRequest{InitData: aliceInitData})
+	req := httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for Alice TMA auth, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var authResp models.TelegramMiniAppAuthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&authResp); err != nil {
+		t.Fatalf("failed to decode TMA auth resp: %v", err)
+	}
+	if authResp.Token == "" {
+		t.Errorf("expected non-empty JWT token")
+	}
+	if authResp.User.Username != "tma_alice" {
+		t.Errorf("expected username tma_alice, got %s", authResp.User.Username)
+	}
+	if authResp.IsAdmin {
+		t.Errorf("expected alice not to be admin")
+	}
+	if !authResp.IsLinked {
+		t.Errorf("expected alice to be linked")
+	}
+
+	// 3. Test unlinked Telegram user (ChatID = 999888777)
+	unlinkedChatID := int64(999888777)
+	unlinkedParams := map[string]string{
+		"auth_date": fmt.Sprintf("%d", now),
+		"user":      fmt.Sprintf(`{"id":%d,"first_name":"Stranger"}`, unlinkedChatID),
+	}
+	unlinkedInitData := generateMiniAppInitData(botToken, unlinkedParams)
+
+	authBody, _ = json.Marshal(models.TelegramMiniAppAuthRequest{InitData: unlinkedInitData})
+	req = httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for unlinked user, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unlinked_chat") {
+		t.Errorf("expected error unlinked_chat, got body: %s", rec.Body.String())
+	}
+
+	// 4. Test invalid HMAC signature (tampered initData)
+	tamperedInitData := aliceInitData + "&tampered=1"
+	authBody, _ = json.Marshal(models.TelegramMiniAppAuthRequest{InitData: tamperedInitData})
+	req = httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for tampered initData, got %d", rec.Code)
+	}
+
+	// 5. Test Admin TMA login
+	adminUser, err := store.GetUserByUsername(ctx, "Forve")
+	if err != nil {
+		t.Fatalf("failed to get admin Forve: %v", err)
+	}
+	adminChatID := int64(777666555)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        adminChatID,
+		UserID:        &adminUser.ID,
+		Username:      "forve_admin",
+		FirstName:     "Forve",
+		IsAdmin:       true,
+		AlertsEnabled: true,
+	})
+
+	adminParams := map[string]string{
+		"auth_date": fmt.Sprintf("%d", now),
+		"user":      fmt.Sprintf(`{"id":%d,"first_name":"Forve","username":"forve_admin"}`, adminChatID),
+	}
+	adminInitData := generateMiniAppInitData(botToken, adminParams)
+	authBody, _ = json.Marshal(models.TelegramMiniAppAuthRequest{InitData: adminInitData})
+	req = httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for Admin TMA auth, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var adminResp models.TelegramMiniAppAuthResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminResp)
+	if !adminResp.IsAdmin {
+		t.Errorf("expected Forve to be recognized as admin in TMA")
+	}
+}
+

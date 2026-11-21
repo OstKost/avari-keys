@@ -1652,6 +1652,7 @@ func (s *Storage) GetTelegramSettings(ctx context.Context) (*models.TelegramSett
 		token := os.Getenv("TELEGRAM_BOT_TOKEN")
 		username := os.Getenv("TELEGRAM_BOT_USERNAME")
 		secret := os.Getenv("TELEGRAM_ADMIN_SECRET")
+		webAppURL := os.Getenv("TELEGRAM_WEBAPP_URL")
 
 		enabled := token != ""
 
@@ -1660,6 +1661,7 @@ func (s *Storage) GetTelegramSettings(ctx context.Context) (*models.TelegramSett
 			BotToken:            token,
 			BotUsername:         username,
 			AdminSecret:         secret,
+			WebAppURL:           webAppURL,
 			NotifyOnNodeDown:    true,
 			NotifyOnNodeRecover: true,
 			NotifyOnNewUser:     true,
