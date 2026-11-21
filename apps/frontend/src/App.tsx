@@ -258,7 +258,6 @@ export default function App() {
       if (showOnboarding) {
         setOnboardingStep(4);
       }
-      toast.success(`Ключ «${deviceName}» успешно создан`);
       const targetNode = nodes.find((n) => n.id === nodeId);
       const newSummary: ClientConfigSummary = {
         id: newKey.id,
@@ -657,7 +656,7 @@ export default function App() {
                     className="flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold text-xs sm:text-sm uppercase tracking-wider font-mono px-5 py-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 disabled:opacity-50 transition-all duration-300 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Создать новый ключ</span>
+                    <span>Подключить устройство</span>
                   </button>
                 </div>
               </div>
@@ -737,8 +736,10 @@ export default function App() {
                     <div className="font-semibold text-base text-[#F0D48D]">Нет доступных серверов</div>
                     <p className="text-[#A8B4B7] mt-0.5">
                       {isMockMode() || import.meta.env.DEV
-                        ? 'В системе пока нет активных Slave-нод. Добавьте первую ноду во вкладке «Серверы (Ноды)» или войдите в Demo Mock режим.'
-                        : 'В системе пока нет активных серверов. Обратитесь к администратору или добавьте узел во вкладке «Серверы (Ноды)». '}
+                        ? currentUser?.role === 'admin'
+                          ? 'В демо-режиме нет активных серверов. Выберите пользователя Alice для просмотра примера или добавьте ноду в админ-разделе.'
+                          : 'В демо-режиме нет доступных серверов. Выберите пример пользователя Alice или попробуйте позже.'
+                        : 'Сейчас нет доступных серверов. Попробуйте позже или свяжитесь с поддержкой.'}
                     </p>
                   </div>
                 </div>

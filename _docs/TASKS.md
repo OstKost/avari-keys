@@ -4,7 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
-| | | | | [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
+| | | | | [TASK-070](./tasks/TASK-070-mobile-first-key-setup.md), [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
 | | | | | [TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md) |
 | | | | | [TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md) |
 | | | | | [TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md) |
@@ -87,4 +87,5 @@
 - **[TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md)**: ✅ Расширение мультипроверки Egress каскада (Grok, Meta) и кворум успешности 3 из 5.
 - **[TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md)**: ✅ Усиление Egress каскада: Fast Retry сбоев (30с), Safety Gate по IP, UI-детализация проверок и CI/CD автоматизация.
 - **[TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md)**: ✅ Разделение проверок TCP / UDP в сетевом мониторинге, аудит протоколов VPN и устойчивость маршрутизации Master.
+- **[TASK-070](./tasks/TASK-070-mobile-first-key-setup.md)**: ✅ Упрощенный мобильный сценарий создания профиля и пошаговый импорт в AmneziaWG для iPhone/Android.
 

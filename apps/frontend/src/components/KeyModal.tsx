@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { animatedPortal as createPortal } from './animatedPortal';
-import { X, Copy, Check, Download, QrCode as QrIcon, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap, ShieldCheck, HelpCircle } from 'lucide-react';
+import { X, Copy, Check, Download, QrCode as QrIcon, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap, ShieldCheck, HelpCircle, Smartphone } from 'lucide-react';
 import QRCode from 'qrcode';
 import { ClientConfigDetail } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -81,6 +81,11 @@ function sanitizeConfig(raw: string): string {
 
 export function KeyModal({ keyData, onClose }: Props) {
   const { toast } = useToast();
+  const mobileOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    ? 'ios'
+    : /Android/i.test(navigator.userAgent)
+      ? 'android'
+      : null;
   const isHysteria = Boolean(
     keyData.protocol === 'hysteria2' ||
     (keyData.vpn_uri && keyData.vpn_uri.toLowerCase().startsWith('hysteria2://')) ||
@@ -97,6 +102,7 @@ export function KeyModal({ keyData, onClose }: Props) {
   const [hysteriaQrUrl, setHysteriaQrUrl] = useState<string>('');
   const [showRawLogs, setShowRawLogs] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
 
   const routing = useMemo(() => formatNodeRouting(keyData.node_type || 'direct', (keyData as any).node_country_code), [keyData]);
 
@@ -248,8 +254,8 @@ export function KeyModal({ keyData, onClose }: Props) {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[999] bg-[#06141B]/85 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-6 overflow-y-auto">
-      <div className="bg-[#0A1D26] border border-[#1C3945] hover:border-[#D9B96E]/50 rounded-3xl max-w-lg md:max-w-3xl lg:max-w-4xl w-full p-4 sm:p-6 md:p-8 shadow-2xl shadow-black/90 relative my-auto transition-all duration-300">
+    <div className={`fixed inset-0 z-[999] bg-[#06141B]/85 backdrop-blur-md flex ${mobileOS ? 'items-start' : 'items-center'} justify-center p-2.5 sm:p-6 overflow-y-auto`}>
+      <div className={`bg-[#0A1D26] border border-[#1C3945] hover:border-[#D9B96E]/50 rounded-3xl max-w-lg md:max-w-3xl lg:max-w-4xl w-full p-4 sm:p-6 md:p-8 shadow-2xl shadow-black/90 relative ${mobileOS ? 'my-2' : 'my-auto'} transition-all duration-300`}>
         <button
           onClick={onClose}
           className="absolute top-4 right-4 sm:top-5 sm:right-5 text-[#A8B4B7] hover:text-[#F2F0E8] p-2 rounded-xl hover:bg-[#102833] border border-transparent hover:border-[#1C3945] transition z-10"
@@ -265,8 +271,9 @@ export function KeyModal({ keyData, onClose }: Props) {
               <QrIcon className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">Профиль создан</p>
               <h3 className="font-serif text-lg sm:text-2xl font-bold text-[#F2F0E8] tracking-wide">{keyData.device_name}</h3>
-              <p className="text-xs sm:text-sm text-[#A8B4B7] mt-0.5 font-sans flex items-center gap-1.5 flex-wrap">
+              <p className="hidden sm:flex text-xs sm:text-sm text-[#A8B4B7] mt-0.5 font-sans items-center gap-1.5 flex-wrap">
                 <span>Сервер:</span>
                 <strong className="text-[#D9B96E] font-medium">{keyData.node_name}</strong>
                 <span className="text-[#718187]">•</span>
@@ -289,6 +296,40 @@ export function KeyModal({ keyData, onClose }: Props) {
             </div>
           </div>
         </div>
+
+        {protocol === 'awg' && mobileOS && (
+          <div className="mb-5 rounded-2xl border border-[#D9B96E]/30 bg-[#102833]/70 p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#F2F0E8]">
+              <Smartphone className="w-4 h-4 text-[#D9B96E]" />
+              Установить на этот телефон
+            </div>
+            <ol className="mt-2 ml-5 list-decimal space-y-1 text-xs sm:text-sm leading-relaxed text-[#D9E1E3]">
+              {mobileOS === 'ios' ? (
+                <>
+                  <li>Нажмите «Скачать файл .conf» и откройте его в приложении «Файлы».</li>
+                  <li>Нажмите «Поделиться» и выберите AmneziaWG.</li>
+                  <li>Откройте AmneziaWG и включите добавленный профиль.</li>
+                </>
+              ) : (
+                <>
+                  <li>Нажмите «Скачать файл .conf».</li>
+                  <li>В AmneziaWG нажмите <strong>+</strong> → «Импорт из файла или архива».</li>
+                  <li>Выберите файл из «Загрузки» и включите профиль.</li>
+                </>
+              )}
+            </ol>
+            <p className="mt-2 text-[11px] text-[#A8B4B7]">QR-код ниже нужен, если вы настраиваете другое устройство.</p>
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={!isValidAwgConfig}
+              className="mt-3 w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] text-[#06141B] font-bold font-mono text-sm uppercase tracking-wider py-3.5 px-4 rounded-xl shadow-lg shadow-[#D9B96E]/20 disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              Скачать файл .conf
+            </button>
+          </div>
+        )}
 
         {/* Protocol Switcher Tabs */}
         {isHysteria ? (
@@ -386,12 +427,12 @@ export function KeyModal({ keyData, onClose }: Props) {
             {isValidAwgConfig ? (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch mb-6">
                 {/* QR Code Column */}
-                <div className="md:col-span-5 flex flex-col items-center justify-center bg-white p-5 sm:p-6 rounded-2xl shadow-xl border-4 border-[#102833] min-h-[260px]">
+                <div className="order-2 md:order-1 md:col-span-5 flex flex-col items-center justify-center bg-white p-5 sm:p-6 rounded-2xl shadow-xl border-4 border-[#102833] min-h-[260px]">
                   {awgQrUrl ? (
                     <>
                       <img src={awgQrUrl} alt="AmneziaWG QR Code" className="w-48 h-48 sm:w-56 sm:h-56 object-contain rounded-lg" />
                       <span className="text-xs sm:text-sm text-slate-800 font-mono tracking-wider font-semibold mt-3 text-center">
-                        Сканируйте в приложении AmneziaWG
+                        Покажите QR-код другому устройству
                       </span>
                     </>
                   ) : (
@@ -402,7 +443,7 @@ export function KeyModal({ keyData, onClose }: Props) {
                 </div>
 
                 {/* Config Code & Actions Column */}
-                <div className="md:col-span-7 flex flex-col justify-between">
+                <div className="order-1 md:order-2 md:col-span-7 flex flex-col justify-between">
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs sm:text-sm font-mono font-semibold text-[#D9B96E] uppercase tracking-wider flex items-center space-x-1.5">
@@ -411,29 +452,34 @@ export function KeyModal({ keyData, onClose }: Props) {
                       </span>
                       <span className="text-xs text-[#A8B4B7] font-mono">AWG Protocol</span>
                     </div>
-                    <pre className="bg-[#06141B] border border-[#1C3945] text-[#F2F0E8] text-xs p-4 rounded-2xl overflow-x-auto max-h-56 md:max-h-64 font-mono scrollbar-thin leading-relaxed">
-                      {cleanConfig}
-                    </pre>
+                    <div className="bg-[#06141B] border border-[#1C3945] rounded-2xl p-4 min-h-32 flex flex-col items-center justify-center text-center">
+                      <p className="text-sm text-[#F2F0E8]">Конфигурация содержит секретный ключ устройства.</p>
+                      <p className="text-xs text-[#A8B4B7] mt-1">Показывайте её только если экран виден только вам.</p>
+                      <button type="button" onClick={() => setShowConfig((value) => !value)} className="mt-3 text-xs font-mono text-[#D9B96E] hover:text-[#F0D48D] underline underline-offset-4">
+                        {showConfig ? 'Скрыть конфигурацию' : 'Показать конфигурацию'}
+                      </button>
+                    </div>
+                    {showConfig && <pre className="mt-2 bg-[#06141B] border border-[#1C3945] text-[#F2F0E8] text-xs p-4 rounded-2xl overflow-x-auto max-h-56 md:max-h-64 font-mono scrollbar-thin leading-relaxed">{cleanConfig}</pre>}
                   </div>
 
                   {/* Actions inside column */}
-                  <div className="grid grid-cols-2 gap-3 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                     <button
                       onClick={handleCopy}
                       disabled={!isValidAwgConfig}
-                      className="flex items-center justify-center space-x-2 bg-[#102833] text-[#F2F0E8] font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl border border-[#1C3945] hover:bg-[#1C3945] hover:border-[#D9B96E]/50 transition cursor-pointer"
+                      className={`${mobileOS ? 'hidden' : 'flex'} order-2 md:order-1 items-center justify-center space-x-2 bg-[#102833] text-[#F2F0E8] font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl border border-[#1C3945] hover:bg-[#1C3945] hover:border-[#D9B96E]/50 transition cursor-pointer`}
                     >
                       {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-[#D9B96E]" />}
-                      <span>{copied ? 'Скопировано!' : 'Скопировать .conf'}</span>
+                      <span>{copied ? 'Скопировано!' : 'Скопировать конфиг'}</span>
                     </button>
 
                     <button
                       onClick={handleDownload}
                       disabled={!isValidAwgConfig}
-                      className="flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 transition cursor-pointer"
+                      className={`${mobileOS ? 'hidden' : 'flex'} order-1 md:order-2 items-center justify-center space-x-2 bg-gradient-to-r from-[#F0D48D] via-[#D9B96E] to-[#A98A48] hover:from-[#F0D48D] hover:to-[#D9B96E] text-[#06141B] font-bold font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl shadow-lg shadow-[#D9B96E]/20 hover:shadow-[#D9B96E]/40 transition cursor-pointer`}
                     >
                       <Download className="w-4 h-4" />
-                      <span>Скачать .conf</span>
+                      <span>Скачать конфиг</span>
                     </button>
                   </div>
                 </div>
