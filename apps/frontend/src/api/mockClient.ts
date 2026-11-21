@@ -931,7 +931,7 @@ bandwidth:
         service: 'amneziawg-slave',
         awg_available: node.online,
         hysteria_available: Boolean(node.has_hysteria),
-        version: '1.3.0',
+        version: '1.4.0',
       },
       stats: {
         active_peers: matchedKeys.length,
