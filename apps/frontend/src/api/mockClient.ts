@@ -1062,7 +1062,41 @@ bandwidth:
     return {
       active_interface: 'awg1',
       available_interfaces: ['awg1', 'awg3'],
-      targets: [{interface:'awg1',node:'S1',label:'S1 — Германия',endpoint:'192.0.2.21',available:true},{interface:'awg3',node:'S2',label:'S2 — Финляндия',endpoint:'192.0.2.22',available:false,reason:'Нет связи'}],
+      targets: [
+        {
+          interface: 'awg1',
+          node: 'S1',
+          label: 'S1 — Нидерланды',
+          endpoint: '194.87.1.1',
+          available: true,
+          passed_checks: 5,
+          total_checks: 5,
+          checks: [
+            { name: 'ip', target: 'api.ipify.org', ok: true, status: 200 },
+            { name: 'telegram', target: 'api.telegram.org', ok: true, status: 302 },
+            { name: 'chatgpt', target: 'chatgpt.com', ok: true, status: 200 },
+            { name: 'grok', target: 'grok.com', ok: true, status: 200 },
+            { name: 'meta', target: 'instagram.com', ok: true, status: 200 },
+          ],
+        },
+        {
+          interface: 'awg3',
+          node: 'S4',
+          label: 'S4 — Швеция',
+          endpoint: '194.87.1.3',
+          available: false,
+          reason: 'пройдено только 2/5 проверок (сбои: chatgpt заблокирован (HTTP 403); grok недоступен: timeout; meta недоступен: timeout)',
+          passed_checks: 2,
+          total_checks: 5,
+          checks: [
+            { name: 'ip', target: 'api.ipify.org', ok: true, status: 200 },
+            { name: 'telegram', target: 'api.telegram.org', ok: true, status: 302 },
+            { name: 'chatgpt', target: 'chatgpt.com', ok: false, status: 403, error: 'HTTP 403 Forbidden' },
+            { name: 'grok', target: 'grok.com', ok: false, error: 'connection timed out' },
+            { name: 'meta', target: 'instagram.com', ok: false, error: 'connection timed out' },
+          ],
+        },
+      ],
       details: 'Mock active egress dev in table 100 is awg1',
     };
   },

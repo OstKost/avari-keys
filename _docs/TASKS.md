@@ -4,6 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
+| | | | | [TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md) |
 | | | | | [TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md) |
 | | | | | [TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md) |
 | | | | | [TASK-065](./tasks/TASK-065-server-list-redesign.md) |
@@ -83,3 +84,4 @@
 - **[TASK-065](./tasks/TASK-065-server-list-redesign.md)**: ✅ Комплексный редизайн списка серверов (нод) кластера — сводные метрики, быстрый поиск и фильтрация, переключатель Grid/Table, стильные Cyber-Fantasy карточки и удобная панель управления.
 - **[TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md)**: ✅ Нативный Go-контроллер Egress каскада, мультипроверка (IP, Telegram, ChatGPT) и интервал HealthCheck 3 мин.
 - **[TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md)**: ✅ Расширение мультипроверки Egress каскада (Grok, Meta) и кворум успешности 3 из 5.
+- **[TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md)**: ✅ Усиление Egress каскада: Fast Retry сбоев (30с), Safety Gate по IP, UI-детализация проверок и CI/CD автоматизация.

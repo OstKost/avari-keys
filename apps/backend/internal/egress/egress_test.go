@@ -188,7 +188,7 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 		t.Fatalf("expected probe to succeed with 5/5, got: %v", err)
 	}
 
-	// Scenario 2: 1 check fails (4/5 pass) -> Quorum (>=3) must pass
+	// Scenario 2: 1 check fails (4/5 pass, IP OK) -> Quorum (>=3) must pass
 	prober1Fail := &mockProber{
 		fetchStatusFunc: func(iface, url string) (int, error) {
 			if strings.Contains(url, "chatgpt") {
@@ -202,6 +202,35 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 	}
 	if err := ProbeTarget(ctx, cfg, target, prober1Fail); err != nil {
 		t.Fatalf("expected quorum to pass with 4/5, got error: %v", err)
+	}
+
+	// Scenario 2b: Safety Gate violation: IP mismatch (even though 4 web services succeed)
+	proberIPLeak := &mockProber{
+		fetchIPFunc: func(iface, url string) (string, int, error) {
+			return "95.161.1.1", 200, nil // IP leak / wrong exit IP
+		},
+		fetchStatusFunc: func(iface, url string) (int, error) {
+			return 200, nil
+		},
+	}
+	errIP := ProbeTarget(ctx, cfg, target, proberIPLeak)
+	if errIP == nil || !strings.Contains(errIP.Error(), "утечка или несовпадение IP") {
+		t.Fatalf("expected Safety Gate failure on IP mismatch, got: %v", errIP)
+	}
+
+	// Verify RunTargetProbe report structure
+	rep := RunTargetProbe(ctx, cfg, target, proberIPLeak)
+	if rep.Available {
+		t.Fatal("expected report to be unavailable on IP mismatch")
+	}
+	if rep.PassedChecks != 4 || rep.TotalChecks != 5 {
+		t.Fatalf("expected 4 passed checks and 5 total, got %d/%d", rep.PassedChecks, rep.TotalChecks)
+	}
+	if len(rep.Checks) != 5 {
+		t.Fatalf("expected 5 check results in report, got %d", len(rep.Checks))
+	}
+	if rep.Checks[0].OK {
+		t.Fatal("expected IP check to be marked as not OK")
 	}
 
 	// Scenario 3: 2 checks fail (3/5 pass) -> Quorum (>=3) must pass

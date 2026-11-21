@@ -26,6 +26,7 @@ type HealthChecker struct {
 	interval         time.Duration
 	nodeTimeout      time.Duration
 	failureThreshold int
+	fastRetryDelay   time.Duration
 	logActivity      func(category models.AuditLogCategory, action string, details string)
 
 	serverStatuses  map[int64]models.StatusDetail
@@ -52,6 +53,7 @@ type Config struct {
 	Interval         time.Duration
 	Timeout          time.Duration
 	FailureThreshold int
+	FastRetryDelay   time.Duration
 	LogActivity      func(category models.AuditLogCategory, action string, details string)
 }
 
@@ -69,6 +71,10 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 	if failThreshold <= 0 {
 		failThreshold = 2
 	}
+	fastRetry := cfg.FastRetryDelay
+	if fastRetry <= 0 {
+		fastRetry = 15 * time.Second
+	}
 
 	return &HealthChecker{
 		storage:          cfg.Storage,
@@ -76,6 +82,7 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 		interval:         interval,
 		nodeTimeout:      timeout,
 		failureThreshold: failThreshold,
+		fastRetryDelay:   fastRetry,
 		logActivity:      cfg.LogActivity,
 		nodeStates:       make(map[int64]bool),
 		serverStatuses:   make(map[int64]models.StatusDetail),
@@ -262,6 +269,20 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 
 							log.Printf("[MONITOR] ⚠️ Cascade egress %s on node #%d (%s) is down: %s (consecutive fails: %d/2, in_cooldown: %v)",
 								status.ActiveInterface, n.ID, n.Name, activeTarget.Reason, fails, inCooldown)
+
+							// Fast Confirmation Retry:
+							// When initial failure occurs (fails == 1) and not in cooldown,
+							// don't wait for the next 3-minute ticker! Trigger a fast confirmation check in 15 seconds.
+							if fails == 1 && !inCooldown {
+								go func(nid int64) {
+									select {
+									case <-time.After(h.fastRetryDelay):
+										h.CollectTelemetry(ctx)
+									case <-h.stopChan:
+									case <-ctx.Done():
+									}
+								}(n.ID)
+							}
 
 							if fails >= 2 && !inCooldown {
 								// Find the best healthy target
