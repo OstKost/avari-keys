@@ -491,6 +491,90 @@ func TestAdminNodeEditFlow(t *testing.T) {
 	}
 }
 
+func TestAdminNodeDetailAndDiagnoseFlow(t *testing.T) {
+	masterSrv, _, _, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Admin login
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var adminLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminLoginResp)
+	adminToken := adminLoginResp.Token
+
+	// 2. GET /api/v1/admin/nodes/1 (Cascade M0 -> S1 node created in setup)
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for get node detail, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var detail models.NodeDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode node detail: %v", err)
+	}
+	if detail.ID != 1 {
+		t.Fatalf("expected node ID 1, got %d", detail.ID)
+	}
+	if !detail.Online {
+		t.Fatalf("expected node to be online")
+	}
+	if detail.Health == nil || !detail.Health.AWGAvailable {
+		t.Fatalf("expected AWG to be available in health status: %+v", detail.Health)
+	}
+
+	// 3. POST /api/v1/admin/nodes/1/diagnose
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/diagnose", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for diagnose node, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var diagDetail models.NodeDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&diagDetail); err != nil {
+		t.Fatalf("failed to decode diagnosed detail: %v", err)
+	}
+	if !diagDetail.Online {
+		t.Fatalf("expected node to remain online after diagnose")
+	}
+	if diagDetail.ServerStatus.State != "green" {
+		t.Fatalf("expected server status state 'green', got '%s'", diagDetail.ServerStatus.State)
+	}
+
+	// 4. Test 404 on non-existent node
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/9999", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-existent node, got %d", rec.Code)
+	}
+
+	// 5. Test 401 Unauthorized without token
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized without token, got %d", rec.Code)
+	}
+}
+
 func TestAdminCascadeEgressSwitchFlow(t *testing.T) {
 	srv, _, _, cleanup := setupTestEnvironment(t)
 	defer cleanup()

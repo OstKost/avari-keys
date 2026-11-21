@@ -2,6 +2,7 @@ import {
   User,
   NodePublic,
   AdminNode,
+  NodeDetailResponse,
   ClientConfigSummary,
   ClientConfigDetail,
   PaginatedKeysResponse,
@@ -263,6 +264,21 @@ const realApi = {
     });
     const data = await handleResponse<AdminNode[]>(res);
     return Array.isArray(data) ? data : [];
+  },
+
+  async getAdminNode(id: number): Promise<NodeDetailResponse> {
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<NodeDetailResponse>(res);
+  },
+
+  async diagnoseAdminNode(id: number): Promise<NodeDetailResponse> {
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/diagnose`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<NodeDetailResponse>(res);
   },
 
   async addAdminNode(

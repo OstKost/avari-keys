@@ -4,6 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
+| | | | | [TASK-062](./tasks/TASK-062-server-diagnostics-detail-page.md) |
 | | | | | [TASK-061](./tasks/TASK-061-cicd-slave-deploy-resilience.md) |
 | | | | | [TASK-060](./tasks/TASK-060-keys-compact-list-view.md) |
 | | | | | [TASK-001](./tasks/TASK-001-project-scaffolding.md) |
@@ -71,3 +72,4 @@
 - **[TASK-059](./tasks/TASK-059-route-preservation-and-chibi-mascot.md)**: ✅ HTML5 History API навигация и сохранение роутов/вкладок при перезагрузке, милый чиби-маскот Ари.
 - **[TASK-060](./tasks/TASK-060-keys-compact-list-view.md)**: ✅ Второй вариант отображения конфигураций — минималистичный список с плавным аккордеоном деталей и действий.
 - **[TASK-061](./tasks/TASK-061-cicd-slave-deploy-resilience.md)**: ✅ Оптимизация и повышение отказоустойчивости автоматического деплоя Slave-нод в CI/CD (таймауты, ретраи, устранение конфликта ControlMaster и Keyscan rate-limit).
+- **[TASK-062](./tasks/TASK-062-server-diagnostics-detail-page.md)**: ✅ Страница конкретного сервера (ноды кластера) с подробными результатами диагностики доступности, статусами сетевых проверок M0/S0, Egress-шлюзом, телеметрией пиров и быстрыми сервисными действиями.

@@ -71,6 +71,15 @@ type NodeWithStatus struct {
 	NetworkProbes []NetworkProbe `json:"network_probes"`
 }
 
+// NodeDetailResponse represents full server diagnostics and runtime status.
+type NodeDetailResponse struct {
+	NodeWithStatus
+	Health     *HealthResponse       `json:"health,omitempty"`
+	Stats      *StatsSummaryResponse `json:"stats,omitempty"`
+	Egress     *EgressStatusResponse `json:"egress,omitempty"`
+	ClientKeys []ClientConfig        `json:"client_keys,omitempty"`
+}
+
 // ClientConfig represents a user's VPN key reference in the database and audit logs.
 type ClientConfig struct {
 	ID                    int64     `json:"id"`

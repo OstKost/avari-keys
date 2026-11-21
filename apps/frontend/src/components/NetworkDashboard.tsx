@@ -23,7 +23,7 @@ import { formatNodeRouting } from '../utils/country';
 
 interface NetworkDashboardProps {
   currentUser: User;
-  onNavigateTab?: (tab: 'keys' | 'nodes' | 'users' | 'all-keys' | 'logs' | 'profile' | 'dashboard') => void;
+  onNavigateTab?: (tab: 'keys' | 'nodes' | 'users' | 'all-keys' | 'logs' | 'profile' | 'dashboard', nodeId?: number) => void;
 }
 
 export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboardProps) {
@@ -366,7 +366,13 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
                         <Globe className="w-4 h-4" />
                       </div>
                       <div>
-                        <h5 className="font-serif font-bold text-sm text-[#F2F0E8] group-hover:text-gold-gradient transition">
+                        <h5
+                          onClick={() => currentUser.role === 'admin' && onNavigateTab && onNavigateTab('nodes', n.id)}
+                          className={`font-serif font-bold text-sm text-[#F2F0E8] group-hover:text-gold-gradient transition ${
+                            currentUser.role === 'admin' ? 'cursor-pointer hover:underline' : ''
+                          }`}
+                          title={currentUser.role === 'admin' ? 'Открыть подробную страницу сервера' : undefined}
+                        >
                           {n.name}
                         </h5>
                         <span className="text-sm text-[#718187] font-mono">ID #{n.id}{n.is_backup ? ' · PRO' : ''}</span>

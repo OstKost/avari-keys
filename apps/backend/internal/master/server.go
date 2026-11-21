@@ -208,6 +208,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/v1/admin/users/{id}", auth.RequireAdmin(s.handleAdminDeleteUser))
 
 	s.mux.HandleFunc("GET /api/v1/admin/nodes", auth.RequireAdmin(s.handleAdminListNodes))
+	s.mux.HandleFunc("GET /api/v1/admin/nodes/{id}", auth.RequireAdmin(s.handleAdminGetNode))
+	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/diagnose", auth.RequireAdmin(s.handleAdminDiagnoseNode))
 	s.mux.HandleFunc("POST /api/v1/admin/nodes", auth.RequireAdmin(s.handleAdminAddNode))
 	s.mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", auth.RequireAdmin(s.handleAdminUpdateNode))
 	s.mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}", auth.RequireAdmin(s.handleAdminDeleteNode))
@@ -919,6 +921,44 @@ func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, nodes)
+}
+
+func (s *Server) handleAdminGetNode(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	detail, err := s.healthChecker.GetNodeDetail(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, detail)
+}
+
+func (s *Server) handleAdminDiagnoseNode(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	detail, err := s.healthChecker.DiagnoseNode(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if claims != nil {
+		s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_diagnose", fmt.Sprintf("Выполнена диагностика узла «%s» (ID #%d)", detail.Name, detail.ID))
+	}
+
+	s.writeJSON(w, http.StatusOK, detail)
 }
 
 func (s *Server) handleAdminRestartNode(w http.ResponseWriter, r *http.Request) {

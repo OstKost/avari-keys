@@ -1039,6 +1039,51 @@ func (s *Storage) ListAllClientConfigs(ctx context.Context) ([]models.ClientConf
 	return list, nil
 }
 
+func (s *Storage) ListClientConfigsByNodeID(ctx context.Context, nodeID int64) ([]models.ClientConfig, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.id, c.user_id, COALESCE(u.username, ''), c.node_id, c.client_name, c.device_name,
+		       COALESCE(c.public_key, ''), COALESCE(c.allocated_ip, ''), COALESCE(c.protocol, 'awg'),
+		       c.total_rx_bytes, c.total_tx_bytes, c.last_handshake_epoch, c.created_at,
+		       COALESCE(n.name, ''), COALESCE(n.type, 'direct'), COALESCE(n.country_code, '')
+		FROM client_configs c
+		LEFT JOIN nodes n ON c.node_id = n.id
+		LEFT JOIN users u ON c.user_id = u.id
+		WHERE c.node_id = ?
+		ORDER BY c.id DESC
+	`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	monthMap, _ := s.GetMonthTrafficMap(ctx, time.Now().UTC().Format("2006-01"))
+
+	list := []models.ClientConfig{}
+	for rows.Next() {
+		var c models.ClientConfig
+		var totalRx, totalTx, handshakeEpoch int64
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Username, &c.NodeID, &c.ClientName, &c.DeviceName,
+			&c.PublicKey, &c.AllocatedIP, &c.Protocol, &totalRx, &totalTx, &handshakeEpoch, &c.CreatedAt,
+			&c.NodeName, &c.NodeType, &c.NodeCountryCode); err != nil {
+			return nil, err
+		}
+		c.LastHandshakeEpoch = handshakeEpoch
+		c.LastHandshake, c.IsOnline = formatHandshakeTime(handshakeEpoch)
+		c.TotalTrafficBytes = totalRx + totalTx
+		c.TotalTrafficFormatted = formatBytes(c.TotalTrafficBytes)
+
+		if mBytes, ok := monthMap[c.ID]; ok {
+			c.MonthTrafficBytes = mBytes
+		} else {
+			c.MonthTrafficBytes = c.TotalTrafficBytes
+		}
+		c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
+
+		list = append(list, c)
+	}
+	return list, nil
+}
+
 func (s *Storage) DeleteClientConfig(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM client_configs WHERE id = ?`, id)
 	if err != nil {
