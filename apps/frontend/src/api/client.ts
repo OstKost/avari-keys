@@ -22,6 +22,7 @@ import {
   UpdateNewsPayload,
   TelegramProxyInfo,
   ProtocolType,
+  TelegramMiniAppAuthResponse,
 } from '../types';
 
 import { mockApi } from './mockClient';
@@ -85,6 +86,17 @@ const realApi = {
       body: JSON.stringify({ username, password }),
     });
     const data = await handleResponse<{ token: string; user: User }>(res);
+    localStorage.setItem('token', data.token);
+    return data;
+  },
+
+  async authenticateTelegramMiniApp(initData: string): Promise<TelegramMiniAppAuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/telegram-miniapp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: initData }),
+    });
+    const data = await handleResponse<TelegramMiniAppAuthResponse>(res);
     localStorage.setItem('token', data.token);
     return data;
   },

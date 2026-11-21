@@ -383,6 +383,7 @@ type TelegramSettings struct {
 	BotToken                 string `json:"bot_token"`
 	BotUsername              string `json:"bot_username"`
 	AdminSecret              string `json:"admin_secret"`
+	WebAppURL                string `json:"web_app_url"`
 	NotifyOnNodeDown         bool   `json:"notify_on_node_down"`
 	NotifyOnNodeRecover      bool   `json:"notify_on_node_recover"`
 	NotifyOnNewUser          bool   `json:"notify_on_new_user"`
@@ -417,6 +418,19 @@ type UserTelegramStatusResponse struct {
 	TelegramUsername string `json:"telegram_username,omitempty"`
 	AlertsEnabled    bool   `json:"alerts_enabled"`
 	DeepLink         string `json:"deep_link"`
+}
+
+// TelegramMiniAppAuthRequest contains Telegram WebApp initData string.
+type TelegramMiniAppAuthRequest struct {
+	InitData string `json:"init_data"`
+}
+
+// TelegramMiniAppAuthResponse represents authentication result for Telegram Mini App.
+type TelegramMiniAppAuthResponse struct {
+	Token    string     `json:"token"`
+	User     UserPublic `json:"user"`
+	IsAdmin  bool       `json:"is_admin"`
+	IsLinked bool       `json:"is_linked"`
 }
 
 // NewsCategory represents category classification for announcements.

@@ -4,6 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
+| | | | | [TASK-064](./tasks/TASK-064-telegram-mini-app.md) |
 | | | | | [TASK-063](./tasks/TASK-063-cascade-auto-failover.md) |
 | | | | | [TASK-062](./tasks/TASK-062-server-diagnostics-detail-page.md) |
 | | | | | [TASK-061](./tasks/TASK-061-cicd-slave-deploy-resilience.md) |
@@ -75,3 +76,4 @@
 - **[TASK-061](./tasks/TASK-061-cicd-slave-deploy-resilience.md)**: ✅ Оптимизация и повышение отказоустойчивости автоматического деплоя Slave-нод в CI/CD (таймауты, ретраи, устранение конфликта ControlMaster и Keyscan rate-limit).
 - **[TASK-062](./tasks/TASK-062-server-diagnostics-detail-page.md)**: ✅ Страница конкретного сервера (ноды кластера) с подробными результатами диагностики доступности, статусами сетевых проверок M0/S0, Egress-шлюзом, телеметрией пиров и быстрыми сервисными действиями.
 - **[TASK-063](./tasks/TASK-063-cascade-auto-failover.md)**: ✅ Отключаемое автоматическое переключение Egress-шлюзов каскада (Auto-Failover) при сбоях и блокировках (порог ошибок, Cooldown, список приоритетов и Telegram-алерты).
+- **[TASK-064](./tasks/TASK-064-telegram-mini-app.md)**: ✅ Telegram Mini App (TMA) для пользователей (статус, создание/просмотр ключей, QR, биллинг) и администраторов (статусы кластера, ноды, быстрое переключение Egress каскада).

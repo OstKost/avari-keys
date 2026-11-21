@@ -336,3 +336,108 @@ export interface NetworkProbe extends NodeStatus {
   source: string;
   checks: { kind: string; target: string; ok: boolean; latency_ms: number; error?: string }[];
 }
+
+export interface TelegramMiniAppAuthRequest {
+  init_data: string;
+}
+
+export interface TelegramMiniAppAuthResponse {
+  token: string;
+  user: User;
+  is_admin: boolean;
+  is_linked: boolean;
+}
+
+// Telegram WebApp API types for window.Telegram.WebApp
+export interface TelegramWebAppUser {
+  id: number;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  language_code?: string;
+  is_premium?: boolean;
+}
+
+export interface TelegramWebAppData {
+  user?: TelegramWebAppUser;
+  auth_date: number;
+  query_id?: string;
+  hash: string;
+}
+
+export interface TelegramWebAppHapticFeedback {
+  impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
+  notificationOccurred: (type: 'error' | 'success' | 'warning') => void;
+  selectionChanged: () => void;
+}
+
+export interface TelegramWebAppThemeParams {
+  bg_color?: string;
+  text_color?: string;
+  hint_color?: string;
+  link_color?: string;
+  button_color?: string;
+  button_text_color?: string;
+  secondary_bg_color?: string;
+  header_bg_color?: string;
+  bottom_bar_bg_color?: string;
+  accent_text_color?: string;
+  section_bg_color?: string;
+  section_header_text_color?: string;
+  subtitle_text_color?: string;
+  destructive_text_color?: string;
+}
+
+export interface TelegramWebAppInstance {
+  initData: string;
+  initDataUnsafe: TelegramWebAppData;
+  version: string;
+  platform: string;
+  colorScheme: 'light' | 'dark';
+  themeParams: TelegramWebAppThemeParams;
+  isExpanded: boolean;
+  viewportHeight: number;
+  viewportStableHeight: number;
+  headerColor: string;
+  backgroundColor: string;
+  BackButton: {
+    isVisible: boolean;
+    show: () => void;
+    hide: () => void;
+    onClick: (cb: () => void) => void;
+    offClick: (cb: () => void) => void;
+  };
+  MainButton: {
+    text: string;
+    color: string;
+    textColor: string;
+    isVisible: boolean;
+    isActive: boolean;
+    isProgressVisible: boolean;
+    setText: (text: string) => void;
+    onClick: (cb: () => void) => void;
+    offClick: (cb: () => void) => void;
+    show: () => void;
+    hide: () => void;
+    enable: () => void;
+    disable: () => void;
+    showProgress: (leaveActive?: boolean) => void;
+    hideProgress: () => void;
+  };
+  HapticFeedback: TelegramWebAppHapticFeedback;
+  ready: () => void;
+  expand: () => void;
+  close: () => void;
+  openLink: (url: string, options?: { try_instant_view?: boolean }) => void;
+  openTelegramLink: (url: string) => void;
+  setHeaderColor: (color: string) => void;
+  setBackgroundColor: (color: string) => void;
+}
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp: TelegramWebAppInstance;
+    };
+  }
+}

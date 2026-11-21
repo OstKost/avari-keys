@@ -64,6 +64,20 @@ export function getCountryInfo(code?: string): CountryInfo | null {
 }
 
 /**
+ * Returns emoji flag for a given country code.
+ */
+export function getCountryFlag(code?: string): string {
+  return getCountryInfo(code)?.flag || '🌐';
+}
+
+/**
+ * Returns localized country name for a given country code.
+ */
+export function formatCountry(code?: string): string {
+  return getCountryInfo(code)?.name || code || 'Зарубежный';
+}
+
+/**
  * Formats routing representation for a server:
  * - Cascade: "🇷🇺 RUS ➔ 🇳🇱 NLD"
  * - Direct: "🇳🇱 NLD"

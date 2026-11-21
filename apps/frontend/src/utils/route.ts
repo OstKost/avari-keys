@@ -8,7 +8,8 @@ export type TabType =
   | 'users' 
   | 'all-keys' 
   | 'logs' 
-  | 'settings';
+  | 'settings'
+  | 'miniapp';
 
 export const ADMIN_TABS: readonly TabType[] = ['nodes', 'users', 'all-keys', 'logs', 'settings'] as const;
 
@@ -23,6 +24,7 @@ export const TAB_TITLES: Record<TabType, string> = {
   'all-keys': 'Все VPN-ключи — Avari Keys Admin',
   logs: 'Журнал аудита — Avari Keys Admin',
   settings: 'Настройки системы — Avari Keys Admin',
+  miniapp: 'Avari Keys — Telegram App',
 };
 
 export interface ResolvedRoute {
@@ -58,6 +60,8 @@ export function tabToPath(tab: TabType, nodeId?: number | null): string {
       return '/admin/logs';
     case 'settings':
       return '/admin/settings';
+    case 'miniapp':
+      return '/miniapp';
     default:
       return '/keys';
   }
@@ -130,6 +134,11 @@ export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
       case '/settings':
         detectedTab = 'settings';
         break;
+      case '/miniapp':
+      case '/tma':
+      case '/app':
+        detectedTab = 'miniapp';
+        break;
       default:
         detectedTab = null;
         break;
@@ -140,7 +149,7 @@ export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
   if (!detectedTab && hash) {
     const validTabs: TabType[] = [
       'keys', 'dashboard', 'news', 'billing', 'profile',
-      'nodes', 'users', 'all-keys', 'logs', 'settings',
+      'nodes', 'users', 'all-keys', 'logs', 'settings', 'miniapp',
     ];
     if (validTabs.includes(hash as TabType)) {
       detectedTab = hash as TabType;
@@ -148,6 +157,22 @@ export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
       detectedTab = 'dashboard';
     } else if (hash === 'admin/keys' || hash === 'admin/all-keys') {
       detectedTab = 'all-keys';
+    } else if (hash === 'tma' || hash === 'app') {
+      detectedTab = 'miniapp';
+    }
+  }
+
+  // 4.1 Check query params (?miniapp=true or ?tma=1) or active Telegram WebApp
+  if (!detectedTab) {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get('miniapp') === 'true' || searchParams.get('tma') === 'true' || searchParams.has('tgWebAppData')) {
+        detectedTab = 'miniapp';
+      } else if (typeof window !== 'undefined' && window.Telegram?.WebApp?.initData) {
+        detectedTab = 'miniapp';
+      }
+    } catch {
+      // Ignore URL parsing errors
     }
   }
 
@@ -157,7 +182,7 @@ export function resolveRouteFromUrl(userRole?: string): ResolvedRoute {
       const saved = localStorage.getItem('avari_active_tab') as TabType | null;
       const validTabs: TabType[] = [
         'keys', 'dashboard', 'news', 'billing', 'profile',
-        'nodes', 'users', 'all-keys', 'logs', 'settings',
+        'nodes', 'users', 'all-keys', 'logs', 'settings', 'miniapp',
       ];
       if (saved && validTabs.includes(saved)) {
         detectedTab = saved;

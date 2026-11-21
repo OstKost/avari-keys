@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Key, Server, Users, LogOut, Plus, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send } from 'lucide-react';
+import { Key, Server, Users, LogOut, Plus, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send, Smartphone } from 'lucide-react';
 import { api, isMockMode, setMockMode } from './api/client';
 import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem, TelegramProxyInfo, ProtocolType } from './types';
 import { AuthModal } from './components/AuthModal';
@@ -26,6 +26,7 @@ import { Tooltip } from './components/Tooltip';
 import { FloatingMascot, MascotFaqModal, MASCOT_IMAGE_SRC } from './components/MascotAssistant';
 import { OnboardingTour } from './components/OnboardingTour';
 import { ServerDetailPage } from './components/ServerDetailPage';
+import { TelegramMiniApp } from './components/TelegramMiniApp';
 import { TabType, ADMIN_TABS, resolveRouteFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
 
 export default function App() {
@@ -314,6 +315,10 @@ export default function App() {
     }
   };
 
+  if (activeTab === 'miniapp') {
+    return <TelegramMiniApp onExitToWeb={() => navigateToTab('keys')} />;
+  }
+
   if (authLoading) {
     return <Loader size="fullscreen" text="Загрузка Avari Keys..." />;
   }
@@ -535,6 +540,15 @@ export default function App() {
               >
                 <Settings className="w-4 h-4" />
                 <span>Настройки</span>
+              </button>
+
+              <button
+                onClick={() => navigateToTab('miniapp')}
+                title="Открыть Telegram Mini App"
+                className="flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]"
+              >
+                <Smartphone className="w-4 h-4 text-cyan-400" />
+                <span>Telegram App</span>
               </button>
             </div>
           </div>

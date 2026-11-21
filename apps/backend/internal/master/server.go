@@ -165,6 +165,11 @@ func (s *Server) Handler() http.Handler {
 	return s.corsMiddleware(s.jwtMgr.AuthMiddleware(s.mux))
 }
 
+// GetTelegramBot returns the internal Telegram Bot instance.
+func (s *Server) GetTelegramBot() *telegram.Bot {
+	return s.telegramBot
+}
+
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -186,6 +191,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/v1/auth/reset-password", s.handleResetPasswordRequest)
+	s.mux.HandleFunc("POST /api/v1/auth/telegram-miniapp", s.handleTelegramMiniAppAuth)
 
 	// User Authenticated Routes
 	s.mux.HandleFunc("GET /api/v1/auth/me", auth.RequireAuth(s.handleMe))
@@ -370,6 +376,120 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			IsPro:     user.IsPro,
 			CreatedAt: user.CreatedAt,
 		},
+	})
+}
+
+func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Request) {
+	var req models.TelegramMiniAppAuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	botToken := ""
+	if s.telegramBot != nil {
+		botToken = s.telegramBot.GetToken()
+	}
+	if botToken == "" {
+		botToken = s.cfg.TelegramBotToken
+	}
+	if botToken == "" {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "Telegram bot is not configured or disabled",
+		})
+		return
+	}
+
+	// 1. Validate initData cryptographically
+	webAppData, err := auth.ValidateTelegramWebAppData(req.InitData, botToken, 24*time.Hour)
+	if err != nil {
+		s.logActivity(r, nil, "telegram_miniapp", models.CategoryAuth, "tg_miniapp_invalid_signature", fmt.Sprintf("Ошибка валидации initData: %v", err))
+		s.writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "Invalid Telegram signature or expired session",
+		})
+		return
+	}
+
+	if webAppData.User == nil || webAppData.User.ID == 0 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Telegram user data is missing in initData",
+		})
+		return
+	}
+
+	tgUserID := webAppData.User.ID
+
+	// 2. Check if this Telegram user has linked their chat to an account or is admin
+	chat, err := s.storage.GetTelegramChatByChatID(r.Context(), tgUserID)
+	if err != nil || chat == nil {
+		s.logActivity(r, nil, fmt.Sprintf("tg:%d", tgUserID), models.CategoryAuth, "tg_miniapp_unlinked", "Попытка входа в Mini App с непривязанного Telegram-чата")
+		s.writeJSON(w, http.StatusForbidden, map[string]any{
+			"error":     "unlinked_chat",
+			"message":   "Ваш Telegram-аккаунт еще не подключен к Avari Keys. Подключите аккаунт через команду /link в боте.",
+			"is_linked": false,
+		})
+		return
+	}
+
+	var user *models.User
+	if chat.UserID != nil {
+		u, err := s.storage.GetUserByID(r.Context(), *chat.UserID)
+		if err == nil && u != nil {
+			user = u
+		}
+	} else if chat.IsAdmin {
+		// Admin chat without explicit user_id binding -> bind to default admin (Forve or first active admin)
+		users, _ := s.storage.ListUsers(r.Context())
+		for _, u := range users {
+			if u.Role == models.RoleAdmin && u.IsActive {
+				adminUser, err := s.storage.GetUserByID(r.Context(), u.ID)
+				if err == nil && adminUser != nil {
+					user = adminUser
+					break
+				}
+			}
+		}
+	}
+
+	if user == nil {
+		s.writeJSON(w, http.StatusForbidden, map[string]any{
+			"error":     "user_not_found",
+			"message":   "Привязанная учетная запись не найдена в системе.",
+			"is_linked": false,
+		})
+		return
+	}
+
+	if !user.IsActive {
+		s.logActivity(r, &user.ID, user.Username, models.CategoryAuth, "tg_miniapp_inactive", "Вход в Mini App неактивного пользователя")
+		s.writeJSON(w, http.StatusForbidden, map[string]any{
+			"error":     "account_inactive",
+			"message":   "Ваша учетная запись ожидает одобрения администратором.",
+			"is_linked": true,
+		})
+		return
+	}
+
+	token, err := s.jwtMgr.GenerateToken(user)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+		return
+	}
+
+	s.logActivity(r, &user.ID, user.Username, models.CategoryAuth, "tg_miniapp_login", "Успешный вход через Telegram Mini App")
+
+	s.writeJSON(w, http.StatusOK, models.TelegramMiniAppAuthResponse{
+		Token: token,
+		User: models.UserPublic{
+			ID:        user.ID,
+			Username:  user.Username,
+			Role:      user.Role,
+			IsActive:  user.IsActive,
+			IsPro:     user.IsPro,
+			CreatedAt: user.CreatedAt,
+		},
+		IsAdmin:  user.Role == models.RoleAdmin,
+		IsLinked: true,
 	})
 }
 

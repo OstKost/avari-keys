@@ -24,6 +24,7 @@ import {
   UpdateNewsPayload,
   TelegramProxyInfo,
   ProtocolType,
+  TelegramMiniAppAuthResponse,
 } from '../types';
 
 // In-memory mock storage for standalone FE development
@@ -585,6 +586,34 @@ export const mockApi = {
     mockCurrentUser = user;
     localStorage.setItem('token', 'mock-jwt-token-' + user.username);
     return { token: 'mock-jwt-token-' + user.username, user };
+  },
+
+  async authenticateTelegramMiniApp(initData: string): Promise<TelegramMiniAppAuthResponse> {
+    const forcedRole = localStorage.getItem('mock_tma_role');
+    if (initData === 'mock_unlinked' || forcedRole === 'unlinked') {
+      const err: any = new Error('Ваш Telegram-аккаунт еще не подключен к Avari Keys. Подключите аккаунт через команду /link в боте.');
+      err.error = 'unlinked_chat';
+      err.is_linked = false;
+      throw err;
+    }
+
+    const role = forcedRole || (initData.includes('admin') ? 'admin' : 'user');
+    let user: User;
+    if (role === 'admin') {
+      user = mockUsers.find((u) => u.role === 'admin') || mockUsers[0];
+    } else {
+      user = mockUsers.find((u) => u.username === 'alice') || mockUsers[1];
+    }
+
+    mockCurrentUser = user;
+    const token = 'mock-jwt-token-' + user.username;
+    localStorage.setItem('token', token);
+    return {
+      token,
+      user,
+      is_admin: user.role === 'admin',
+      is_linked: true,
+    };
   },
 
   async setDemoUser(username: string): Promise<User> {

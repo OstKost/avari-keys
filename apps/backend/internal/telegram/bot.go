@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ type Bot struct {
 	token                    string
 	botUsername              string
 	adminSecret              string
+	webAppURL                string
 	enabled                  bool
 	notifyOnNodeDown         bool
 	notifyOnNodeRecover      bool
@@ -50,6 +52,7 @@ type Config struct {
 	BotUsername              string
 	AdminSecret              string
 	AdminChatID              string
+	WebAppURL                string
 	Enabled                  bool
 	NotifyOnNodeDown         bool
 	NotifyOnNodeRecover      bool
@@ -67,11 +70,17 @@ func NewBot(cfg Config) *Bot {
 		apiURL = "https://api.telegram.org"
 	}
 
+	webAppURL := strings.TrimSpace(cfg.WebAppURL)
+	if webAppURL == "" {
+		webAppURL = strings.TrimSpace(os.Getenv("TELEGRAM_WEBAPP_URL"))
+	}
+
 	bot := &Bot{
 		apiURL:                   apiURL,
 		token:                    cfg.Token,
 		botUsername:              cfg.BotUsername,
 		adminSecret:              cfg.AdminSecret,
+		webAppURL:                webAppURL,
 		enabled:                  cfg.Enabled || cfg.Token != "",
 		notifyOnNodeDown:         true,
 		notifyOnNodeRecover:      true,
@@ -118,11 +127,41 @@ func (b *Bot) GetSettings() models.TelegramSettings {
 		BotToken:                 b.token,
 		BotUsername:              b.botUsername,
 		AdminSecret:              b.adminSecret,
+		WebAppURL:                b.webAppURL,
 		NotifyOnNodeDown:         b.notifyOnNodeDown,
 		NotifyOnNodeRecover:      b.notifyOnNodeRecover,
 		NotifyOnNewUser:          b.notifyOnNewUser,
 		NotifyOnBillingReminders: b.notifyOnBillingReminders,
 	}
+}
+
+// GetToken returns the current Telegram bot token safely.
+func (b *Bot) GetToken() string {
+	if b == nil {
+		return ""
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.token
+}
+
+// GetWebAppURL returns the configured Telegram WebApp URL.
+func (b *Bot) GetWebAppURL() string {
+	if b == nil {
+		return ""
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.webAppURL != "" {
+		return b.webAppURL
+	}
+	if b.storage != nil {
+		settings, err := b.storage.GetTelegramSettings(context.Background())
+		if err == nil && settings != nil && settings.WebAppURL != "" {
+			return settings.WebAppURL
+		}
+	}
+	return ""
 }
 
 // ValidateToken tests the token against Telegram getMe endpoint and returns bot username.
@@ -195,6 +234,7 @@ func (b *Bot) UpdateConfig(ctx context.Context, s models.TelegramSettings) error
 	b.token = token
 	b.botUsername = strings.TrimSpace(s.BotUsername)
 	b.adminSecret = strings.TrimSpace(s.AdminSecret)
+	b.webAppURL = strings.TrimSpace(s.WebAppURL)
 	b.enabled = s.Enabled
 	b.notifyOnNodeDown = s.NotifyOnNodeDown
 	b.notifyOnNodeRecover = s.NotifyOnNodeRecover
@@ -257,11 +297,17 @@ func (b *Bot) Stop() {
 	}
 }
 
+// WebAppInfo contains information about a Web App.
+type WebAppInfo struct {
+	URL string `json:"url"`
+}
+
 // InlineKeyboardButton represents an inline keyboard button in Telegram Bot API.
 type InlineKeyboardButton struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
-	URL          string `json:"url,omitempty"`
+	Text         string      `json:"text"`
+	CallbackData string      `json:"callback_data,omitempty"`
+	URL          string      `json:"url,omitempty"`
+	WebApp       *WebAppInfo `json:"web_app,omitempty"`
 }
 
 // InlineKeyboardMarkup represents inline keyboard reply markup.
@@ -507,13 +553,44 @@ func (b *Bot) handleIncomingMessage(ctx context.Context, chatID int64, from *TGU
 		msg := botHeader + "\n\n" +
 			"Бот активен и готов присылать мгновенные уведомления о состоянии серверов и напоминания о кооперативных взносах.\n\n" +
 			"<b>Доступные команды:</b>\n" +
+			"📱 /app — Открыть персональный Telegram Mini App\n" +
 			"💳 /billing — Статус взносов, расчет и реквизиты СБП\n" +
 			"📊 /status — Состояние и пинг всех серверов сети\n" +
 			"🌐 /nodes — Список серверов и маршрутизация\n" +
 			"🔔 /test — Проверить доставку оповещения\n" +
 			"🚪 /logout — Отвязать Telegram-чат от аккаунта\n" +
 			"❓ /help — Справка по командам"
-		_ = b.SendMessage(chatID, msg, "HTML")
+
+		webAppURL := b.GetWebAppURL()
+		if webAppURL != "" {
+			markup := InlineKeyboardMarkup{
+				InlineKeyboard: [][]InlineKeyboardButton{
+					{
+						{Text: "🚀 Открыть Avari App", WebApp: &WebAppInfo{URL: webAppURL}},
+					},
+				},
+			}
+			_ = b.SendMessageWithMarkup(chatID, msg, "HTML", markup)
+		} else {
+			_ = b.SendMessage(chatID, msg, "HTML")
+		}
+
+	case "/app", "/miniapp":
+		webAppURL := b.GetWebAppURL()
+		if webAppURL == "" {
+			_ = b.SendMessage(chatID, "⚠️ Mini App пока не настроен. Обратитесь к администратору.", "")
+			return
+		}
+		msg := "📱 <b>Avari Keys Mini App</b>\n\n" +
+			"Нажмите на кнопку ниже, чтобы открыть персональное приложение Avari Keys для управления ключами, проверки статуса сети и взносов."
+		markup := InlineKeyboardMarkup{
+			InlineKeyboard: [][]InlineKeyboardButton{
+				{
+					{Text: "🚀 Открыть Avari App", WebApp: &WebAppInfo{URL: webAppURL}},
+				},
+			},
+		}
+		_ = b.SendMessageWithMarkup(chatID, msg, "HTML", markup)
 
 	case "/logout", "/unlink", "/disconnect":
 		if b.storage != nil {
