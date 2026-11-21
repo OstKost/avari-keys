@@ -401,7 +401,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
         </div>
 
         <div className="text-center text-[11px] text-slate-600 pb-2">
-          Avari Keys • Telegram Mini App v1.5.0
+          Avari Keys • Telegram Mini App v1.5.1
         </div>
       </div>
     );
