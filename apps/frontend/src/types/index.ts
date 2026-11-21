@@ -265,6 +265,7 @@ export interface TelegramSettings {
   bot_token: string;
   bot_username: string;
   admin_secret: string;
+  web_app_url?: string;
   notify_on_node_down: boolean;
   notify_on_node_recover: boolean;
   notify_on_new_user: boolean;
