@@ -4,6 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
+| | | | | [TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md) |
 | | | | | [TASK-065](./tasks/TASK-065-server-list-redesign.md) |
 | | | | | [TASK-064](./tasks/TASK-064-telegram-mini-app.md) |
 | | | | | [TASK-063](./tasks/TASK-063-cascade-auto-failover.md) |
@@ -79,3 +80,4 @@
 - **[TASK-063](./tasks/TASK-063-cascade-auto-failover.md)**: ✅ Отключаемое автоматическое переключение Egress-шлюзов каскада (Auto-Failover) при сбоях и блокировках (порог ошибок, Cooldown, список приоритетов и Telegram-алерты).
 - **[TASK-064](./tasks/TASK-064-telegram-mini-app.md)**: ✅ Telegram Mini App (TMA) для пользователей (статус, создание/просмотр ключей, QR, биллинг) и администраторов (статусы кластера, ноды, быстрое переключение Egress каскада).
 - **[TASK-065](./tasks/TASK-065-server-list-redesign.md)**: ✅ Комплексный редизайн списка серверов (нод) кластера — сводные метрики, быстрый поиск и фильтрация, переключатель Grid/Table, стильные Cyber-Fantasy карточки и удобная панель управления.
+- **[TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md)**: ✅ Нативный Go-контроллер Egress каскада, мультипроверка (IP, Telegram, ChatGPT) и интервал HealthCheck 3 мин.

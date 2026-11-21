@@ -59,7 +59,7 @@ type Config struct {
 func NewHealthChecker(cfg Config) *HealthChecker {
 	interval := cfg.Interval
 	if interval <= 0 {
-		interval = 60 * time.Second
+		interval = 180 * time.Second
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {

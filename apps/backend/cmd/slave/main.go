@@ -1,16 +1,81 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/egress"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/slave"
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		args := os.Args[1:]
+		if args[0] == "egress" && len(args) > 1 {
+			args = args[1:]
+		}
+
+		switch args[0] {
+		case "status":
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			mgr := egress.NewManager()
+			status, err := mgr.GetStatus(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error getting egress status: %v\n", err)
+				os.Exit(1)
+			}
+			data, err := json.Marshal(status)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error marshaling egress status: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println(string(data))
+			os.Exit(0)
+
+		case "switch":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Usage: avari-slave switch INTERFACE (e.g. awg1, awg3)")
+				os.Exit(1)
+			}
+			iface := args[1]
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+			mgr := egress.NewManager()
+			if err := mgr.Switch(ctx, iface); err != nil {
+				fmt.Fprintf(os.Stderr, "Egress switch to %s failed: %v\n", iface, err)
+				os.Exit(1)
+			}
+			fmt.Printf("Egress switch to %s successful\n", iface)
+			os.Exit(0)
+
+		case "recover":
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			mgr := egress.NewManager()
+			if err := mgr.Recover(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "Egress recovery failed: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+
+		case "-h", "--help", "help":
+			fmt.Println("Avari Keys Slave API & Cascade Egress Manager")
+			fmt.Println("Usage:")
+			fmt.Println("  avari-slave               Run HTTP Slave API daemon")
+			fmt.Println("  avari-slave status        Check cascade egress status and targets")
+			fmt.Println("  avari-slave switch IFACE  Switch active cascade egress interface")
+			fmt.Println("  avari-slave recover       Recover pending egress switch transaction")
+			os.Exit(0)
+		}
+	}
+
 	port := os.Getenv("SLAVE_PORT")
 	if port == "" {
 		port = "8081"
