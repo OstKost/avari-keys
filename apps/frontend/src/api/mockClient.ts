@@ -53,6 +53,15 @@ let mockUsers: User[] = [
     is_pro: false,
     created_at: new Date(Date.now() - 3600000 * 3).toISOString(),
   },
+  {
+    id: 4,
+    username: 'charlie_vpn',
+    role: 'user',
+    is_active: true,
+    is_pro: false,
+    has_pending_password_reset: true,
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+  },
 ];
 
 let mockLogs: AuditLog[] = [
