@@ -900,7 +900,36 @@ bandwidth:
         checked_at: new Date().toISOString(),
         reason: 'Все контрольные точки M0/S0 доступны',
       },
-      network_probes: node.network_probes || [
+      network_probes: node.network_probes || (node.id === 3 ? [
+        {
+          node_id: node.id,
+          source: 'M0 (Москва)',
+          interface: 'enp1s0',
+          state: 'yellow',
+          reason: 'TCP-порт (HTTP/S) заблокирован ТСПУ/провайдером. Замаскированный UDP-трафик VPN (AmneziaWG/Hysteria2) работает независимо',
+          checked_at: new Date().toISOString(),
+          checks: [
+            { kind: 'dns', target: `s${node.id}.avari.dev`, ok: true, latency_ms: 12 },
+            { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: node.latency_ms || 190 },
+            { kind: 'domain_icmp', target: `s${node.id}.avari.dev`, ok: true, latency_ms: (node.latency_ms || 190) + 1 },
+            { kind: 'domain_tcp', target: `s${node.id}.avari.dev:443`, ok: false, latency_ms: 0, error: 'dial tcp: i/o timeout (ТСПУ)' },
+            { kind: 'udp_awg', target: `192.0.2.${20 + node.id}:443`, ok: true, latency_ms: 45 },
+          ],
+        },
+        {
+          node_id: node.id,
+          source: 'S0 (Зарубеж)',
+          interface: 'awg0',
+          state: 'green',
+          reason: 'Контрольная точка за рубежом доступна',
+          checked_at: new Date().toISOString(),
+          checks: [
+            { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: 28 },
+            { kind: 'domain_tcp', target: `s${node.id}.avari.dev:443`, ok: true, latency_ms: 32 },
+            { kind: 'udp_awg', target: `192.0.2.${20 + node.id}:443`, ok: true, latency_ms: 30 },
+          ],
+        },
+      ] : [
         {
           node_id: node.id,
           source: 'M0 (Москва)',
@@ -910,7 +939,7 @@ bandwidth:
           checks: [
             { kind: 'dns', target: `s${node.id}.vpn.test`, ok: true, latency_ms: 6 },
             { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: node.latency_ms || 25 },
-            { kind: 'tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: (node.latency_ms || 25) + 2 },
+            { kind: 'domain_tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: (node.latency_ms || 25) + 2 },
             { kind: 'udp_awg', target: `192.0.2.${20 + node.id}:51820`, ok: true, latency_ms: node.latency_ms || 25 },
           ],
         },
@@ -922,16 +951,16 @@ bandwidth:
           checked_at: new Date().toISOString(),
           checks: [
             { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: 12 },
-            { kind: 'tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: 14 },
+            { kind: 'domain_tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: 14 },
           ],
         },
-      ],
+      ]),
       health: {
         status: node.online ? 'ok' : 'degraded',
         service: 'amneziawg-slave',
         awg_available: node.online,
         hysteria_available: Boolean(node.has_hysteria),
-        version: '1.5.0',
+        version: '1.5.1',
       },
       stats: {
         active_peers: matchedKeys.length,

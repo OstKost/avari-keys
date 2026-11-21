@@ -631,7 +631,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
             </div>
             <div className="text-[11px] text-[#718187] font-mono mt-2 pt-2 border-t border-[#1C3945]/60 flex justify-between">
               <span>Версия демона:</span>
-              <span className="text-[#F2F0E8]">{node.health?.version || '1.5.0'}</span>
+              <span className="text-[#F2F0E8]">{node.health?.version || '1.5.1'}</span>
             </div>
           </div>
         </div>
@@ -665,84 +665,141 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
         {/* Probes List */}
         {(node.network_probes || []).length > 0 ? (
           <div className="space-y-4">
-            {node.network_probes!.map((probe, idx) => (
-              <div
-                key={idx}
-                className="bg-[#06141B]/80 border border-[#1C3945] rounded-2xl p-4 sm:p-5 transition hover:border-[#1C3945]/90"
-              >
-                {/* Probe Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b border-[#1C3945]/70">
-                  <div className="flex items-center space-x-2.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#D9B96E]" />
-                    <span className="font-serif font-bold text-sm text-[#F2F0E8]">
-                      Источник зонда: <span className="text-[#D9B96E]">{probe.source}</span>
-                    </span>
-                    {probe.interface && (
-                      <span className="text-xs font-mono text-[#A8B4B7] bg-[#102833] px-2 py-0.5 rounded border border-[#1C3945]">
-                        Интерфейс: {probe.interface}
+            {node.network_probes!.map((probe, idx) => {
+              const hasTcpFailure = probe.checks.some((c) => (c.kind.endsWith('_tcp') || c.kind === 'tcp') && !c.ok);
+              const hasIcmpSuccess = probe.checks.some((c) => c.kind.endsWith('_icmp') && c.ok);
+              const isTspuFiltered = hasTcpFailure && hasIcmpSuccess;
+
+              return (
+                <div
+                  key={idx}
+                  className="bg-[#06141B]/80 border border-[#1C3945] rounded-2xl p-4 sm:p-5 transition hover:border-[#1C3945]/90"
+                >
+                  {/* Probe Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b border-[#1C3945]/70">
+                    <div className="flex items-center space-x-2.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#D9B96E]" />
+                      <span className="font-serif font-bold text-sm text-[#F2F0E8]">
+                        Источник зонда: <span className="text-[#D9B96E]">{probe.source}</span>
                       </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    {renderStatusBadge(probe.state as any)}
-                    {probe.checked_at && (
-                      <span className="text-[11px] text-[#718187] font-mono">
-                        {new Date(probe.checked_at).toLocaleTimeString('ru-RU')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {probe.reason && (
-                  <div className="text-xs text-amber-300/90 font-sans mb-3 bg-amber-950/30 p-2.5 rounded-xl border border-amber-800/40">
-                    {probe.reason}
-                  </div>
-                )}
-
-                {/* Checks Table / Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 font-mono text-xs">
-                  {probe.checks.map((check, cIdx) => (
-                    <div
-                      key={cIdx}
-                      className={`p-3 rounded-xl border flex flex-col justify-between ${
-                        check.ok
-                          ? 'bg-[#0A1D26]/70 border-[#1C3945]'
-                          : 'bg-rose-950/30 border-rose-800/50'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-[#F2F0E8] uppercase tracking-wider text-[11px]">
-                            {check.kind === 'dns' ? 'DNS Резолвинг'
-                              : check.kind === 'ip_icmp' ? 'ICMP Ping (IP)'
-                              : check.kind === 'domain_icmp' ? 'ICMP Ping (Host)'
-                              : check.kind.endsWith('_tcp') ? 'TCP Handshake'
-                              : check.kind === 'udp_awg' ? 'UDP AWG Port'
-                              : check.kind}
-                          </span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            check.ok ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400'
-                          }`}>
-                            {check.ok ? 'PASS' : 'FAIL'}
-                          </span>
-                        </div>
-                        <div className="text-[#A8B4B7] text-[11px] break-all truncate" title={check.target}>
-                          Цель: {check.target}
-                        </div>
-                      </div>
-
-                      <div className="mt-2 pt-1.5 border-t border-[#1C3945]/50 flex justify-between items-center text-[11px]">
-                        <span className="text-[#718187]">Задержка:</span>
-                        <span className={check.ok ? 'text-[#D9B96E] font-bold' : 'text-rose-400'}>
-                          {check.ok ? `${check.latency_ms} ms` : (check.error || 'Ошибка')}
+                      {probe.interface && (
+                        <span className="text-xs font-mono text-[#A8B4B7] bg-[#102833] px-2 py-0.5 rounded border border-[#1C3945]">
+                          Интерфейс: {probe.interface}
                         </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      {renderStatusBadge(probe.state as any)}
+                      {probe.checked_at && (
+                        <span className="text-[11px] text-[#718187] font-mono">
+                          {new Date(probe.checked_at).toLocaleTimeString('ru-RU')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {probe.reason && (
+                    <div className="text-xs text-amber-300/90 font-sans mb-3 bg-amber-950/30 p-2.5 rounded-xl border border-amber-800/40">
+                      {probe.reason}
+                    </div>
+                  )}
+
+                  {/* Informative TSPU / Protocol Distinction Banner */}
+                  {isTspuFiltered && (
+                    <div className="text-xs text-amber-200/95 font-sans mb-4 bg-amber-950/40 p-3 rounded-xl border border-amber-600/40 flex items-start space-x-2.5 shadow-inner">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="font-bold text-amber-300">
+                          Дифференциация протоколов: ТСПУ фильтрует веб-порт TCP
+                        </div>
+                        <div className="text-[#C2CCD0] leading-relaxed">
+                          Прямой веб-порт TCP (:443/HTTP) не отвечает из РФ через физический интерфейс провайдера. 
+                          <strong className="text-emerald-400 font-semibold"> VPN-трафик по UDP не затронут</strong>: протоколы AmneziaWG и Hysteria 2 используют независимые замаскированные UDP-пакеты с обфускацией.
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* Checks Table / Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 font-mono text-xs">
+                    {probe.checks.map((check, cIdx) => {
+                      const isDns = check.kind === 'dns';
+                      const isIcmp = check.kind.endsWith('_icmp');
+                      const isTcp = check.kind.endsWith('_tcp') || check.kind === 'tcp';
+                      const isUdp = check.kind.includes('udp');
+
+                      const protoTag = isDns
+                        ? { label: 'DNS', cls: 'bg-sky-950/80 text-sky-400 border-sky-800/60' }
+                        : isIcmp
+                        ? { label: 'ICMP', cls: 'bg-cyan-950/80 text-cyan-400 border-cyan-800/60' }
+                        : isTcp
+                        ? { label: 'TCP Веб', cls: 'bg-amber-950/80 text-amber-400 border-amber-800/60' }
+                        : isUdp
+                        ? { label: 'UDP VPN', cls: 'bg-emerald-950/80 text-emerald-400 border-emerald-800/60' }
+                        : { label: 'OTHER', cls: 'bg-slate-950/80 text-slate-400 border-slate-800/60' };
+
+                      const checkTitle = isDns
+                        ? 'DNS Резолвинг'
+                        : check.kind === 'ip_icmp'
+                        ? 'Ping IP (ICMP)'
+                        : check.kind === 'domain_icmp'
+                        ? 'Ping Host (ICMP)'
+                        : check.kind === 'ip_tcp'
+                        ? 'TCP Handshake (IP)'
+                        : isTcp
+                        ? 'TCP Handshake (Host)'
+                        : check.kind === 'udp_awg'
+                        ? 'UDP AWG Порт'
+                        : check.kind;
+
+                      return (
+                        <div
+                          key={cIdx}
+                          className={`p-3 rounded-xl border flex flex-col justify-between ${
+                            check.ok
+                              ? 'bg-[#0A1D26]/70 border-[#1C3945]'
+                              : 'bg-rose-950/30 border-rose-800/50'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5 gap-1">
+                              <div className="flex items-center space-x-1.5 truncate">
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded border font-bold ${protoTag.cls}`}>
+                                  {protoTag.label}
+                                </span>
+                                <span className="font-bold text-[#F2F0E8] uppercase tracking-wider text-[11px] truncate">
+                                  {checkTitle}
+                                </span>
+                              </div>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                                check.ok ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400'
+                              }`}>
+                                {check.ok ? 'PASS' : 'FAIL'}
+                              </span>
+                            </div>
+                            <div className="text-[#A8B4B7] text-[11px] break-all truncate" title={check.target}>
+                              Цель: {check.target}
+                            </div>
+                          </div>
+
+                          <div className="mt-2 pt-1.5 border-t border-[#1C3945]/50 flex justify-between items-center text-[11px]">
+                            <span className="text-[#718187]">Задержка:</span>
+                            <span className={check.ok ? 'text-[#D9B96E] font-bold' : 'text-rose-400'}>
+                              {check.ok
+                                ? `${check.latency_ms} ms`
+                                : isTcp && (check.error?.includes('timeout') || check.error?.includes('timed out'))
+                                ? 'Блок ТСПУ / Таймаут'
+                                : (check.error || 'Ошибка')}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="bg-[#06141B]/60 border border-[#1C3945] rounded-2xl p-8 text-center space-y-2">
@@ -757,14 +814,14 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
         )}
 
         <div className="mt-5 pt-4 border-t border-[#1C3945]/70 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-sans">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-sans">
             <div className="bg-[#06141B] p-3 rounded-xl border border-[#1C3945]/70">
               <div className="font-bold text-[#F2F0E8] flex items-center space-x-1.5 mb-1">
                 <span>🇷🇺</span>
                 <span>Зонд M0 (Москва)</span>
               </div>
               <p className="text-[#A8B4B7] text-[11px] leading-relaxed">
-                Проверяет маршрут <strong>изнутри РФ</strong> через физический сетевой интерфейс. Успех (PASS) подтверждает, что IP и порты сервера не заблокированы ТСПУ на магистралях РФ.
+                Проверяет маршрут <strong>изнутри РФ</strong> через физический сетевой интерфейс. Успех (PASS) подтверждает доступность хоста в сети оператора.
               </p>
             </div>
 
@@ -774,7 +831,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                 <span>Зонд S0 (Зарубеж)</span>
               </div>
               <p className="text-[#A8B4B7] text-[11px] leading-relaxed">
-                Контрольная точка в дата-центре Европы. Позволяет точно отличить аварию у хостинг-провайдера от точечной блокировки в РФ (если S0 доступен, а M0 нет — это фильтрация ТСПУ).
+                Контрольная точка в европейском дата-центре. Позволяет отличить аварию у хостера от фильтрации ТСПУ в РФ.
               </p>
             </div>
 
@@ -784,7 +841,17 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                 <span>Защита от DPI</span>
               </div>
               <p className="text-[#A8B4B7] text-[11px] leading-relaxed">
-                Клиентские пакеты AmneziaWG маскируются пресетом мусорных данных (Jc/Jmin/Jmax) и заголовками H1–H4, делая трафик нераспознаваемым для сигнатурных анализаторов.
+                Пакеты AmneziaWG маскируются пресетом мусорных данных (Jc/Jmin) и заголовками H1–H4, оставаясь нераспознаваемыми для DPI.
+              </p>
+            </div>
+
+            <div className="bg-[#06141B] p-3 rounded-xl border border-[#1C3945]/70">
+              <div className="font-bold text-[#D9B96E] flex items-center space-x-1.5 mb-1">
+                <span>⚡</span>
+                <span>TCP vs UDP в РФ</span>
+              </div>
+              <p className="text-[#A8B4B7] text-[11px] leading-relaxed">
+                Блокировка веб-порта TCP (:443) на магистралях РФ <strong>не препятствует</strong> работе VPN, использующего замаскированный UDP.
               </p>
             </div>
           </div>
