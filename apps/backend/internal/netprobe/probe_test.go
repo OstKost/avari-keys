@@ -71,6 +71,9 @@ func TestCheckIncludesIPAndDomainAndDetectsDNSMismatch(t *testing.T) {
 	if mismatch.State != "yellow" || mismatch.Checks[0].OK {
 		t.Fatalf("DNS mismatch was not reported: %+v", mismatch)
 	}
+	if !strings.Contains(mismatch.Reason, "DNS не содержит") {
+		t.Fatalf("unexpected reason for DNS mismatch: %s", mismatch.Reason)
+	}
 }
 
 func TestInterfaceConfigurationNeverFallsBack(t *testing.T) {

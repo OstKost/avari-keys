@@ -1089,21 +1089,47 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
                       {isExpanded && (
                         <div className="mt-2 space-y-2 p-2.5 rounded-xl bg-[#06141B] border border-[#1C3945] text-xs font-mono text-[#A8B4B7]">
-                          {node.network_probes!.map((probe) => (
-                            <div key={probe.source} className="space-y-1">
-                              <NodeHealthBadge label={probe.interface ? `${probe.source} · ${probe.interface}` : probe.source} status={probe} />
-                              {probe.checks.map((check) => (
-                                <div key={check.kind} className="flex justify-between items-center text-[11px] text-[#718187]">
-                                  <span>{check.kind} ({check.target}):</span>
-                                  {check.ok ? (
-                                    <span className="text-emerald-400 font-bold">{check.latency_ms} ms</span>
-                                  ) : (
-                                    <span className="text-rose-400">{check.error || 'Ошибка'}</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ))}
+                          {node.network_probes!.map((probe) => {
+                            const hasTcpFailure = probe.checks.some((c) => (c.kind.endsWith('_tcp') || c.kind === 'tcp') && !c.ok);
+                            const hasIcmpSuccess = probe.checks.some((c) => c.kind.endsWith('_icmp') && c.ok);
+                            const isTspuFiltered = hasTcpFailure && hasIcmpSuccess;
+
+                            return (
+                              <div key={probe.source} className="space-y-1">
+                                <NodeHealthBadge label={probe.interface ? `${probe.source} · ${probe.interface}` : probe.source} status={probe} />
+                                {isTspuFiltered && (
+                                  <div className="text-[10px] text-amber-300/90 bg-amber-950/30 px-2 py-1 rounded border border-amber-800/40 leading-snug">
+                                    ⚠️ Веб-порт TCP фильтруется ТСПУ (UDP VPN работает)
+                                  </div>
+                                )}
+                                {probe.checks.map((check) => {
+                                  const isDns = check.kind === 'dns';
+                                  const isIcmp = check.kind.endsWith('_icmp');
+                                  const isTcp = check.kind.endsWith('_tcp') || check.kind === 'tcp';
+                                  const protoLabel = isDns ? 'DNS' : isIcmp ? 'ICMP' : isTcp ? 'TCP' : 'UDP';
+                                  return (
+                                    <div key={check.kind} className="flex justify-between items-center text-[11px] text-[#718187]">
+                                      <span className="flex items-center space-x-1.5 truncate pr-2">
+                                        <span className="text-[9px] px-1 py-0.2 rounded border font-mono font-bold bg-[#102833] text-[#A8B4B7] border-[#1C3945]">
+                                          {protoLabel}
+                                        </span>
+                                        <span className="truncate">{check.kind} ({check.target}):</span>
+                                      </span>
+                                      {check.ok ? (
+                                        <span className="text-emerald-400 font-bold shrink-0">{check.latency_ms} ms</span>
+                                      ) : (
+                                        <span className="text-rose-400 shrink-0 truncate max-w-[140px]" title={check.error}>
+                                          {isTcp && (check.error?.includes('timeout') || check.error?.includes('timed out'))
+                                            ? 'Блок ТСПУ'
+                                            : (check.error || 'Ошибка')}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

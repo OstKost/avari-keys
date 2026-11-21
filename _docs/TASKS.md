@@ -85,3 +85,5 @@
 - **[TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md)**: ✅ Нативный Go-контроллер Egress каскада, мультипроверка (IP, Telegram, ChatGPT) и интервал HealthCheck 3 мин.
 - **[TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md)**: ✅ Расширение мультипроверки Egress каскада (Grok, Meta) и кворум успешности 3 из 5.
 - **[TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md)**: ✅ Усиление Egress каскада: Fast Retry сбоев (30с), Safety Gate по IP, UI-детализация проверок и CI/CD автоматизация.
+- **[TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md)**: ✅ Разделение проверок TCP / UDP в сетевом мониторинге, аудит протоколов VPN и устойчивость маршрутизации Master.
+
