@@ -4,6 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
+| | | | | [TASK-063](./tasks/TASK-063-cascade-auto-failover.md) |
 | | | | | [TASK-062](./tasks/TASK-062-server-diagnostics-detail-page.md) |
 | | | | | [TASK-061](./tasks/TASK-061-cicd-slave-deploy-resilience.md) |
 | | | | | [TASK-060](./tasks/TASK-060-keys-compact-list-view.md) |
@@ -73,3 +74,4 @@
 - **[TASK-060](./tasks/TASK-060-keys-compact-list-view.md)**: ✅ Второй вариант отображения конфигураций — минималистичный список с плавным аккордеоном деталей и действий.
 - **[TASK-061](./tasks/TASK-061-cicd-slave-deploy-resilience.md)**: ✅ Оптимизация и повышение отказоустойчивости автоматического деплоя Slave-нод в CI/CD (таймауты, ретраи, устранение конфликта ControlMaster и Keyscan rate-limit).
 - **[TASK-062](./tasks/TASK-062-server-diagnostics-detail-page.md)**: ✅ Страница конкретного сервера (ноды кластера) с подробными результатами диагностики доступности, статусами сетевых проверок M0/S0, Egress-шлюзом, телеметрией пиров и быстрыми сервисными действиями.
+- **[TASK-063](./tasks/TASK-063-cascade-auto-failover.md)**: ✅ Отключаемое автоматическое переключение Egress-шлюзов каскада (Auto-Failover) при сбоях и блокировках (порог ошибок, Cooldown, список приоритетов и Telegram-алерты).

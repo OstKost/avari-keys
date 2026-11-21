@@ -12,6 +12,10 @@ import {
   Globe,
   Radio,
   Shield,
+  ShieldCheck,
+  ShieldAlert,
+  ArrowUp,
+  ArrowDown,
   Zap,
   Smartphone,
   Sparkles,
@@ -69,6 +73,8 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
   const [editIsMobileOptimized, setEditIsMobileOptimized] = useState(false);
   const [editIsBackup, setEditIsBackup] = useState(false);
   const [editHasHysteria, setEditHasHysteria] = useState(false);
+  const [editAutoFailoverEnabled, setEditAutoFailoverEnabled] = useState(false);
+  const [savingFailover, setSavingFailover] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
 
   // Fetch node detail
@@ -178,6 +184,77 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
     }
   };
 
+  const handleToggleAutoFailover = async () => {
+    if (!node || savingFailover) return;
+    const newEnabled = !node.auto_failover_enabled;
+    const currentPriority = node.failover_priority && node.failover_priority.length > 0
+      ? node.failover_priority
+      : (node.egress?.targets?.map((t) => t.interface) || ['awg1', 'awg4', 'awg3', 'awg5']);
+
+    setSavingFailover(true);
+    try {
+      const updated = await api.updateAdminNodeFailover(node.id, newEnabled, currentPriority);
+      setNode((prev) => prev ? {
+        ...prev,
+        auto_failover_enabled: updated.auto_failover_enabled,
+        failover_priority: updated.failover_priority,
+      } : null);
+      toast.success(
+        newEnabled
+          ? 'Auto-Failover включен: шлюзы будут переключаться при сбое'
+          : 'Auto-Failover отключен: маршрут фиксирован'
+      );
+      if (onNodeUpdated) onNodeUpdated();
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка обновления настроек Auto-Failover');
+    } finally {
+      setSavingFailover(false);
+    }
+  };
+
+  const handleMovePriority = async (iface: string, direction: 'up' | 'down') => {
+    if (!node || savingFailover) return;
+    const allInterfaces = node.egress?.targets?.map((t) => t.interface) || ['awg1', 'awg3', 'awg4', 'awg5'];
+    let priority = [...(node.failover_priority && node.failover_priority.length > 0 ? node.failover_priority : allInterfaces)];
+
+    for (const item of allInterfaces) {
+      if (!priority.includes(item)) {
+        priority.push(item);
+      }
+    }
+
+    const index = priority.indexOf(iface);
+    if (index === -1) return;
+
+    if (direction === 'up' && index > 0) {
+      const temp = priority[index - 1];
+      priority[index - 1] = priority[index];
+      priority[index] = temp;
+    } else if (direction === 'down' && index < priority.length - 1) {
+      const temp = priority[index + 1];
+      priority[index + 1] = priority[index];
+      priority[index] = temp;
+    } else {
+      return;
+    }
+
+    setSavingFailover(true);
+    try {
+      const updated = await api.updateAdminNodeFailover(node.id, Boolean(node.auto_failover_enabled), priority);
+      setNode((prev) => prev ? {
+        ...prev,
+        auto_failover_enabled: updated.auto_failover_enabled,
+        failover_priority: updated.failover_priority,
+      } : null);
+      toast.success('Приоритет Egress шлюзов обновлен');
+      if (onNodeUpdated) onNodeUpdated();
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка обновления приоритетов');
+    } finally {
+      setSavingFailover(false);
+    }
+  };
+
   // Open Edit Modal
   const handleOpenEdit = () => {
     if (!node) return;
@@ -190,6 +267,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
     setEditIsMobileOptimized(Boolean(node.is_mobile_optimized));
     setEditIsBackup(Boolean(node.is_backup));
     setEditHasHysteria(Boolean(node.has_hysteria));
+    setEditAutoFailoverEnabled(Boolean(node.auto_failover_enabled));
     setShowEditModal(true);
   };
 
@@ -210,6 +288,11 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
         countryCode: editCountryCode,
         providerUrl: editProviderUrl,
       });
+
+      if (editType === 'cascade' && editAutoFailoverEnabled !== node.auto_failover_enabled) {
+        await api.updateAdminNodeFailover(node.id, editAutoFailoverEnabled, node.failover_priority || []);
+      }
+
       toast.success(`Параметры сервера «${editName}» обновлены`);
       setShowEditModal(false);
       fetchDetail(true);
@@ -709,101 +792,228 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
       </div>
 
       {/* SECTION 3: Cascade Egress Routing (Only for Cascade Nodes) */}
-      {node.type === 'cascade' && (
-        <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-3xl p-6 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-            <div className="flex items-center space-x-2.5">
-              <ArrowRightLeft className="w-5 h-5 text-[#D9B96E]" />
-              <div>
-                <h4 className="font-serif font-bold text-lg text-[#F2F0E8]">
-                  Каскадная маршрутизация (Egress шлюз выхода)
-                </h4>
-                <p className="text-xs text-[#A8B4B7] font-sans mt-0.5">
-                  Трафик клиентов поступает на этот узел (M0 Ingress) и перенаправляется на зарубежный сервер
-                </p>
+      {node.type === 'cascade' && (() => {
+        const egressTargets = node.egress?.targets || [
+          { interface: 'awg1', node: 'S1', label: 'S1 Нидерланды (Амстердам)', endpoint: '192.0.2.20:51821', available: true },
+          { interface: 'awg3', node: 'S3', label: 'S3 Германия (Франкфурт)', endpoint: '192.0.2.22:51820', available: true },
+          { interface: 'awg4', node: 'S4', label: 'S4 Швеция (Стокгольм)', endpoint: '192.0.2.24:51820', available: true },
+          { interface: 'awg5', node: 'S5P', label: 'S5P Нидерланды PRO (Амстердам)', endpoint: '192.0.2.26:51820', available: true },
+        ];
+
+        const priorityList = node.failover_priority && node.failover_priority.length > 0
+          ? node.failover_priority
+          : egressTargets.map((t) => t.interface);
+
+        const sortedTargets = [...egressTargets].sort((a, b) => {
+          let indexA = priorityList.indexOf(a.interface);
+          let indexB = priorityList.indexOf(b.interface);
+          if (indexA === -1) indexA = 999;
+          if (indexB === -1) indexB = 999;
+          return indexA - indexB;
+        });
+
+        return (
+          <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-3xl p-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+              <div className="flex items-center space-x-2.5">
+                <ArrowRightLeft className="w-5 h-5 text-[#D9B96E]" />
+                <div>
+                  <h4 className="font-serif font-bold text-lg text-[#F2F0E8]">
+                    Каскадная маршрутизация (Egress шлюз выхода)
+                  </h4>
+                  <p className="text-xs text-[#A8B4B7] font-sans mt-0.5">
+                    Трафик клиентов поступает на этот узел (M0 Ingress) и перенаправляется на зарубежный сервер
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {node.egress?.active_interface && (
+                  <div className="flex items-center space-x-2 bg-[#06141B] px-3 py-1.5 rounded-xl border border-[#D9B96E]/30">
+                    <span className="text-xs font-mono text-[#A8B4B7]">Активный выход:</span>
+                    <span className="text-xs font-mono font-bold text-[#D9B96E]">
+                      {node.egress.targets?.find((t) => t.interface === node.egress?.active_interface)?.label || node.egress.active_interface}
+                    </span>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleToggleAutoFailover}
+                  disabled={savingFailover}
+                  title={node.auto_failover_enabled ? 'Нажмите для отключения автоматического переключения' : 'Нажмите для активации автоматического переключения'}
+                  className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition cursor-pointer disabled:opacity-50 ${
+                    node.auto_failover_enabled
+                      ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/40'
+                      : 'bg-[#06141B] text-[#718187] border-[#1C3945] hover:border-[#718187]/60 hover:text-[#A8B4B7]'
+                  }`}
+                >
+                  {node.auto_failover_enabled ? (
+                    <>
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>Auto-Failover: ВКЛ</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldAlert className="w-4 h-4 text-[#718187]" />
+                      <span>Auto-Failover: ВЫКЛ</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
-            {node.egress?.active_interface && (
-              <div className="flex items-center space-x-2 bg-[#06141B] px-3 py-1.5 rounded-xl border border-[#D9B96E]/30">
-                <span className="text-xs font-mono text-[#A8B4B7]">Активный выход:</span>
-                <span className="text-xs font-mono font-bold text-[#D9B96E]">
-                  {node.egress.targets?.find((t) => t.interface === node.egress?.active_interface)?.label || node.egress.active_interface}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Targets Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(node.egress?.targets || [
-              { interface: 'awg1', node: 'S1', label: 'S1 Нидерланды (Амстердам)', endpoint: '192.0.2.20:51821', available: true },
-              { interface: 'awg3', node: 'S3', label: 'S3 Германия (Франкфурт)', endpoint: '192.0.2.22:51820', available: true },
-              { interface: 'awg4', node: 'S4', label: 'S4 Швеция (Стокгольм)', endpoint: '192.0.2.24:51820', available: true },
-              { interface: 'awg5', node: 'S5P', label: 'S5P Нидерланды PRO (Амстердам)', endpoint: '192.0.2.26:51820', available: true },
-            ]).map((target) => {
-              const isActive = node.egress?.active_interface === target.interface;
-              return (
-                <div
-                  key={target.interface}
-                  className={`p-4 rounded-2xl border transition flex flex-col justify-between ${
-                    isActive
-                      ? 'bg-amber-950/20 border-[#D9B96E] shadow-lg shadow-[#D9B96E]/10'
-                      : 'bg-[#06141B]/70 border-[#1C3945] hover:border-[#1C3945]/90'
-                  }`}
-                >
+            {/* Status Banner */}
+            {node.auto_failover_enabled ? (
+              <div className={`mb-5 p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-sans ${
+                node.failover?.in_cooldown
+                  ? 'bg-amber-950/20 border-amber-600/40 text-amber-200'
+                  : (node.failover?.consecutive_failures || 0) > 0
+                  ? 'bg-rose-950/20 border-rose-600/40 text-rose-200'
+                  : 'bg-emerald-950/20 border-emerald-600/40 text-emerald-200'
+              }`}>
+                <div className="flex items-center space-x-2.5">
+                  {node.failover?.in_cooldown ? (
+                    <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                  ) : (node.failover?.consecutive_failures || 0) > 0 ? (
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  )}
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-serif font-bold text-sm text-[#F2F0E8]">
-                        {target.label}
-                      </span>
-                      {isActive && (
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600/40">
-                          Активен
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="space-y-1 text-xs font-mono text-[#A8B4B7] bg-[#0A1D26] p-2.5 rounded-xl border border-[#1C3945]/50">
-                      <div className="flex justify-between">
-                        <span className="text-[#718187]">Интерфейс:</span>
-                        <span className="text-[#D9B96E]">{target.interface}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#718187]">Шлюз:</span>
-                        <span className="text-[#F2F0E8]">{target.node}</span>
-                      </div>
-                      <div className="flex justify-between truncate" title={target.endpoint}>
-                        <span className="text-[#718187]">Эндпоинт:</span>
-                        <span className="text-[#A8B4B7] truncate max-w-[120px]">{target.endpoint}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-[#1C3945]/50 flex items-center justify-between">
-                    <span className={`text-[11px] font-mono flex items-center space-x-1 ${
-                      target.available ? 'text-emerald-400' : 'text-rose-400'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${target.available ? 'bg-emerald-400' : 'bg-rose-500'}`} />
-                      <span>{target.available ? 'Доступен' : 'Недоступен'}</span>
+                    <span className="font-semibold">
+                      {node.failover?.in_cooldown
+                        ? 'Режим охлаждения (Cooldown) активен:'
+                        : (node.failover?.consecutive_failures || 0) > 0
+                        ? `Внимание: сбой активного шлюза (${node.failover?.consecutive_failures}/2):`
+                        : 'Автоматическая защита активна:'}
+                    </span>{' '}
+                    <span className="opacity-90">
+                      {node.failover?.in_cooldown
+                        ? 'Автопереключение временно приостановлено на 5 минут для стабилизации сессий и защиты от флаппинга.'
+                        : (node.failover?.consecutive_failures || 0) > 0
+                        ? 'Следующий неудачный опрос вызовет автоматический переход на первый доступный резервный шлюз.'
+                        : 'При 2 последовательных сбоях активного направления трафик автоматически переключится на резервный шлюз по порядку приоритета.'}
                     </span>
-
-                    {!isActive && target.available && (
-                      <button
-                        onClick={() => handleSwitchEgress(target.interface)}
-                        disabled={switchingEgress}
-                        className="text-xs font-mono font-bold text-[#D9B96E] hover:text-[#F0D48D] uppercase tracking-wider px-2.5 py-1 rounded-lg bg-[#102833] hover:bg-[#1C3945] border border-[#1C3945] transition cursor-pointer disabled:opacity-50"
-                      >
-                        {switchingEgress ? '...' : 'Выбрать'}
-                      </button>
-                    )}
                   </div>
                 </div>
-              );
-            })}
+                <div className="shrink-0 text-left sm:text-right font-mono text-[11px] opacity-80 pl-6 sm:pl-0">
+                  Порог: 2 сбоя | Cooldown: 5 мин
+                </div>
+              </div>
+            ) : (
+              <div className="mb-5 p-3 rounded-2xl border border-[#1C3945] bg-[#06141B]/60 text-xs font-sans text-[#718187] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <Shield className="w-4 h-4 text-[#718187] shrink-0" />
+                  <span>
+                    Auto-Failover отключен: каскад зафиксирован на выбранном шлюзе. В случае блокировки или сбоя за рубежом трафик не будет перенаправлен автоматически.
+                  </span>
+                </div>
+                <button
+                  onClick={handleToggleAutoFailover}
+                  disabled={savingFailover}
+                  className="shrink-0 text-[11px] font-mono text-[#D9B96E] hover:underline cursor-pointer pl-6 sm:pl-0"
+                >
+                  Включить защиту
+                </button>
+              </div>
+            )}
+
+            {/* Targets Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {sortedTargets.map((target, idx) => {
+                const isActive = node.egress?.active_interface === target.interface;
+                const priorityRank = idx + 1;
+                return (
+                  <div
+                    key={target.interface}
+                    className={`p-4 rounded-2xl border transition flex flex-col justify-between ${
+                      isActive
+                        ? 'bg-amber-950/20 border-[#D9B96E] shadow-lg shadow-[#D9B96E]/10'
+                        : 'bg-[#06141B]/70 border-[#1C3945] hover:border-[#1C3945]/90'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-1.5 overflow-hidden">
+                          <span
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#102833] text-[#A8B4B7] border border-[#1C3945] shrink-0"
+                            title="Приоритет в цепочке автопереключения"
+                          >
+                            #{priorityRank}
+                          </span>
+                          <span className="font-serif font-bold text-sm text-[#F2F0E8] truncate" title={target.label}>
+                            {target.label}
+                          </span>
+                        </div>
+                        {isActive && (
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600/40 shrink-0">
+                            Активен
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1 text-xs font-mono text-[#A8B4B7] bg-[#0A1D26] p-2.5 rounded-xl border border-[#1C3945]/50">
+                        <div className="flex justify-between">
+                          <span className="text-[#718187]">Интерфейс:</span>
+                          <span className="text-[#D9B96E]">{target.interface}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#718187]">Шлюз:</span>
+                          <span className="text-[#F2F0E8]">{target.node}</span>
+                        </div>
+                        <div className="flex justify-between truncate" title={target.endpoint}>
+                          <span className="text-[#718187]">Эндпоинт:</span>
+                          <span className="text-[#A8B4B7] truncate max-w-[120px]">{target.endpoint}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-[#1C3945]/50 flex items-center justify-between gap-2">
+                      <span className={`text-[11px] font-mono flex items-center space-x-1 ${
+                        target.available ? 'text-emerald-400' : 'text-rose-400'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${target.available ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                        <span>{target.available ? 'Доступен' : 'Недоступен'}</span>
+                      </span>
+
+                      <div className="flex items-center space-x-1.5">
+                        <div className="flex items-center space-x-0.5">
+                          <button
+                            onClick={() => handleMovePriority(target.interface, 'up')}
+                            disabled={idx === 0 || savingFailover}
+                            title="Повысить приоритет в очереди"
+                            className="p-1 rounded bg-[#102833] hover:bg-[#1C3945] text-[#A8B4B7] hover:text-[#D9B96E] border border-[#1C3945] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition"
+                          >
+                            <ArrowUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => handleMovePriority(target.interface, 'down')}
+                            disabled={idx === sortedTargets.length - 1 || savingFailover}
+                            title="Понизить приоритет в очереди"
+                            className="p-1 rounded bg-[#102833] hover:bg-[#1C3945] text-[#A8B4B7] hover:text-[#D9B96E] border border-[#1C3945] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition"
+                          >
+                            <ArrowDown className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        {!isActive && target.available && (
+                          <button
+                            onClick={() => handleSwitchEgress(target.interface)}
+                            disabled={switchingEgress}
+                            className="text-xs font-mono font-bold text-[#D9B96E] hover:text-[#F0D48D] uppercase tracking-wider px-2.5 py-1 rounded-lg bg-[#102833] hover:bg-[#1C3945] border border-[#1C3945] transition cursor-pointer disabled:opacity-50"
+                          >
+                            {switchingEgress ? '...' : 'Выбрать'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* SECTION 4: Traffic & Connected Peers Telemetry */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1129,6 +1339,18 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                   />
                   <span className="text-[#F2F0E8]">Поддерживать протокол Hysteria 2</span>
                 </label>
+
+                {editType === 'cascade' && (
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editAutoFailoverEnabled}
+                      onChange={(e) => setEditAutoFailoverEnabled(e.target.checked)}
+                      className="rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945]"
+                    />
+                    <span className="text-[#F2F0E8]">Включить автопереключение выходов каскада (Auto-Failover)</span>
+                  </label>
+                )}
               </div>
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-[#1C3945]">

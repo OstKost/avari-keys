@@ -159,6 +159,11 @@ let mockLogs: AuditLog[] = [
 
 let mockCurrentUser: User = mockUsers[0];
 
+let mockEgressActive: Record<number, string> = {
+  1: 'awg1',
+  2: 'awg1',
+};
+
 let mockNodes: AdminNode[] = [
   {
     id: 1,
@@ -170,6 +175,8 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: true,
     is_backup: false,
     has_hysteria: false,
+    auto_failover_enabled: true,
+    failover_priority: ['awg1', 'awg4', 'awg3', 'awg5'],
     is_active: true,
     online: true,
     latency_ms: 24,
@@ -185,6 +192,8 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: true,
     is_backup: true,
     has_hysteria: false,
+    auto_failover_enabled: false,
+    failover_priority: ['awg1', 'awg3', 'awg4', 'awg5'],
     is_active: true,
     online: true,
     latency_ms: 31,
@@ -902,7 +911,7 @@ bandwidth:
         total_tx: 29810450000,
       },
       egress: node.type === 'cascade' ? {
-        active_interface: 'awg1',
+        active_interface: mockEgressActive[node.id] || 'awg1',
         available_interfaces: ['awg1', 'awg3', 'awg4', 'awg5'],
         targets: [
           { interface: 'awg1', node: 'S1', label: 'S1 Нидерланды (Амстердам)', endpoint: '192.0.2.20:51821', available: true },
@@ -910,6 +919,11 @@ bandwidth:
           { interface: 'awg4', node: 'S4', label: 'S4 Швеция (Стокгольм)', endpoint: '192.0.2.24:51820', available: true },
           { interface: 'awg5', node: 'S5P', label: 'S5P Нидерланды PRO (Амстердам)', endpoint: '192.0.2.26:51820', available: true },
         ],
+      } : undefined,
+      failover: node.type === 'cascade' ? {
+        in_cooldown: false,
+        consecutive_failures: 0,
+        failure_threshold: 2,
       } : undefined,
       client_keys: matchedKeys,
     };
@@ -1024,12 +1038,28 @@ bandwidth:
     };
   },
 
-  async switchNodeEgress(_id: number, targetInterface: string): Promise<{ success: boolean; message: string }> {
+  async switchNodeEgress(id: number, targetInterface: string): Promise<{ success: boolean; message: string }> {
     await new Promise((resolve) => setTimeout(resolve, 400));
+    mockEgressActive[id] = targetInterface;
     return {
       success: true,
       message: `Шлюз выхода каскада переключен на ${targetInterface}`,
     };
+  },
+
+  async updateAdminNodeFailover(
+    id: number,
+    autoFailoverEnabled: boolean,
+    failoverPriority: string[]
+  ): Promise<AdminNode> {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const node = mockNodes.find((n) => n.id === id);
+    if (!node) {
+      throw new Error(`Node #${id} not found`);
+    }
+    node.auto_failover_enabled = autoFailoverEnabled;
+    node.failover_priority = [...failoverPriority];
+    return { ...node };
   },
 
   async getAdminKeys(params?: {

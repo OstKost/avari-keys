@@ -2,6 +2,7 @@ package monitor_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/monitor"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/storage"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/telegram"
@@ -278,5 +280,121 @@ func TestTelemetryCollectorAndDeltaEngine(t *testing.T) {
 	}
 	if dash.TotalKeys != 1 || dash.OnlineNodes != 1 || dash.ActiveDevicesOnline != 1 {
 		t.Fatalf("unexpected dashboard metrics: %+v", dash)
+	}
+}
+
+func TestCascadeAutoFailover(t *testing.T) {
+	var currentActive atomic.Value
+	currentActive.Store("awg1")
+
+	var switchCalls atomic.Int32
+	var lastSwitchedTo atomic.Value
+	lastSwitchedTo.Store("")
+
+	var auditAction atomic.Value
+	auditAction.Store("")
+
+	mockSlave := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/health", "/api/v1/health":
+			_, _ = w.Write([]byte(`{"status":"ok","service":"avari-slave","version":"v1.2.1"}`))
+			return
+		case "/api/v1/stats":
+			_, _ = w.Write([]byte(`{"total_rx":100,"total_tx":100,"peers":[]}`))
+			return
+		case "/api/v1/cascade/egress":
+			if r.Method == http.MethodPost {
+				switchCalls.Add(1)
+				var req struct {
+					Interface string `json:"interface"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				currentActive.Store(req.Interface)
+				lastSwitchedTo.Store(req.Interface)
+				_, _ = w.Write([]byte(`{"success":true}`))
+				return
+			}
+			active := currentActive.Load().(string)
+			// When active is awg1, it is DOWN (available=false).
+			// awg4 is healthy (available=true).
+			resp := fmt.Sprintf(`{
+				"active_interface": "%s",
+				"available_interfaces": ["awg1", "awg4"],
+				"targets": [
+					{"interface":"awg1","node":"S1","label":"S1 Амстердам","available":false,"reason":"packet loss 100%%"},
+					{"interface":"awg4","node":"S4","label":"S4 Стокгольм","available":true}
+				]
+			}`, active)
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockSlave.Close()
+
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	node, err := store.CreateNode(ctx, "Cascade Failover Test", "cascade", "NLD", "https://aeza.net", mockSlave.URL, "key123", true, false, false)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	// Enable AutoFailover with priority ["awg4", "awg1"]
+	_, err = store.UpdateNodeFailoverSettings(ctx, node.ID, true, []string{"awg4", "awg1"})
+	if err != nil {
+		t.Fatalf("failed to update failover settings: %v", err)
+	}
+
+	checker := monitor.NewHealthChecker(monitor.Config{
+		Storage:  store,
+		Interval: 50 * time.Millisecond,
+		Timeout:  100 * time.Millisecond,
+		LogActivity: func(category models.AuditLogCategory, action string, details string) {
+			if action == "admin_cascade_auto_failover" {
+				auditAction.Store(action)
+			}
+		},
+	})
+
+	// Round 1: Active is awg1 (failing). First failure cycle -> fail count = 1.
+	checker.CollectTelemetry(ctx)
+	status1 := checker.GetFailoverStatus(node.ID)
+	if status1.ConsecutiveFailures != 1 {
+		t.Fatalf("expected 1 consecutive failure, got %d", status1.ConsecutiveFailures)
+	}
+	if switchCalls.Load() != 0 {
+		t.Fatalf("expected 0 switch calls on first failure, got %d", switchCalls.Load())
+	}
+	if currentActive.Load().(string) != "awg1" {
+		t.Fatalf("expected active interface to remain awg1, got %s", currentActive.Load().(string))
+	}
+
+	// Round 2: Active is still awg1 (failing). Second failure cycle -> fail count = 2 -> AUTO-FAILOVER TRIGGERS!
+	checker.CollectTelemetry(ctx)
+	if switchCalls.Load() != 1 {
+		t.Fatalf("expected 1 switch call after 2 consecutive failures, got %d", switchCalls.Load())
+	}
+	if lastSwitchedTo.Load().(string) != "awg4" {
+		t.Fatalf("expected switched to awg4, got %s", lastSwitchedTo.Load().(string))
+	}
+	if currentActive.Load().(string) != "awg4" {
+		t.Fatalf("expected active interface to be awg4, got %s", currentActive.Load().(string))
+	}
+
+	// Verify cooldown is active and failures reset
+	status2 := checker.GetFailoverStatus(node.ID)
+	if status2.ConsecutiveFailures != 0 {
+		t.Fatalf("expected failures reset to 0, got %d", status2.ConsecutiveFailures)
+	}
+	if !status2.InCooldown {
+		t.Fatalf("expected in_cooldown to be true after failover")
+	}
+
+	// Verify audit activity logged
+	if auditAction.Load().(string) != "admin_cascade_auto_failover" {
+		t.Fatalf("expected audit action admin_cascade_auto_failover, got '%s'", auditAction.Load().(string))
 	}
 }

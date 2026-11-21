@@ -390,6 +390,22 @@ const realApi = {
     return handleResponse<{ success: boolean; message: string }>(res);
   },
 
+  async updateAdminNodeFailover(
+    id: number,
+    autoFailoverEnabled: boolean,
+    failoverPriority: string[]
+  ): Promise<AdminNode> {
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/failover`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        auto_failover_enabled: autoFailoverEnabled,
+        failover_priority: failoverPriority,
+      }),
+    });
+    return handleResponse<AdminNode>(res);
+  },
+
   async getAdminKeys(params?: {
     search?: string;
     nodeId?: number;

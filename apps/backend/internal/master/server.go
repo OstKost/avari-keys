@@ -218,6 +218,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/restore", auth.RequireAdmin(s.handleAdminRestoreNode))
 	s.mux.HandleFunc("GET /api/v1/admin/nodes/{id}/egress", auth.RequireAdmin(s.handleAdminGetNodeEgress))
 	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/egress", auth.RequireAdmin(s.handleAdminSwitchNodeEgress))
+	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/failover", auth.RequireAdmin(s.handleAdminUpdateNodeFailover))
 
 	s.mux.HandleFunc("GET /api/v1/admin/keys", auth.RequireAdmin(s.handleAdminListAllKeys))
 
@@ -1123,6 +1124,10 @@ func (s *Server) handleAdminSwitchNodeEgress(w http.ResponseWriter, r *http.Requ
 
 	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_switch_egress", fmt.Sprintf("Переключен шлюз выхода каскада для узла «%s» (ID #%d) на интерфейс %s", node.Name, node.ID, req.Interface))
 
+	if s.healthChecker != nil {
+		s.healthChecker.ResetFailover(node.ID)
+	}
+
 	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
 		Success: true,
 		Message: fmt.Sprintf("Cascade egress on node '%s' switched to %s", node.Name, req.Interface),
@@ -1219,6 +1224,22 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.AutoFailoverEnabled != nil || req.FailoverPriority != nil {
+		autoVal := node.AutoFailoverEnabled
+		if req.AutoFailoverEnabled != nil {
+			autoVal = *req.AutoFailoverEnabled
+		}
+		prioVal := node.FailoverPriority
+		if req.FailoverPriority != nil {
+			prioVal = req.FailoverPriority
+		}
+		node, err = s.storage.UpdateNodeFailoverSettings(r.Context(), id, autoVal, prioVal)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
 	backupTag := ""
 	if node.IsBackup {
 		backupTag = " [Запасной/Backup]"
@@ -1240,6 +1261,47 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 	s.invalidateDashboardCache()
 
 	s.writeJSON(w, http.StatusOK, node)
+}
+
+func (s *Server) handleAdminUpdateNodeFailover(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	var req models.NodeFailoverSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	node, err := s.storage.GetNodeByID(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
+		return
+	}
+	if node.Type != "cascade" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Auto-Failover is only applicable to cascade nodes"})
+		return
+	}
+
+	updatedNode, err := s.storage.UpdateNodeFailoverSettings(r.Context(), id, req.AutoFailoverEnabled, req.FailoverPriority)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	stateStr := "отключено"
+	if req.AutoFailoverEnabled {
+		stateStr = fmt.Sprintf("включено (приоритеты: %v)", req.FailoverPriority)
+	}
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_cascade_failover_settings",
+		fmt.Sprintf("Обновлены настройки Auto-Failover для каскада «%s» (#%d): %s", node.Name, node.ID, stateStr))
+
+	s.writeJSON(w, http.StatusOK, updatedNode)
 }
 
 func (s *Server) handleAdminDeleteNode(w http.ResponseWriter, r *http.Request) {
