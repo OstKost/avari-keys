@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Key, Server, Users, LogOut, Plus, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send } from 'lucide-react';
+import { Key, Server, Users, LogOut, Plus, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send, Smartphone } from 'lucide-react';
 import { api, isMockMode, setMockMode } from './api/client';
 import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem, TelegramProxyInfo, ProtocolType } from './types';
 import { AuthModal } from './components/AuthModal';
@@ -25,26 +25,31 @@ import { ClientKeysView } from './components/ClientKeysView';
 import { Tooltip } from './components/Tooltip';
 import { FloatingMascot, MascotFaqModal, MASCOT_IMAGE_SRC } from './components/MascotAssistant';
 import { OnboardingTour } from './components/OnboardingTour';
-import { TabType, ADMIN_TABS, resolveTabFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
+import { ServerDetailPage } from './components/ServerDetailPage';
+import { TelegramMiniApp } from './components/TelegramMiniApp';
+import { TabType, ADMIN_TABS, resolveRouteFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
 
 export default function App() {
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>(() => resolveTabFromUrl());
+  const initialRoute = resolveRouteFromUrl();
+  const [activeTab, setActiveTab] = useState<TabType>(() => initialRoute.tab);
+  const [selectedNodeId, setSelectedNodeId] = useState<number | null>(() => initialRoute.nodeId || null);
 
-  const navigateToTab = (tab: TabType, replace = false) => {
+  const navigateToTab = (tab: TabType, replace = false, nodeId: number | null = null) => {
     let target = tab;
     if (ADMIN_TABS.includes(target) && currentUser && currentUser.role !== 'admin') {
       target = 'keys';
     }
     setActiveTab(target);
+    setSelectedNodeId(nodeId);
     try {
-      const targetPath = tabToPath(target);
+      const targetPath = tabToPath(target, nodeId);
       if (replace) {
-        window.history.replaceState({ tab: target }, '', targetPath);
+        window.history.replaceState({ tab: target, nodeId }, '', targetPath);
       } else if (window.location.pathname !== targetPath) {
-        window.history.pushState({ tab: target }, '', targetPath);
+        window.history.pushState({ tab: target, nodeId }, '', targetPath);
       }
       localStorage.setItem('avari_active_tab', target);
     } catch {
@@ -115,9 +120,10 @@ export default function App() {
   // Synchronize route and title with browser history (popstate)
   useEffect(() => {
     const handlePopState = () => {
-      const resolved = resolveTabFromUrl(currentUser?.role);
-      setActiveTab(resolved);
-      updateDocumentTitle(resolved);
+      const resolved = resolveRouteFromUrl(currentUser?.role);
+      setActiveTab(resolved.tab);
+      setSelectedNodeId(resolved.nodeId || null);
+      updateDocumentTitle(resolved.tab);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -127,13 +133,14 @@ export default function App() {
   // Synchronize route and canonical URL when user logs in or profile changes
   useEffect(() => {
     if (currentUser) {
-      const resolved = resolveTabFromUrl(currentUser.role);
-      setActiveTab(resolved);
-      updateDocumentTitle(resolved);
-      const canonical = tabToPath(resolved);
+      const resolved = resolveRouteFromUrl(currentUser.role);
+      setActiveTab(resolved.tab);
+      setSelectedNodeId(resolved.nodeId || null);
+      updateDocumentTitle(resolved.tab);
+      const canonical = tabToPath(resolved.tab, resolved.nodeId);
       if (window.location.pathname !== canonical && window.location.pathname !== '/') {
         try {
-          window.history.replaceState({ tab: resolved }, '', canonical);
+          window.history.replaceState({ tab: resolved.tab, nodeId: resolved.nodeId }, '', canonical);
         } catch {}
       }
     }
@@ -307,6 +314,10 @@ export default function App() {
       setDeletingKey(false);
     }
   };
+
+  if (activeTab === 'miniapp') {
+    return <TelegramMiniApp onExitToWeb={() => navigateToTab('keys')} />;
+  }
 
   if (authLoading) {
     return <Loader size="fullscreen" text="Загрузка Avari Keys..." />;
@@ -529,6 +540,15 @@ export default function App() {
               >
                 <Settings className="w-4 h-4" />
                 <span>Настройки</span>
+              </button>
+
+              <button
+                onClick={() => navigateToTab('miniapp')}
+                title="Открыть Telegram Mini App"
+                className="flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 text-[#A8B4B7] hover:text-[#F2F0E8] bg-[#0A1D26] hover:bg-[#102833] border border-[#1C3945]"
+              >
+                <Smartphone className="w-4 h-4 text-cyan-400" />
+                <span>Telegram App</span>
               </button>
             </div>
           </div>
@@ -779,7 +799,7 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <NetworkDashboard
               currentUser={currentUser}
-              onNavigateTab={(tab) => navigateToTab(tab)}
+              onNavigateTab={(tab, nodeId) => navigateToTab(tab, false, nodeId)}
             />
           )}
           {activeTab === 'news' && (
@@ -788,7 +808,17 @@ export default function App() {
               onNewsRead={() => setHasUnreadNews(false)}
             />
           )}
-          {activeTab === 'nodes' && <AdminNodes />}
+          {activeTab === 'nodes' && (
+            selectedNodeId ? (
+              <ServerDetailPage
+                nodeId={selectedNodeId}
+                onBack={() => navigateToTab('nodes', false, null)}
+                onNodeUpdated={() => loadDashboardData(true)}
+              />
+            ) : (
+              <AdminNodes onSelectNode={(id) => navigateToTab('nodes', false, id)} />
+            )
+          )}
           {activeTab === 'users' && <AdminUsers />}
           {activeTab === 'all-keys' && <AdminAllKeys />}
           {activeTab === 'logs' && <AdminAuditLogs />}

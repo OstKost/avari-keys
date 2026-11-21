@@ -34,18 +34,20 @@ type UserPublic struct {
 
 // Node represents a managed Slave API node (Cascade or Direct).
 type Node struct {
-	ID                int64     `json:"id"`
-	Name              string    `json:"name"`
-	Type              string    `json:"type"`         // "cascade" or "direct"
-	CountryCode       string    `json:"country_code"` // e.g. "NLD", "DEU", "USA"
-	ProviderURL       string    `json:"provider_url"` // e.g. "https://aeza.net"
-	APIURL            string    `json:"api_url"`
-	APIKey            string    `json:"-"` // Hidden in public responses
-	IsMobileOptimized bool      `json:"is_mobile_optimized"`
-	IsBackup          bool      `json:"is_backup"`
-	HasHysteria       bool      `json:"has_hysteria"`
-	IsActive          bool      `json:"is_active"`
-	CreatedAt         time.Time `json:"created_at"`
+	ID                  int64     `json:"id"`
+	Name                string    `json:"name"`
+	Type                string    `json:"type"`         // "cascade" or "direct"
+	CountryCode         string    `json:"country_code"` // e.g. "NLD", "DEU", "USA"
+	ProviderURL         string    `json:"provider_url"` // e.g. "https://aeza.net"
+	APIURL              string    `json:"api_url"`
+	APIKey              string    `json:"-"` // Hidden in public responses
+	IsMobileOptimized   bool      `json:"is_mobile_optimized"`
+	IsBackup            bool      `json:"is_backup"`
+	HasHysteria         bool      `json:"has_hysteria"`
+	AutoFailoverEnabled bool      `json:"auto_failover_enabled"`
+	FailoverPriority    []string  `json:"failover_priority"`
+	IsActive            bool      `json:"is_active"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // NodePublic represents safe node info for regular users.
@@ -69,6 +71,24 @@ type NodeWithStatus struct {
 	ServerStatus  StatusDetail   `json:"server_status"`
 	NetworkStatus StatusDetail   `json:"network_status"`
 	NetworkProbes []NetworkProbe `json:"network_probes"`
+}
+
+// FailoverRuntimeStatus represents live auto-failover tracking state.
+type FailoverRuntimeStatus struct {
+	InCooldown          bool       `json:"in_cooldown"`
+	CooldownUntil       *time.Time `json:"cooldown_until,omitempty"`
+	ConsecutiveFailures int        `json:"consecutive_failures"`
+	FailureThreshold    int        `json:"failure_threshold"`
+}
+
+// NodeDetailResponse represents full server diagnostics and runtime status.
+type NodeDetailResponse struct {
+	NodeWithStatus
+	Health     *HealthResponse        `json:"health,omitempty"`
+	Stats      *StatsSummaryResponse  `json:"stats,omitempty"`
+	Egress     *EgressStatusResponse  `json:"egress,omitempty"`
+	Failover   *FailoverRuntimeStatus `json:"failover,omitempty"`
+	ClientKeys []ClientConfig         `json:"client_keys,omitempty"`
 }
 
 // ClientConfig represents a user's VPN key reference in the database and audit logs.
@@ -144,27 +164,36 @@ type CreateKeyRequest struct {
 }
 
 type AddNodeRequest struct {
-	Name              string `json:"name"`
-	Type              string `json:"type"` // "cascade" or "direct"
-	CountryCode       string `json:"country_code"`
-	ProviderURL       string `json:"provider_url"`
-	APIURL            string `json:"api_url"`
-	APIKey            string `json:"api_key"`
-	IsMobileOptimized bool   `json:"is_mobile_optimized"`
-	IsBackup          bool   `json:"is_backup"`
-	HasHysteria       bool   `json:"has_hysteria"`
+	Name                string   `json:"name"`
+	Type                string   `json:"type"` // "cascade" or "direct"
+	CountryCode         string   `json:"country_code"`
+	ProviderURL         string   `json:"provider_url"`
+	APIURL              string   `json:"api_url"`
+	APIKey              string   `json:"api_key"`
+	IsMobileOptimized   bool     `json:"is_mobile_optimized"`
+	IsBackup            bool     `json:"is_backup"`
+	HasHysteria         bool     `json:"has_hysteria"`
+	AutoFailoverEnabled bool     `json:"auto_failover_enabled"`
+	FailoverPriority    []string `json:"failover_priority"`
 }
 
 type UpdateNodeRequest struct {
-	Name              string `json:"name"`
-	Type              string `json:"type"`
-	CountryCode       string `json:"country_code"`
-	ProviderURL       string `json:"provider_url"`
-	APIURL            string `json:"api_url"`
-	APIKey            string `json:"api_key,omitempty"` // If empty, keep existing key
-	IsMobileOptimized bool   `json:"is_mobile_optimized"`
-	IsBackup          bool   `json:"is_backup"`
-	HasHysteria       bool   `json:"has_hysteria"`
+	Name                string   `json:"name"`
+	Type                string   `json:"type"`
+	CountryCode         string   `json:"country_code"`
+	ProviderURL         string   `json:"provider_url"`
+	APIURL              string   `json:"api_url"`
+	APIKey              string   `json:"api_key,omitempty"` // If empty, keep existing key
+	IsMobileOptimized   bool     `json:"is_mobile_optimized"`
+	IsBackup            bool     `json:"is_backup"`
+	HasHysteria         bool     `json:"has_hysteria"`
+	AutoFailoverEnabled *bool    `json:"auto_failover_enabled,omitempty"`
+	FailoverPriority    []string `json:"failover_priority,omitempty"`
+}
+
+type NodeFailoverSettingsRequest struct {
+	AutoFailoverEnabled bool     `json:"auto_failover_enabled"`
+	FailoverPriority    []string `json:"failover_priority"`
 }
 
 type RestoreNodeRequest struct {
@@ -354,6 +383,7 @@ type TelegramSettings struct {
 	BotToken                 string `json:"bot_token"`
 	BotUsername              string `json:"bot_username"`
 	AdminSecret              string `json:"admin_secret"`
+	WebAppURL                string `json:"web_app_url"`
 	NotifyOnNodeDown         bool   `json:"notify_on_node_down"`
 	NotifyOnNodeRecover      bool   `json:"notify_on_node_recover"`
 	NotifyOnNewUser          bool   `json:"notify_on_new_user"`
@@ -388,6 +418,19 @@ type UserTelegramStatusResponse struct {
 	TelegramUsername string `json:"telegram_username,omitempty"`
 	AlertsEnabled    bool   `json:"alerts_enabled"`
 	DeepLink         string `json:"deep_link"`
+}
+
+// TelegramMiniAppAuthRequest contains Telegram WebApp initData string.
+type TelegramMiniAppAuthRequest struct {
+	InitData string `json:"init_data"`
+}
+
+// TelegramMiniAppAuthResponse represents authentication result for Telegram Mini App.
+type TelegramMiniAppAuthResponse struct {
+	Token    string     `json:"token"`
+	User     UserPublic `json:"user"`
+	IsAdmin  bool       `json:"is_admin"`
+	IsLinked bool       `json:"is_linked"`
 }
 
 // NewsCategory represents category classification for announcements.

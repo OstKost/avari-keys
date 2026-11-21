@@ -2,6 +2,7 @@ import {
   User,
   NodePublic,
   AdminNode,
+  NodeDetailResponse,
   ClientConfigSummary,
   ClientConfigDetail,
   PaginatedKeysResponse,
@@ -21,6 +22,7 @@ import {
   UpdateNewsPayload,
   TelegramProxyInfo,
   ProtocolType,
+  TelegramMiniAppAuthResponse,
 } from '../types';
 
 import { mockApi } from './mockClient';
@@ -84,6 +86,17 @@ const realApi = {
       body: JSON.stringify({ username, password }),
     });
     const data = await handleResponse<{ token: string; user: User }>(res);
+    localStorage.setItem('token', data.token);
+    return data;
+  },
+
+  async authenticateTelegramMiniApp(initData: string): Promise<TelegramMiniAppAuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/telegram-miniapp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: initData }),
+    });
+    const data = await handleResponse<TelegramMiniAppAuthResponse>(res);
     localStorage.setItem('token', data.token);
     return data;
   },
@@ -265,6 +278,21 @@ const realApi = {
     return Array.isArray(data) ? data : [];
   },
 
+  async getAdminNode(id: number): Promise<NodeDetailResponse> {
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<NodeDetailResponse>(res);
+  },
+
+  async diagnoseAdminNode(id: number): Promise<NodeDetailResponse> {
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/diagnose`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<NodeDetailResponse>(res);
+  },
+
   async addAdminNode(
     name: string,
     type: 'cascade' | 'direct',
@@ -372,6 +400,22 @@ const realApi = {
       body: JSON.stringify({ interface: targetInterface }),
     });
     return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async updateAdminNodeFailover(
+    id: number,
+    autoFailoverEnabled: boolean,
+    failoverPriority: string[]
+  ): Promise<AdminNode> {
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/failover`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        auto_failover_enabled: autoFailoverEnabled,
+        failover_priority: failoverPriority,
+      }),
+    });
+    return handleResponse<AdminNode>(res);
   },
 
   async getAdminKeys(params?: {

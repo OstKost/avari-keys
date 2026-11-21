@@ -37,6 +37,9 @@ type HealthChecker struct {
 	prevNodeRaw     map[int64]rawCounters  // nodeID -> raw counters
 	cachedDashboard *models.DashboardStatsResponse
 
+	failoverFailures map[int64]int       // nodeID -> consecutive egress failure count
+	failoverCooldown map[int64]time.Time // nodeID -> cooldown expiration
+
 	mu       sync.RWMutex
 	stopChan chan struct{}
 	wg       sync.WaitGroup
@@ -81,6 +84,8 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 		nodeFailures:     make(map[int64]int),
 		prevPeerRaw:      make(map[string]rawCounters),
 		prevNodeRaw:      make(map[int64]rawCounters),
+		failoverFailures: make(map[int64]int),
+		failoverCooldown: make(map[int64]time.Time),
 		stopChan:         make(chan struct{}),
 	}
 }
@@ -233,13 +238,112 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 				status, err := slaveCli.GetCascadeEgress(egressCtx)
 				cancel()
 				if err == nil && status != nil {
-					for _, target := range status.Targets {
-						if target.Interface == status.ActiveInterface {
-							activeEgress = target.Label
+					var activeTarget *models.EgressTarget
+					for i := range status.Targets {
+						if status.Targets[i].Interface == status.ActiveInterface {
+							activeTarget = &status.Targets[i]
+							activeEgress = status.Targets[i].Label
 							if activeEgress == "" {
-								activeEgress = target.Node
+								activeEgress = status.Targets[i].Node
 							}
 							break
+						}
+					}
+
+					// Auto-Failover for cascade nodes
+					if n.AutoFailoverEnabled {
+						if activeTarget != nil && !activeTarget.Available {
+							h.mu.Lock()
+							h.failoverFailures[n.ID]++
+							fails := h.failoverFailures[n.ID]
+							cooldownUntil, hasCooldown := h.failoverCooldown[n.ID]
+							inCooldown := hasCooldown && time.Now().Before(cooldownUntil)
+							h.mu.Unlock()
+
+							log.Printf("[MONITOR] ⚠️ Cascade egress %s on node #%d (%s) is down: %s (consecutive fails: %d/2, in_cooldown: %v)",
+								status.ActiveInterface, n.ID, n.Name, activeTarget.Reason, fails, inCooldown)
+
+							if fails >= 2 && !inCooldown {
+								// Find the best healthy target
+								var candidate *models.EgressTarget
+
+								// 1. Check configured FailoverPriority
+								if len(n.FailoverPriority) > 0 {
+									for _, prefIf := range n.FailoverPriority {
+										if prefIf == status.ActiveInterface {
+											continue
+										}
+										for i := range status.Targets {
+											if status.Targets[i].Interface == prefIf && status.Targets[i].Available {
+												candidate = &status.Targets[i]
+												break
+											}
+										}
+										if candidate != nil {
+											break
+										}
+									}
+								}
+
+								// 2. Fallback to any other available target
+								if candidate == nil {
+									for i := range status.Targets {
+										if status.Targets[i].Interface != status.ActiveInterface && status.Targets[i].Available {
+											candidate = &status.Targets[i]
+											break
+										}
+									}
+								}
+
+								if candidate != nil {
+									log.Printf("[MONITOR] 🔄 Auto-Failover switching egress on node #%d (%s): %s -> %s",
+										n.ID, n.Name, status.ActiveInterface, candidate.Interface)
+
+									switchCtx, switchCancel := context.WithTimeout(ctx, 45*time.Second)
+									swErr := slaveCli.SwitchCascadeEgress(switchCtx, candidate.Interface)
+									switchCancel()
+
+									if swErr != nil {
+										log.Printf("[MONITOR] ❌ Auto-failover failed for node #%d: %v", n.ID, swErr)
+									} else {
+										h.mu.Lock()
+										h.failoverFailures[n.ID] = 0
+										h.failoverCooldown[n.ID] = time.Now().Add(5 * time.Minute)
+										h.mu.Unlock()
+
+										oldLabel := activeTarget.Label
+										if oldLabel == "" {
+											oldLabel = activeTarget.Node
+										}
+										newLabel := candidate.Label
+										if newLabel == "" {
+											newLabel = candidate.Node
+										}
+
+										activeEgress = newLabel
+
+										log.Printf("[MONITOR] ✅ Auto-failover SUCCESS on node #%d: %s (%s) -> %s (%s)",
+											n.ID, oldLabel, status.ActiveInterface, newLabel, candidate.Interface)
+
+										if h.logActivity != nil {
+											h.logActivity(models.CategoryAdmin, "admin_cascade_auto_failover",
+												fmt.Sprintf("Автопереключение каскада «%s» (#%d): %s (%s) -> %s (%s). Причина сбоя: %s",
+													n.Name, n.ID, oldLabel, status.ActiveInterface, newLabel, candidate.Interface, activeTarget.Reason))
+										}
+
+										if h.bot != nil {
+											h.bot.NotifyCascadeFailover(n, status.ActiveInterface, candidate.Interface, oldLabel, newLabel, activeTarget.Reason)
+										}
+									}
+								} else {
+									log.Printf("[MONITOR] ⚠️ Auto-failover for node #%d: no healthy candidate available among %d targets",
+										n.ID, len(status.Targets))
+								}
+							}
+						} else if activeTarget != nil && activeTarget.Available {
+							h.mu.Lock()
+							h.failoverFailures[n.ID] = 0
+							h.mu.Unlock()
 						}
 					}
 				}
@@ -630,6 +734,234 @@ func (h *HealthChecker) CheckAllNodes(ctx context.Context) ([]models.NodeWithSta
 
 	wg.Wait()
 	return res, nil
+}
+
+// GetNodeDetail returns complete runtime diagnostics, stats, egress and peers for a single node.
+func (h *HealthChecker) GetNodeDetail(ctx context.Context, id int64) (*models.NodeDetailResponse, error) {
+	if h.storage == nil {
+		return nil, fmt.Errorf("storage is not initialized")
+	}
+
+	node, err := h.storage.GetNodeByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	h.mu.RLock()
+	isOnline, exists := h.nodeStates[node.ID]
+	latency := h.nodeLatencies[node.ID]
+	status, hasStatus := h.serverStatuses[node.ID]
+	probes := append([]models.NetworkProbe{}, h.networkProbes[node.ID]...)
+	h.mu.RUnlock()
+
+	if !hasStatus {
+		status = models.StatusDetail{State: "unknown", Reason: "Нет результатов фоновой проверки сервера"}
+	} else if time.Since(status.CheckedAt) > 3*h.interval {
+		status.State = "yellow"
+		status.Reason = "Результат проверки сервера устарел"
+	}
+
+	slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
+
+	// If never checked before, do an initial live ping
+	if !exists {
+		pingCtx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+		start := time.Now()
+		health, hErr := slaveCli.CheckHealth(pingCtx)
+		latency = time.Since(start).Milliseconds()
+		cancel()
+		isOnline = hErr == nil && health != nil && health.Status == "ok"
+		if !isOnline {
+			latency = 0
+		}
+	}
+
+	var health *models.HealthResponse
+	var stats *models.StatsSummaryResponse
+	var egress *models.EgressStatusResponse
+
+	if isOnline {
+		cctx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+		health, _ = slaveCli.CheckHealth(cctx)
+		cancel()
+
+		sctx, scancel := context.WithTimeout(ctx, h.nodeTimeout)
+		stats, _ = slaveCli.GetStats(sctx)
+		scancel()
+
+		if node.Type == "cascade" {
+			ectx, ecancel := context.WithTimeout(ctx, h.nodeTimeout)
+			egress, _ = slaveCli.GetCascadeEgress(ectx)
+			ecancel()
+		}
+	}
+
+	clientKeys, _ := h.storage.ListClientConfigsByNodeID(ctx, id)
+
+	var failover *models.FailoverRuntimeStatus
+	if node.Type == "cascade" {
+		failover = h.GetFailoverStatus(node.ID)
+	}
+
+	return &models.NodeDetailResponse{
+		NodeWithStatus: models.NodeWithStatus{
+			Node:          *node,
+			Online:        isOnline,
+			LatencyMs:     latency,
+			ServerStatus:  status,
+			NetworkStatus: netprobe.Aggregate(probes, time.Now()),
+			NetworkProbes: probes,
+		},
+		Health:     health,
+		Stats:      stats,
+		Egress:     egress,
+		Failover:   failover,
+		ClientKeys: clientKeys,
+	}, nil
+}
+
+// DiagnoseNode runs a live diagnostic probe, latency check, and refreshes the node's cached status.
+func (h *HealthChecker) DiagnoseNode(ctx context.Context, id int64) (*models.NodeDetailResponse, error) {
+	if h.storage == nil {
+		return nil, fmt.Errorf("storage is not initialized")
+	}
+
+	node, err := h.storage.GetNodeByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
+
+	pingCtx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
+	start := time.Now()
+	health, hErr := slaveCli.CheckHealth(pingCtx)
+	latency := time.Since(start).Milliseconds()
+	cancel()
+
+	isOnline := hErr == nil && health != nil && health.Status == "ok"
+	if !isOnline {
+		latency = 0
+	}
+
+	var status models.StatusDetail
+	if isOnline {
+		status = models.StatusDetail{
+			State:     "green",
+			CheckedAt: time.Now().UTC(),
+			Reason:    fmt.Sprintf("Служба активна, время отклика API %d ms", latency),
+		}
+	} else {
+		errMsg := "Сервер не отвечает на запросы Slave API"
+		if hErr != nil {
+			errMsg = hErr.Error()
+		}
+		status = models.StatusDetail{
+			State:     "red",
+			CheckedAt: time.Now().UTC(),
+			Reason:    errMsg,
+		}
+	}
+
+	var stats *models.StatsSummaryResponse
+	var egress *models.EgressStatusResponse
+	var remoteProbes []models.NetworkProbe
+
+	if isOnline {
+		sctx, scancel := context.WithTimeout(ctx, h.nodeTimeout)
+		stats, _ = slaveCli.GetStats(sctx)
+		scancel()
+
+		if node.Type == "cascade" {
+			ectx, ecancel := context.WithTimeout(ctx, h.nodeTimeout)
+			egress, _ = slaveCli.GetCascadeEgress(ectx)
+			ecancel()
+
+			pctx, pcancel := context.WithTimeout(ctx, h.nodeTimeout)
+			remoteProbes, _ = slaveCli.NetworkProbes(pctx)
+			pcancel()
+		}
+	}
+
+	// Run netprobe checks if configured
+	targets := netprobe.TargetsFromEnv()
+	var matchedTargets []netprobe.Target
+	for _, t := range targets {
+		if t.NodeID == node.ID {
+			matchedTargets = append(matchedTargets, t)
+		}
+	}
+
+	var localProbes []models.NetworkProbe
+	if len(matchedTargets) > 0 {
+		localProbes = netprobe.Run(ctx, "M0", matchedTargets)
+	}
+
+	for _, rp := range remoteProbes {
+		rp.Source = "S0"
+		localProbes = append(localProbes, rp)
+	}
+
+	h.mu.Lock()
+	h.nodeStates[node.ID] = isOnline
+	h.nodeLatencies[node.ID] = latency
+	h.serverStatuses[node.ID] = status
+	if len(localProbes) > 0 {
+		h.networkProbes[node.ID] = localProbes
+	}
+	allProbes := append([]models.NetworkProbe{}, h.networkProbes[node.ID]...)
+	h.mu.Unlock()
+
+	clientKeys, _ := h.storage.ListClientConfigsByNodeID(ctx, id)
+
+	var failover *models.FailoverRuntimeStatus
+	if node.Type == "cascade" {
+		failover = h.GetFailoverStatus(node.ID)
+	}
+
+	return &models.NodeDetailResponse{
+		NodeWithStatus: models.NodeWithStatus{
+			Node:          *node,
+			Online:        isOnline,
+			LatencyMs:     latency,
+			ServerStatus:  status,
+			NetworkStatus: netprobe.Aggregate(allProbes, time.Now()),
+			NetworkProbes: allProbes,
+		},
+		Health:     health,
+		Stats:      stats,
+		Egress:     egress,
+		Failover:   failover,
+		ClientKeys: clientKeys,
+	}, nil
+}
+
+// GetFailoverStatus returns the live auto-failover tracking state for a given node.
+func (h *HealthChecker) GetFailoverStatus(nodeID int64) *models.FailoverRuntimeStatus {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	fails := h.failoverFailures[nodeID]
+	cooldown, hasCooldown := h.failoverCooldown[nodeID]
+	inCooldown := hasCooldown && time.Now().Before(cooldown)
+	var cooldownPtr *time.Time
+	if inCooldown {
+		c := cooldown.UTC()
+		cooldownPtr = &c
+	}
+	return &models.FailoverRuntimeStatus{
+		InCooldown:          inCooldown,
+		CooldownUntil:       cooldownPtr,
+		ConsecutiveFailures: fails,
+		FailureThreshold:    2,
+	}
+}
+
+// ResetFailover resets the failure counter and sets a 5-minute cooldown period (e.g. after manual switch).
+func (h *HealthChecker) ResetFailover(nodeID int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.failoverFailures[nodeID] = 0
+	h.failoverCooldown[nodeID] = time.Now().Add(5 * time.Minute)
 }
 
 func formatBytes(bytes int64) string {

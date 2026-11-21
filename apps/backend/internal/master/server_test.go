@@ -3,12 +3,17 @@ package master_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -491,6 +496,90 @@ func TestAdminNodeEditFlow(t *testing.T) {
 	}
 }
 
+func TestAdminNodeDetailAndDiagnoseFlow(t *testing.T) {
+	masterSrv, _, _, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Admin login
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var adminLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminLoginResp)
+	adminToken := adminLoginResp.Token
+
+	// 2. GET /api/v1/admin/nodes/1 (Cascade M0 -> S1 node created in setup)
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for get node detail, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var detail models.NodeDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode node detail: %v", err)
+	}
+	if detail.ID != 1 {
+		t.Fatalf("expected node ID 1, got %d", detail.ID)
+	}
+	if !detail.Online {
+		t.Fatalf("expected node to be online")
+	}
+	if detail.Health == nil || !detail.Health.AWGAvailable {
+		t.Fatalf("expected AWG to be available in health status: %+v", detail.Health)
+	}
+
+	// 3. POST /api/v1/admin/nodes/1/diagnose
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/diagnose", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for diagnose node, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var diagDetail models.NodeDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&diagDetail); err != nil {
+		t.Fatalf("failed to decode diagnosed detail: %v", err)
+	}
+	if !diagDetail.Online {
+		t.Fatalf("expected node to remain online after diagnose")
+	}
+	if diagDetail.ServerStatus.State != "green" {
+		t.Fatalf("expected server status state 'green', got '%s'", diagDetail.ServerStatus.State)
+	}
+
+	// 4. Test 404 on non-existent node
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/9999", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-existent node, got %d", rec.Code)
+	}
+
+	// 5. Test 401 Unauthorized without token
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized without token, got %d", rec.Code)
+	}
+}
+
 func TestAdminCascadeEgressSwitchFlow(t *testing.T) {
 	srv, _, _, cleanup := setupTestEnvironment(t)
 	defer cleanup()
@@ -550,6 +639,101 @@ func TestAdminCascadeEgressSwitchFlow(t *testing.T) {
 	_ = json.NewDecoder(rec.Body).Decode(&egressResp)
 	if egressResp.ActiveInterface != "awg3" {
 		t.Fatalf("expected active interface 'awg3' after switch, got '%s'", egressResp.ActiveInterface)
+	}
+}
+
+func TestAdminCascadeAutoFailoverSettingsFlow(t *testing.T) {
+	masterSrv, slaveHttpSrv, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Get admin token
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var loginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+	adminToken := loginResp.Token
+
+	// 2. Initial node detail has default AutoFailoverEnabled=false
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for get node detail, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var detail models.NodeDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&detail); err != nil {
+		t.Fatalf("failed to decode node detail: %v", err)
+	}
+	if detail.AutoFailoverEnabled {
+		t.Fatalf("expected default auto_failover_enabled to be false")
+	}
+
+	// 3. Update failover settings via POST /api/v1/admin/nodes/1/failover
+	failoverReq := models.NodeFailoverSettingsRequest{
+		AutoFailoverEnabled: true,
+		FailoverPriority:    []string{"awg4", "awg1", "awg3"},
+	}
+	body, _ := json.Marshal(failoverReq)
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/failover", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for update failover, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var updatedNode models.Node
+	if err := json.NewDecoder(rec.Body).Decode(&updatedNode); err != nil {
+		t.Fatalf("failed to decode updated node: %v", err)
+	}
+	if !updatedNode.AutoFailoverEnabled {
+		t.Fatalf("expected auto_failover_enabled to be true")
+	}
+	if len(updatedNode.FailoverPriority) != 3 || updatedNode.FailoverPriority[0] != "awg4" {
+		t.Fatalf("expected failover priority ['awg4', 'awg1', 'awg3'], got %v", updatedNode.FailoverPriority)
+	}
+
+	// 4. Verify node detail now reflects updated failover and runtime status
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+	var detailAfter models.NodeDetailResponse
+	_ = json.NewDecoder(rec.Body).Decode(&detailAfter)
+	if !detailAfter.AutoFailoverEnabled {
+		t.Fatalf("expected auto_failover_enabled in detail to be true")
+	}
+	if detailAfter.Failover == nil {
+		t.Fatalf("expected detail.Failover runtime status to be present for cascade node")
+	}
+	if detailAfter.Failover.ConsecutiveFailures != 0 {
+		t.Fatalf("expected consecutive failures to be 0")
+	}
+
+	// 5. Test rejection on direct node
+	directNode, err := store.CreateNode(context.Background(), "Direct Node", "direct", "DEU", "https://hetzner.com", slaveHttpSrv.URL, "slave-secret-123", false, false, false)
+	if err != nil {
+		t.Fatalf("failed to create direct node: %v", err)
+	}
+	req = httptest.NewRequest("POST", fmt.Sprintf("/api/v1/admin/nodes/%d/failover", directNode.ID), bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when setting failover on direct node, got %d", rec.Code)
 	}
 }
 
@@ -1522,3 +1706,187 @@ func TestPasswordResetEndpointsFlow(t *testing.T) {
 		t.Fatalf("expected 401 Unauthorized for rejected password, got %d", rec.Code)
 	}
 }
+
+func generateMiniAppInitData(botToken string, params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		if k != "hash" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var sb strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(params[k])
+	}
+	dataCheckString := sb.String()
+
+	secretMac := hmac.New(sha256.New, []byte("WebAppData"))
+	secretMac.Write([]byte(botToken))
+	secretKey := secretMac.Sum(nil)
+
+	hashMac := hmac.New(sha256.New, secretKey)
+	hashMac.Write([]byte(dataCheckString))
+	hash := hex.EncodeToString(hashMac.Sum(nil))
+
+	v := url.Values{}
+	for k, val := range params {
+		v.Set(k, val)
+	}
+	v.Set("hash", hash)
+	return v.Encode()
+}
+
+func TestTelegramMiniAppAuthFlow(t *testing.T) {
+	botToken := "test-bot-token-998877"
+	t.Setenv("TELEGRAM_BOT_TOKEN", botToken)
+	t.Setenv("TELEGRAM_BOT_USERNAME", "AvariMiniAppBot")
+
+	masterSrv, _, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	// Update storage settings and reload bot
+	ctx := context.Background()
+	_, _ = store.UpdateTelegramSettings(ctx, models.TelegramSettings{
+		Enabled:     true,
+		BotToken:    botToken,
+		BotUsername: "AvariMiniAppBot",
+		WebAppURL:   "https://m0.vpn.test/miniapp",
+	})
+	_ = masterSrv.GetTelegramBot().UpdateConfig(ctx, models.TelegramSettings{
+		Enabled:     true,
+		BotToken:    botToken,
+		BotUsername: "AvariMiniAppBot",
+		WebAppURL:   "https://m0.vpn.test/miniapp",
+	})
+
+	handler := masterSrv.Handler()
+
+	// 1. Create and activate a regular user
+	userAlice, err := store.CreateUser(ctx, "tma_alice", "hashed_pwd_alice")
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	_ = store.SetUserActive(ctx, userAlice.ID, true)
+
+	// Link Alice's Telegram chat (ChatID = 111222333)
+	aliceChatID := int64(111222333)
+	err = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        aliceChatID,
+		UserID:        &userAlice.ID,
+		Username:      "alice_telegram",
+		FirstName:     "Alice",
+		IsAdmin:       false,
+		AlertsEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to link alice chat: %v", err)
+	}
+
+	// 2. Test valid Mini App login for Alice
+	now := time.Now().Unix()
+	aliceParams := map[string]string{
+		"auth_date": fmt.Sprintf("%d", now),
+		"query_id":  "AAHdF6IQAAAAAN0XohDhrOrc",
+		"user":      fmt.Sprintf(`{"id":%d,"first_name":"Alice","username":"alice_telegram"}`, aliceChatID),
+	}
+	aliceInitData := generateMiniAppInitData(botToken, aliceParams)
+
+	authBody, _ := json.Marshal(models.TelegramMiniAppAuthRequest{InitData: aliceInitData})
+	req := httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for Alice TMA auth, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var authResp models.TelegramMiniAppAuthResponse
+	if err := json.NewDecoder(rec.Body).Decode(&authResp); err != nil {
+		t.Fatalf("failed to decode TMA auth resp: %v", err)
+	}
+	if authResp.Token == "" {
+		t.Errorf("expected non-empty JWT token")
+	}
+	if authResp.User.Username != "tma_alice" {
+		t.Errorf("expected username tma_alice, got %s", authResp.User.Username)
+	}
+	if authResp.IsAdmin {
+		t.Errorf("expected alice not to be admin")
+	}
+	if !authResp.IsLinked {
+		t.Errorf("expected alice to be linked")
+	}
+
+	// 3. Test unlinked Telegram user (ChatID = 999888777)
+	unlinkedChatID := int64(999888777)
+	unlinkedParams := map[string]string{
+		"auth_date": fmt.Sprintf("%d", now),
+		"user":      fmt.Sprintf(`{"id":%d,"first_name":"Stranger"}`, unlinkedChatID),
+	}
+	unlinkedInitData := generateMiniAppInitData(botToken, unlinkedParams)
+
+	authBody, _ = json.Marshal(models.TelegramMiniAppAuthRequest{InitData: unlinkedInitData})
+	req = httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for unlinked user, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unlinked_chat") {
+		t.Errorf("expected error unlinked_chat, got body: %s", rec.Body.String())
+	}
+
+	// 4. Test invalid HMAC signature (tampered initData)
+	tamperedInitData := aliceInitData + "&tampered=1"
+	authBody, _ = json.Marshal(models.TelegramMiniAppAuthRequest{InitData: tamperedInitData})
+	req = httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for tampered initData, got %d", rec.Code)
+	}
+
+	// 5. Test Admin TMA login
+	adminUser, err := store.GetUserByUsername(ctx, "Forve")
+	if err != nil {
+		t.Fatalf("failed to get admin Forve: %v", err)
+	}
+	adminChatID := int64(777666555)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        adminChatID,
+		UserID:        &adminUser.ID,
+		Username:      "forve_admin",
+		FirstName:     "Forve",
+		IsAdmin:       true,
+		AlertsEnabled: true,
+	})
+
+	adminParams := map[string]string{
+		"auth_date": fmt.Sprintf("%d", now),
+		"user":      fmt.Sprintf(`{"id":%d,"first_name":"Forve","username":"forve_admin"}`, adminChatID),
+	}
+	adminInitData := generateMiniAppInitData(botToken, adminParams)
+	authBody, _ = json.Marshal(models.TelegramMiniAppAuthRequest{InitData: adminInitData})
+	req = httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for Admin TMA auth, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var adminResp models.TelegramMiniAppAuthResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminResp)
+	if !adminResp.IsAdmin {
+		t.Errorf("expected Forve to be recognized as admin in TMA")
+	}
+}
+

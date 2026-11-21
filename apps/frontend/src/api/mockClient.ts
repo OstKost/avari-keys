@@ -2,6 +2,7 @@ import {
   User,
   NodePublic,
   AdminNode,
+  NodeDetailResponse,
   ClientConfigSummary,
   ClientConfigDetail,
   PaginatedKeysResponse,
@@ -23,6 +24,7 @@ import {
   UpdateNewsPayload,
   TelegramProxyInfo,
   ProtocolType,
+  TelegramMiniAppAuthResponse,
 } from '../types';
 
 // In-memory mock storage for standalone FE development
@@ -158,6 +160,11 @@ let mockLogs: AuditLog[] = [
 
 let mockCurrentUser: User = mockUsers[0];
 
+let mockEgressActive: Record<number, string> = {
+  1: 'awg1',
+  2: 'awg1',
+};
+
 let mockNodes: AdminNode[] = [
   {
     id: 1,
@@ -169,6 +176,8 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: true,
     is_backup: false,
     has_hysteria: false,
+    auto_failover_enabled: true,
+    failover_priority: ['awg1', 'awg4', 'awg3', 'awg5'],
     is_active: true,
     online: true,
     latency_ms: 24,
@@ -184,6 +193,8 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: true,
     is_backup: true,
     has_hysteria: false,
+    auto_failover_enabled: false,
+    failover_priority: ['awg1', 'awg3', 'awg4', 'awg5'],
     is_active: true,
     online: true,
     latency_ms: 31,
@@ -577,6 +588,34 @@ export const mockApi = {
     return { token: 'mock-jwt-token-' + user.username, user };
   },
 
+  async authenticateTelegramMiniApp(initData: string): Promise<TelegramMiniAppAuthResponse> {
+    const forcedRole = localStorage.getItem('mock_tma_role');
+    if (initData === 'mock_unlinked' || forcedRole === 'unlinked') {
+      const err: any = new Error('Ваш Telegram-аккаунт еще не подключен к Avari Keys. Подключите аккаунт через команду /link в боте.');
+      err.error = 'unlinked_chat';
+      err.is_linked = false;
+      throw err;
+    }
+
+    const role = forcedRole || (initData.includes('admin') ? 'admin' : 'user');
+    let user: User;
+    if (role === 'admin') {
+      user = mockUsers.find((u) => u.role === 'admin') || mockUsers[0];
+    } else {
+      user = mockUsers.find((u) => u.username === 'alice') || mockUsers[1];
+    }
+
+    mockCurrentUser = user;
+    const token = 'mock-jwt-token-' + user.username;
+    localStorage.setItem('token', token);
+    return {
+      token,
+      user,
+      is_admin: user.role === 'admin',
+      is_linked: true,
+    };
+  },
+
   async setDemoUser(username: string): Promise<User> {
     const user = mockUsers.find((u) => u.username.toLowerCase() === username.toLowerCase());
     if (user) {
@@ -821,6 +860,109 @@ bandwidth:
     }));
   },
 
+  async getAdminNode(id: number): Promise<NodeDetailResponse> {
+    const node = mockNodes.find((n) => n.id === id);
+    if (!node) {
+      throw new Error(`Node #${id} not found`);
+    }
+
+    const matchedKeys = mockKeys
+      .filter((k) => k.node_id === id)
+      .map((k) => ({
+        id: k.id,
+        user_id: k.user_id,
+        username: mockUsers.find((u) => u.id === k.user_id)?.username || 'user',
+        node_id: k.node_id,
+        client_name: k.client_name,
+        device_name: k.device_name,
+        node_name: k.node_name,
+        node_type: k.node_type,
+        node_country_code: node.country_code,
+        protocol: k.protocol,
+        last_handshake: k.last_handshake || '5 минут назад',
+        total_traffic_bytes: k.total_traffic_bytes,
+        month_traffic_bytes: k.month_traffic_bytes,
+        total_traffic_formatted: k.total_traffic_formatted,
+        month_traffic_formatted: k.month_traffic_formatted,
+        created_at: k.created_at,
+      }));
+
+    return {
+      ...node,
+      latency_ms: node.online ? Math.floor(22 + Math.random() * 15) : undefined,
+      server_status: node.server_status || {
+        state: node.online ? 'green' : 'red',
+        checked_at: new Date().toISOString(),
+        reason: node.online ? 'Служба AWG активна, отклик в норме' : 'Узел не отвечает на запросы Slave API',
+      },
+      network_status: node.network_status || {
+        state: 'green',
+        checked_at: new Date().toISOString(),
+        reason: 'Все контрольные точки M0/S0 доступны',
+      },
+      network_probes: node.network_probes || [
+        {
+          node_id: node.id,
+          source: 'M0 (Москва)',
+          interface: 'eth0',
+          state: 'green',
+          checked_at: new Date().toISOString(),
+          checks: [
+            { kind: 'dns', target: `s${node.id}.vpn.test`, ok: true, latency_ms: 6 },
+            { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: node.latency_ms || 25 },
+            { kind: 'tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: (node.latency_ms || 25) + 2 },
+            { kind: 'udp_awg', target: `192.0.2.${20 + node.id}:51820`, ok: true, latency_ms: node.latency_ms || 25 },
+          ],
+        },
+        {
+          node_id: node.id,
+          source: 'S0 (Зарубеж)',
+          interface: 'awg0',
+          state: 'green',
+          checked_at: new Date().toISOString(),
+          checks: [
+            { kind: 'ip_icmp', target: `192.0.2.${20 + node.id}`, ok: true, latency_ms: 12 },
+            { kind: 'tcp', target: `192.0.2.${20 + node.id}:8081`, ok: true, latency_ms: 14 },
+          ],
+        },
+      ],
+      health: {
+        status: node.online ? 'ok' : 'degraded',
+        service: 'amneziawg-slave',
+        awg_available: node.online,
+        hysteria_available: Boolean(node.has_hysteria),
+        version: '1.3.0',
+      },
+      stats: {
+        active_peers: matchedKeys.length,
+        uptime: '18 дней, 4 часа',
+        total_rx: 18450124000,
+        total_tx: 29810450000,
+      },
+      egress: node.type === 'cascade' ? {
+        active_interface: mockEgressActive[node.id] || 'awg1',
+        available_interfaces: ['awg1', 'awg3', 'awg4', 'awg5'],
+        targets: [
+          { interface: 'awg1', node: 'S1', label: 'S1 Нидерланды (Амстердам)', endpoint: '192.0.2.20:51821', available: true },
+          { interface: 'awg3', node: 'S3', label: 'S3 Германия (Франкфурт)', endpoint: '192.0.2.22:51820', available: true },
+          { interface: 'awg4', node: 'S4', label: 'S4 Швеция (Стокгольм)', endpoint: '192.0.2.24:51820', available: true },
+          { interface: 'awg5', node: 'S5P', label: 'S5P Нидерланды PRO (Амстердам)', endpoint: '192.0.2.26:51820', available: true },
+        ],
+      } : undefined,
+      failover: node.type === 'cascade' ? {
+        in_cooldown: false,
+        consecutive_failures: 0,
+        failure_threshold: 2,
+      } : undefined,
+      client_keys: matchedKeys,
+    };
+  },
+
+  async diagnoseAdminNode(id: number): Promise<NodeDetailResponse> {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return this.getAdminNode(id);
+  },
+
   async addAdminNode(
     name: string,
     type: 'cascade' | 'direct',
@@ -925,12 +1067,28 @@ bandwidth:
     };
   },
 
-  async switchNodeEgress(_id: number, targetInterface: string): Promise<{ success: boolean; message: string }> {
+  async switchNodeEgress(id: number, targetInterface: string): Promise<{ success: boolean; message: string }> {
     await new Promise((resolve) => setTimeout(resolve, 400));
+    mockEgressActive[id] = targetInterface;
     return {
       success: true,
       message: `Шлюз выхода каскада переключен на ${targetInterface}`,
     };
+  },
+
+  async updateAdminNodeFailover(
+    id: number,
+    autoFailoverEnabled: boolean,
+    failoverPriority: string[]
+  ): Promise<AdminNode> {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const node = mockNodes.find((n) => n.id === id);
+    if (!node) {
+      throw new Error(`Node #${id} not found`);
+    }
+    node.auto_failover_enabled = autoFailoverEnabled;
+    node.failover_priority = [...failoverPriority];
+    return { ...node };
   },
 
   async getAdminKeys(params?: {

@@ -165,6 +165,11 @@ func (s *Server) Handler() http.Handler {
 	return s.corsMiddleware(s.jwtMgr.AuthMiddleware(s.mux))
 }
 
+// GetTelegramBot returns the internal Telegram Bot instance.
+func (s *Server) GetTelegramBot() *telegram.Bot {
+	return s.telegramBot
+}
+
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -186,6 +191,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/v1/auth/reset-password", s.handleResetPasswordRequest)
+	s.mux.HandleFunc("POST /api/v1/auth/telegram-miniapp", s.handleTelegramMiniAppAuth)
 
 	// User Authenticated Routes
 	s.mux.HandleFunc("GET /api/v1/auth/me", auth.RequireAuth(s.handleMe))
@@ -208,6 +214,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/v1/admin/users/{id}", auth.RequireAdmin(s.handleAdminDeleteUser))
 
 	s.mux.HandleFunc("GET /api/v1/admin/nodes", auth.RequireAdmin(s.handleAdminListNodes))
+	s.mux.HandleFunc("GET /api/v1/admin/nodes/{id}", auth.RequireAdmin(s.handleAdminGetNode))
+	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/diagnose", auth.RequireAdmin(s.handleAdminDiagnoseNode))
 	s.mux.HandleFunc("POST /api/v1/admin/nodes", auth.RequireAdmin(s.handleAdminAddNode))
 	s.mux.HandleFunc("PUT /api/v1/admin/nodes/{id}", auth.RequireAdmin(s.handleAdminUpdateNode))
 	s.mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}", auth.RequireAdmin(s.handleAdminDeleteNode))
@@ -216,6 +224,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/restore", auth.RequireAdmin(s.handleAdminRestoreNode))
 	s.mux.HandleFunc("GET /api/v1/admin/nodes/{id}/egress", auth.RequireAdmin(s.handleAdminGetNodeEgress))
 	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/egress", auth.RequireAdmin(s.handleAdminSwitchNodeEgress))
+	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/failover", auth.RequireAdmin(s.handleAdminUpdateNodeFailover))
 
 	s.mux.HandleFunc("GET /api/v1/admin/keys", auth.RequireAdmin(s.handleAdminListAllKeys))
 
@@ -254,7 +263,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v1.2.1",
+		Version: "v1.3.0",
 	})
 }
 
@@ -367,6 +376,120 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			IsPro:     user.IsPro,
 			CreatedAt: user.CreatedAt,
 		},
+	})
+}
+
+func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Request) {
+	var req models.TelegramMiniAppAuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	botToken := ""
+	if s.telegramBot != nil {
+		botToken = s.telegramBot.GetToken()
+	}
+	if botToken == "" {
+		botToken = s.cfg.TelegramBotToken
+	}
+	if botToken == "" {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "Telegram bot is not configured or disabled",
+		})
+		return
+	}
+
+	// 1. Validate initData cryptographically
+	webAppData, err := auth.ValidateTelegramWebAppData(req.InitData, botToken, 24*time.Hour)
+	if err != nil {
+		s.logActivity(r, nil, "telegram_miniapp", models.CategoryAuth, "tg_miniapp_invalid_signature", fmt.Sprintf("Ошибка валидации initData: %v", err))
+		s.writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "Invalid Telegram signature or expired session",
+		})
+		return
+	}
+
+	if webAppData.User == nil || webAppData.User.ID == 0 {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "Telegram user data is missing in initData",
+		})
+		return
+	}
+
+	tgUserID := webAppData.User.ID
+
+	// 2. Check if this Telegram user has linked their chat to an account or is admin
+	chat, err := s.storage.GetTelegramChatByChatID(r.Context(), tgUserID)
+	if err != nil || chat == nil {
+		s.logActivity(r, nil, fmt.Sprintf("tg:%d", tgUserID), models.CategoryAuth, "tg_miniapp_unlinked", "Попытка входа в Mini App с непривязанного Telegram-чата")
+		s.writeJSON(w, http.StatusForbidden, map[string]any{
+			"error":     "unlinked_chat",
+			"message":   "Ваш Telegram-аккаунт еще не подключен к Avari Keys. Подключите аккаунт через команду /link в боте.",
+			"is_linked": false,
+		})
+		return
+	}
+
+	var user *models.User
+	if chat.UserID != nil {
+		u, err := s.storage.GetUserByID(r.Context(), *chat.UserID)
+		if err == nil && u != nil {
+			user = u
+		}
+	} else if chat.IsAdmin {
+		// Admin chat without explicit user_id binding -> bind to default admin (Forve or first active admin)
+		users, _ := s.storage.ListUsers(r.Context())
+		for _, u := range users {
+			if u.Role == models.RoleAdmin && u.IsActive {
+				adminUser, err := s.storage.GetUserByID(r.Context(), u.ID)
+				if err == nil && adminUser != nil {
+					user = adminUser
+					break
+				}
+			}
+		}
+	}
+
+	if user == nil {
+		s.writeJSON(w, http.StatusForbidden, map[string]any{
+			"error":     "user_not_found",
+			"message":   "Привязанная учетная запись не найдена в системе.",
+			"is_linked": false,
+		})
+		return
+	}
+
+	if !user.IsActive {
+		s.logActivity(r, &user.ID, user.Username, models.CategoryAuth, "tg_miniapp_inactive", "Вход в Mini App неактивного пользователя")
+		s.writeJSON(w, http.StatusForbidden, map[string]any{
+			"error":     "account_inactive",
+			"message":   "Ваша учетная запись ожидает одобрения администратором.",
+			"is_linked": true,
+		})
+		return
+	}
+
+	token, err := s.jwtMgr.GenerateToken(user)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+		return
+	}
+
+	s.logActivity(r, &user.ID, user.Username, models.CategoryAuth, "tg_miniapp_login", "Успешный вход через Telegram Mini App")
+
+	s.writeJSON(w, http.StatusOK, models.TelegramMiniAppAuthResponse{
+		Token: token,
+		User: models.UserPublic{
+			ID:        user.ID,
+			Username:  user.Username,
+			Role:      user.Role,
+			IsActive:  user.IsActive,
+			IsPro:     user.IsPro,
+			CreatedAt: user.CreatedAt,
+		},
+		IsAdmin:  user.Role == models.RoleAdmin,
+		IsLinked: true,
 	})
 }
 
@@ -921,6 +1044,44 @@ func (s *Server) handleAdminListNodes(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, nodes)
 }
 
+func (s *Server) handleAdminGetNode(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	detail, err := s.healthChecker.GetNodeDetail(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, detail)
+}
+
+func (s *Server) handleAdminDiagnoseNode(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	detail, err := s.healthChecker.DiagnoseNode(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if claims != nil {
+		s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_diagnose", fmt.Sprintf("Выполнена диагностика узла «%s» (ID #%d)", detail.Name, detail.ID))
+	}
+
+	s.writeJSON(w, http.StatusOK, detail)
+}
+
 func (s *Server) handleAdminRestartNode(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 	idStr := r.PathValue("id")
@@ -1083,6 +1244,10 @@ func (s *Server) handleAdminSwitchNodeEgress(w http.ResponseWriter, r *http.Requ
 
 	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_switch_egress", fmt.Sprintf("Переключен шлюз выхода каскада для узла «%s» (ID #%d) на интерфейс %s", node.Name, node.ID, req.Interface))
 
+	if s.healthChecker != nil {
+		s.healthChecker.ResetFailover(node.ID)
+	}
+
 	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
 		Success: true,
 		Message: fmt.Sprintf("Cascade egress on node '%s' switched to %s", node.Name, req.Interface),
@@ -1179,6 +1344,22 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.AutoFailoverEnabled != nil || req.FailoverPriority != nil {
+		autoVal := node.AutoFailoverEnabled
+		if req.AutoFailoverEnabled != nil {
+			autoVal = *req.AutoFailoverEnabled
+		}
+		prioVal := node.FailoverPriority
+		if req.FailoverPriority != nil {
+			prioVal = req.FailoverPriority
+		}
+		node, err = s.storage.UpdateNodeFailoverSettings(r.Context(), id, autoVal, prioVal)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
 	backupTag := ""
 	if node.IsBackup {
 		backupTag = " [Запасной/Backup]"
@@ -1200,6 +1381,47 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 	s.invalidateDashboardCache()
 
 	s.writeJSON(w, http.StatusOK, node)
+}
+
+func (s *Server) handleAdminUpdateNodeFailover(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	var req models.NodeFailoverSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	node, err := s.storage.GetNodeByID(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
+		return
+	}
+	if node.Type != "cascade" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Auto-Failover is only applicable to cascade nodes"})
+		return
+	}
+
+	updatedNode, err := s.storage.UpdateNodeFailoverSettings(r.Context(), id, req.AutoFailoverEnabled, req.FailoverPriority)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	stateStr := "отключено"
+	if req.AutoFailoverEnabled {
+		stateStr = fmt.Sprintf("включено (приоритеты: %v)", req.FailoverPriority)
+	}
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_cascade_failover_settings",
+		fmt.Sprintf("Обновлены настройки Auto-Failover для каскада «%s» (#%d): %s", node.Name, node.ID, stateStr))
+
+	s.writeJSON(w, http.StatusOK, updatedNode)
 }
 
 func (s *Server) handleAdminDeleteNode(w http.ResponseWriter, r *http.Request) {
