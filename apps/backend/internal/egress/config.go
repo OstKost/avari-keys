@@ -28,6 +28,8 @@ type Config struct {
 	IpifyURL    string
 	TelegramURL string
 	ChatGPTURL  string
+	GrokURL     string
+	MetaURL     string
 }
 
 var ifaceRegex = regexp.MustCompile(`^awg[1-9][0-9]*$`)
@@ -67,6 +69,14 @@ func DefaultConfig() Config {
 	if chatgptURL == "" {
 		chatgptURL = "https://chatgpt.com"
 	}
+	grokURL := os.Getenv("AVARI_PROBE_GROK_URL")
+	if grokURL == "" {
+		grokURL = "https://grok.com"
+	}
+	metaURL := os.Getenv("AVARI_PROBE_META_URL")
+	if metaURL == "" {
+		metaURL = "https://www.instagram.com"
+	}
 
 	return Config{
 		RegistryPath: reg,
@@ -77,6 +87,8 @@ func DefaultConfig() Config {
 		IpifyURL:     ipifyURL,
 		TelegramURL:  tgURL,
 		ChatGPTURL:   chatgptURL,
+		GrokURL:      grokURL,
+		MetaURL:      metaURL,
 	}
 }
 

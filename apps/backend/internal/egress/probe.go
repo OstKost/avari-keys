@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -136,11 +137,21 @@ func (p *DefaultHTTPProber) FetchStatus(ctx context.Context, iface string, targe
 	return resp.StatusCode, nil
 }
 
-// ProbeTarget performs comprehensive multi-service health verification of an egress target:
-// 1. Interface exists in sysfs (Linux).
-// 2. IP match check via api.ipify.org.
-// 3. Telegram check (api.telegram.org) -> verifies Telegram connectivity over egress routing.
-// 4. ChatGPT check (chatgpt.com) -> verifies Cloudflare/OpenAI access without 403 block.
+type checkResult struct {
+	name    string
+	success bool
+	err     error
+}
+
+// ProbeTarget performs comprehensive multi-service health verification of an egress target.
+// 5 services are probed concurrently:
+// 1. IP check via api.ipify.org (must match target.Endpoint).
+// 2. Telegram check (api.telegram.org).
+// 3. ChatGPT check (chatgpt.com, no 403 block).
+// 4. Grok check (grok.com, no 403 block).
+// 5. Meta check (instagram.com, no 403 block).
+//
+// The target is considered available if at least 3 out of 5 checks pass (quorum >= 3/5).
 func ProbeTarget(ctx context.Context, cfg Config, target TargetConfig, prober HTTPProber) error {
 	// 1. Sysfs interface check if running on Linux
 	sysPath := filepath.Join("/sys/class/net", target.Interface)
@@ -150,45 +161,131 @@ func ProbeTarget(ctx context.Context, cfg Config, target TargetConfig, prober HT
 		}
 	}
 
-	// 2. IP verification via api.ipify.org
-	ipCtx, ipCancel := context.WithTimeout(ctx, 7*time.Second)
-	actualIP, statusCode, ipErr := prober.FetchIP(ipCtx, target.Interface, cfg.IpifyURL)
-	ipCancel()
-	if ipErr != nil {
-		return fmt.Errorf("ipify недоступен: %w", ipErr)
-	}
-	if statusCode < 200 || statusCode >= 400 {
-		return fmt.Errorf("ipify вернул HTTP %d", statusCode)
-	}
-	if actualIP != target.Endpoint {
-		return fmt.Errorf("внешний IP туннеля (%s) не совпадает с ожидаемым (%s)", actualIP, target.Endpoint)
+	results := make([]checkResult, 5)
+	var wg sync.WaitGroup
+
+	// 1. IP verification via api.ipify.org
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ipCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
+		defer cancel()
+		actualIP, statusCode, err := prober.FetchIP(ipCtx, target.Interface, cfg.IpifyURL)
+		if err != nil {
+			results[0] = checkResult{name: "ipify", err: fmt.Errorf("ipify недоступен: %w", err)}
+			return
+		}
+		if statusCode < 200 || statusCode >= 400 {
+			results[0] = checkResult{name: "ipify", err: fmt.Errorf("ipify вернул HTTP %d", statusCode)}
+			return
+		}
+		if actualIP != target.Endpoint {
+			results[0] = checkResult{name: "ipify", err: fmt.Errorf("внешний IP (%s) != ожидаемому (%s)", actualIP, target.Endpoint)}
+			return
+		}
+		results[0] = checkResult{name: "ipify", success: true}
+	}()
+
+	// 2. Telegram verification (api.telegram.org)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tgCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
+		defer cancel()
+		tgStatus, err := prober.FetchStatus(tgCtx, target.Interface, cfg.TelegramURL)
+		if err != nil {
+			results[1] = checkResult{name: "telegram", err: fmt.Errorf("telegram недоступен: %w", err)}
+			return
+		}
+		if tgStatus >= 400 {
+			results[1] = checkResult{name: "telegram", err: fmt.Errorf("telegram вернул ошибку HTTP %d", tgStatus) }
+			return
+		}
+		results[1] = checkResult{name: "telegram", success: true}
+	}()
+
+	// 3. ChatGPT verification (chatgpt.com)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		gptCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
+		defer cancel()
+		gptStatus, err := prober.FetchStatus(gptCtx, target.Interface, cfg.ChatGPTURL)
+		if err != nil {
+			results[2] = checkResult{name: "chatgpt", err: fmt.Errorf("chatgpt недоступен: %w", err)}
+			return
+		}
+		if gptStatus == 403 {
+			results[2] = checkResult{name: "chatgpt", err: fmt.Errorf("chatgpt заблокирован (HTTP 403 Forbidden)")}
+			return
+		}
+		if gptStatus >= 500 {
+			results[2] = checkResult{name: "chatgpt", err: fmt.Errorf("chatgpt вернул серверную ошибку HTTP %d", gptStatus)}
+			return
+		}
+		results[2] = checkResult{name: "chatgpt", success: true}
+	}()
+
+	// 4. Grok verification (grok.com)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		grokCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
+		defer cancel()
+		grokStatus, err := prober.FetchStatus(grokCtx, target.Interface, cfg.GrokURL)
+		if err != nil {
+			results[3] = checkResult{name: "grok", err: fmt.Errorf("grok недоступен: %w", err)}
+			return
+		}
+		if grokStatus == 403 {
+			results[3] = checkResult{name: "grok", err: fmt.Errorf("grok заблокирован (HTTP 403 Forbidden)")}
+			return
+		}
+		if grokStatus >= 500 {
+			results[3] = checkResult{name: "grok", err: fmt.Errorf("grok вернул серверную ошибку HTTP %d", grokStatus)}
+			return
+		}
+		results[3] = checkResult{name: "grok", success: true}
+	}()
+
+	// 5. Meta verification (instagram.com)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		metaCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
+		defer cancel()
+		metaStatus, err := prober.FetchStatus(metaCtx, target.Interface, cfg.MetaURL)
+		if err != nil {
+			results[4] = checkResult{name: "meta", err: fmt.Errorf("meta недоступен: %w", err)}
+			return
+		}
+		if metaStatus == 403 {
+			results[4] = checkResult{name: "meta", err: fmt.Errorf("meta заблокирован (HTTP 403 Forbidden)")}
+			return
+		}
+		if metaStatus >= 500 {
+			results[4] = checkResult{name: "meta", err: fmt.Errorf("meta вернул серверную ошибку HTTP %d", metaStatus)}
+			return
+		}
+		results[4] = checkResult{name: "meta", success: true}
+	}()
+
+	wg.Wait()
+
+	successCount := 0
+	var failures []string
+	for _, r := range results {
+		if r.success {
+			successCount++
+		} else if r.err != nil {
+			failures = append(failures, r.err.Error())
+		}
 	}
 
-	// 3. Telegram verification
-	tgCtx, tgCancel := context.WithTimeout(ctx, 7*time.Second)
-	tgStatus, tgErr := prober.FetchStatus(tgCtx, target.Interface, cfg.TelegramURL)
-	tgCancel()
-	if tgErr != nil {
-		return fmt.Errorf("telegram недоступен: %w", tgErr)
-	}
-	// Telegram typically returns 200 or 302 Found
-	if tgStatus >= 400 {
-		return fmt.Errorf("telegram вернул ошибку HTTP %d", tgStatus)
+	// Quorum: at least 3 out of 5 checks must pass
+	if successCount >= 3 {
+		return nil
 	}
 
-	// 4. ChatGPT verification
-	gptCtx, gptCancel := context.WithTimeout(ctx, 7*time.Second)
-	gptStatus, gptErr := prober.FetchStatus(gptCtx, target.Interface, cfg.ChatGPTURL)
-	gptCancel()
-	if gptErr != nil {
-		return fmt.Errorf("chatgpt недоступен: %w", gptErr)
-	}
-	if gptStatus == 403 {
-		return fmt.Errorf("chatgpt заблокирован (HTTP 403 Forbidden)")
-	}
-	if gptStatus >= 500 {
-		return fmt.Errorf("chatgpt вернул серверную ошибку HTTP %d", gptStatus)
-	}
-
-	return nil
+	return fmt.Errorf("пройдено только %d/5 проверок (сбои: %s)", successCount, strings.Join(failures, "; "))
 }

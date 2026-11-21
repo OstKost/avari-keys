@@ -182,53 +182,17 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 		Label:     "S1 Netherlands",
 	}
 
-	// Scenario 1: All checks succeed
+	// Scenario 1: All 5 checks succeed (5/5)
 	prober := &mockProber{}
 	if err := ProbeTarget(ctx, cfg, target, prober); err != nil {
-		t.Fatalf("expected probe to succeed, got: %v", err)
+		t.Fatalf("expected probe to succeed with 5/5, got: %v", err)
 	}
 
-	// Scenario 2: IP mismatch
-	proberWrongIP := &mockProber{
-		fetchIPFunc: func(iface, url string) (string, int, error) {
-			return "1.2.3.4", 200, nil
-		},
-	}
-	err := ProbeTarget(ctx, cfg, target, proberWrongIP)
-	if err == nil || !strings.Contains(err.Error(), "не совпадает") {
-		t.Fatalf("expected IP mismatch error, got: %v", err)
-	}
-
-	// Scenario 3: Ipify unreachable / error
-	proberIpifyDown := &mockProber{
-		fetchIPFunc: func(iface, url string) (string, int, error) {
-			return "", 0, fmt.Errorf("connection timed out")
-		},
-	}
-	err = ProbeTarget(ctx, cfg, target, proberIpifyDown)
-	if err == nil || !strings.Contains(err.Error(), "ipify недоступен") {
-		t.Fatalf("expected ipify error, got: %v", err)
-	}
-
-	// Scenario 4: Telegram unreachable / returns 502
-	proberTgDown := &mockProber{
-		fetchStatusFunc: func(iface, url string) (int, error) {
-			if strings.Contains(url, "telegram") {
-				return 502, nil
-			}
-			return 200, nil
-		},
-	}
-	err = ProbeTarget(ctx, cfg, target, proberTgDown)
-	if err == nil || !strings.Contains(err.Error(), "telegram вернул ошибку HTTP 502") {
-		t.Fatalf("expected telegram HTTP error, got: %v", err)
-	}
-
-	// Scenario 5: ChatGPT blocked (HTTP 403 Forbidden / Cloudflare challenge)
-	proberGPTBlocked := &mockProber{
+	// Scenario 2: 1 check fails (4/5 pass) -> Quorum (>=3) must pass
+	prober1Fail := &mockProber{
 		fetchStatusFunc: func(iface, url string) (int, error) {
 			if strings.Contains(url, "chatgpt") {
-				return 403, nil
+				return 403, nil // ChatGPT blocked
 			}
 			if strings.Contains(url, "telegram") {
 				return 302, nil
@@ -236,16 +200,18 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 			return 200, nil
 		},
 	}
-	err = ProbeTarget(ctx, cfg, target, proberGPTBlocked)
-	if err == nil || !strings.Contains(err.Error(), "chatgpt заблокирован (HTTP 403") {
-		t.Fatalf("expected chatgpt 403 block error, got: %v", err)
+	if err := ProbeTarget(ctx, cfg, target, prober1Fail); err != nil {
+		t.Fatalf("expected quorum to pass with 4/5, got error: %v", err)
 	}
 
-	// Scenario 6: ChatGPT server error (500)
-	proberGPTDown := &mockProber{
+	// Scenario 3: 2 checks fail (3/5 pass) -> Quorum (>=3) must pass
+	prober2Fail := &mockProber{
 		fetchStatusFunc: func(iface, url string) (int, error) {
 			if strings.Contains(url, "chatgpt") {
-				return 500, nil
+				return 403, nil // ChatGPT blocked
+			}
+			if strings.Contains(url, "grok") {
+				return 500, nil // Grok down
 			}
 			if strings.Contains(url, "telegram") {
 				return 302, nil
@@ -253,9 +219,48 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 			return 200, nil
 		},
 	}
-	err = ProbeTarget(ctx, cfg, target, proberGPTDown)
-	if err == nil || !strings.Contains(err.Error(), "chatgpt вернул серверную ошибку HTTP 500") {
-		t.Fatalf("expected chatgpt 500 error, got: %v", err)
+	if err := ProbeTarget(ctx, cfg, target, prober2Fail); err != nil {
+		t.Fatalf("expected quorum to pass with 3/5, got error: %v", err)
+	}
+
+	// Scenario 4: 3 checks fail (2/5 pass) -> Quorum fails! (<3)
+	prober3Fail := &mockProber{
+		fetchStatusFunc: func(iface, url string) (int, error) {
+			if strings.Contains(url, "chatgpt") {
+				return 403, nil // ChatGPT blocked
+			}
+			if strings.Contains(url, "grok") {
+				return 403, nil // Grok blocked
+			}
+			if strings.Contains(url, "instagram") {
+				return 403, nil // Meta blocked
+			}
+			if strings.Contains(url, "telegram") {
+				return 302, nil
+			}
+			return 200, nil
+		},
+	}
+	err := ProbeTarget(ctx, cfg, target, prober3Fail)
+	if err == nil || !strings.Contains(err.Error(), "пройдено только 2/5 проверок") {
+		t.Fatalf("expected error for 2/5 quorum failure, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "chatgpt") || !strings.Contains(err.Error(), "grok") || !strings.Contains(err.Error(), "meta") {
+		t.Fatalf("expected error to list failing services, got: %v", err)
+	}
+
+	// Scenario 5: All 5 fail (0/5 pass) -> Total failure
+	proberAllFail := &mockProber{
+		fetchIPFunc: func(iface, url string) (string, int, error) {
+			return "", 0, fmt.Errorf("network down")
+		},
+		fetchStatusFunc: func(iface, url string) (int, error) {
+			return 0, fmt.Errorf("network down")
+		},
+	}
+	err = ProbeTarget(ctx, cfg, target, proberAllFail)
+	if err == nil || !strings.Contains(err.Error(), "пройдено только 0/5 проверок") {
+		t.Fatalf("expected error for 0/5 failure, got: %v", err)
 	}
 }
 
@@ -352,9 +357,9 @@ func TestManager_Switch_Success(t *testing.T) {
 
 func TestManager_Switch_PreflightFailure_NoChanges(t *testing.T) {
 	cfg, exec, prober := setupTestEnvironment(t)
-	// Make awg3 fail ChatGPT probe
+	// Make awg3 fail quorum on preflight (ChatGPT, Grok, Meta return 403)
 	prober.fetchStatusFunc = func(iface, url string) (int, error) {
-		if iface == "awg3" && strings.Contains(url, "chatgpt") {
+		if iface == "awg3" {
 			return 403, nil
 		}
 		return 200, nil
@@ -379,14 +384,20 @@ func TestManager_Switch_PreflightFailure_NoChanges(t *testing.T) {
 func TestManager_Switch_PostflightFailure_Rollback(t *testing.T) {
 	cfg, exec, prober := setupTestEnvironment(t)
 
-	// Preflight succeeds, but postflight fails
+	// Preflight succeeds, but postflight fails quorum
 	var awg3Checks int32
+	prober.fetchStatusFunc = func(iface, url string) (int, error) {
+		if iface == "awg3" && atomic.LoadInt32(&awg3Checks) > 0 {
+			return 403, nil // postflight fails
+		}
+		if strings.Contains(url, "telegram") {
+			return 302, nil
+		}
+		return 200, nil
+	}
 	prober.fetchIPFunc = func(iface, url string) (string, int, error) {
 		if iface == "awg3" {
-			if atomic.AddInt32(&awg3Checks, 1) > 1 {
-				// Second call (postflight) fails with wrong IP
-				return "9.9.9.9", 200, nil
-			}
+			atomic.AddInt32(&awg3Checks, 1)
 			return "194.87.1.3", 200, nil
 		}
 		return "194.87.1.1", 200, nil
