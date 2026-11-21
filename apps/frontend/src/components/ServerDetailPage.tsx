@@ -631,7 +631,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
             </div>
             <div className="text-[11px] text-[#718187] font-mono mt-2 pt-2 border-t border-[#1C3945]/60 flex justify-between">
               <span>Версия демона:</span>
-              <span className="text-[#F2F0E8]">{node.health?.version || '1.5.1'}</span>
+              <span className="text-[#F2F0E8]">{node.health?.version || '1.6.0'}</span>
             </div>
           </div>
         </div>
