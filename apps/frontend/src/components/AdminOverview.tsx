@@ -559,8 +559,8 @@ export function AdminOverview({ onNavigateTab }: AdminOverviewProps) {
             <span className="text-xs text-[#A8B4B7]">конфигураций</span>
           </div>
           <div className="mt-3 flex items-center justify-between text-xs font-mono text-[#718187] pt-2 border-t border-[#1C3945]/50">
-            <span className="text-emerald-400">{onlinePeersCount} онлайн</span>
-            <span className={zombieKeysCount > 0 ? 'text-amber-400' : 'text-[#718187]'}>
+            <span className="text-emerald-400 whitespace-nowrap">{onlinePeersCount} онлайн</span>
+            <span className={`whitespace-nowrap ${zombieKeysCount > 0 ? 'text-amber-400' : 'text-[#718187]'}`}>
               {zombieKeysCount} спящих
             </span>
           </div>
@@ -576,14 +576,14 @@ export function AdminOverview({ onNavigateTab }: AdminOverviewProps) {
             <Server className="w-4 h-4 text-[#D9B96E] group-hover:scale-110 transition-transform" />
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-3xl font-bold font-mono text-[#F2F0E8]">
+            <span className="text-3xl font-bold font-mono text-[#F2F0E8] whitespace-nowrap">
               {nodes.filter((n) => n.online).length} / {nodes.length}
             </span>
-            <span className="text-xs text-[#A8B4B7]">онлайн</span>
+            <span className="text-xs text-[#A8B4B7] whitespace-nowrap">онлайн</span>
           </div>
           <div className="mt-3 flex items-center justify-between text-xs font-mono text-[#718187] pt-2 border-t border-[#1C3945]/50">
-            <span>Каскад + Direct</span>
-            <span className="text-purple-400">{egressStatus?.active_interface || 'Egress'}</span>
+            <span className="whitespace-nowrap">Каскад + Direct</span>
+            <span className="text-purple-400 whitespace-nowrap">{egressStatus?.active_interface || 'Egress'}</span>
           </div>
         </div>
 
