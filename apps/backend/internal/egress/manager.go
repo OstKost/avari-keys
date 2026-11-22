@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -30,9 +31,49 @@ type Manager struct {
 	prober HTTPProber
 }
 
+// InterfaceHandshakeInfo holds parsed WireGuard tunnel handshake and traffic metrics.
+type InterfaceHandshakeInfo struct {
+	LatestHandshakeEpoch int64
+	RxBytes              int64
+	TxBytes              int64
+	Found                bool
+}
+
+// CheckInterfaceDump queries awg/wg show dump for the interface to inspect session health.
+func CheckInterfaceDump(ctx context.Context, exec CommandExecutor, iface string) InterfaceHandshakeInfo {
+	if exec == nil || iface == "" {
+		return InterfaceHandshakeInfo{}
+	}
+	for _, bin := range []string{"awg", "wg"} {
+		out, err := exec.Run(ctx, bin, "show", iface, "dump")
+		if err != nil || out == "" {
+			continue
+		}
+		lines := strings.Split(out, "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			// Peer line in WireGuard dump:
+			// 0: public_key, 1: preshared_key, 2: endpoint, 3: allowed_ips, 4: latest_handshake, 5: rx, 6: tx, 7: persistent_keepalive
+			if len(fields) >= 8 {
+				handshake, _ := strconv.ParseInt(fields[4], 10, 64)
+				rx, _ := strconv.ParseInt(fields[5], 10, 64)
+				tx, _ := strconv.ParseInt(fields[6], 10, 64)
+				return InterfaceHandshakeInfo{
+					LatestHandshakeEpoch: handshake,
+					RxBytes:              rx,
+					TxBytes:              tx,
+					Found:                true,
+				}
+			}
+		}
+	}
+	return InterfaceHandshakeInfo{}
+}
+
 // NewManager returns a new Manager with default config, OS executor, and HTTP prober.
 func NewManager() *Manager {
-	return NewManagerWith(DefaultConfig(), &OSCommandExecutor{}, &DefaultHTTPProber{})
+	cfg := DefaultConfig()
+	return NewManagerWith(cfg, &OSCommandExecutor{}, &DefaultHTTPProber{DoHURL: cfg.DoHURL})
 }
 
 // NewManagerWith initializes a Manager with custom components (useful for testing).
@@ -89,16 +130,44 @@ func (m *Manager) GetStatus(ctx context.Context) (*models.EgressStatusResponse, 
 		go func(idx int, target TargetConfig) {
 			defer wg.Done()
 			report := RunTargetProbe(ctx, m.cfg, target, m.prober)
+			dumpInfo := CheckInterfaceDump(ctx, m.exec, target.Interface)
+
+			now := time.Now().Unix()
+			isFrozen := false
+			var handshakeAge int64
+			var recommendation string
+
+			if dumpInfo.Found {
+				if dumpInfo.LatestHandshakeEpoch > 0 {
+					handshakeAge = now - dumpInfo.LatestHandshakeEpoch
+					if handshakeAge < 0 {
+						handshakeAge = 0
+					}
+					// If handshake is older than 3 minutes (180s) and probe failed, or rx is 0 with tx > 0
+					if (handshakeAge > 180 && !report.Available) || (dumpInfo.TxBytes > 0 && dumpInfo.RxBytes == 0) {
+						isFrozen = true
+						recommendation = fmt.Sprintf("Зависла сессия WireGuard (последний handshake %d мин назад). Рекомендуется перезапустить службу туннеля: systemctl restart awg-quick@%s", handshakeAge/60, target.Interface)
+					}
+				} else if dumpInfo.TxBytes > 0 && dumpInfo.RxBytes == 0 {
+					isFrozen = true
+					handshakeAge = -1
+					recommendation = fmt.Sprintf("Сессия WireGuard не установила рукопожатие (0 B получено). Рекомендуется перезапустить службу туннеля: systemctl restart awg-quick@%s", target.Interface)
+				}
+			}
+
 			t := models.EgressTarget{
-				Interface:    target.Interface,
-				Node:         target.Node,
-				Label:        target.Label,
-				Endpoint:     target.Endpoint,
-				Available:    report.Available,
-				Reason:       report.Reason,
-				PassedChecks: report.PassedChecks,
-				TotalChecks:  report.TotalChecks,
-				Checks:       report.Checks,
+				Interface:       target.Interface,
+				Node:            target.Node,
+				Label:           target.Label,
+				Endpoint:        target.Endpoint,
+				Available:       report.Available,
+				Reason:          report.Reason,
+				PassedChecks:    report.PassedChecks,
+				TotalChecks:     report.TotalChecks,
+				Checks:          report.Checks,
+				HandshakeAgeSec: handshakeAge,
+				IsFrozen:        isFrozen,
+				Recommendation:  recommendation,
 			}
 			targets[idx] = t
 		}(i, entry)
@@ -154,7 +223,12 @@ func (m *Manager) Switch(ctx context.Context, targetInterface string) error {
 
 	// Preflight health verification of the target interface
 	if err := ProbeTarget(ctx, m.cfg, *target, m.prober); err != nil {
-		return fmt.Errorf("предварительная проверка выхода %s не прошла: %w", target.Interface, err)
+		// Attempt auto-recovery of frozen interface before aborting
+		_, _ = m.exec.Run(ctx, "systemctl", "restart", "awg-quick@"+target.Interface)
+		time.Sleep(1 * time.Second)
+		if retryErr := ProbeTarget(ctx, m.cfg, *target, m.prober); retryErr != nil {
+			return fmt.Errorf("предварительная проверка выхода %s не прошла: %w", target.Interface, retryErr)
+		}
 	}
 
 	if current == target.Interface {
