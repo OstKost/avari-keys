@@ -247,11 +247,15 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
 
   const handleDownloadConf = (key: ClientConfigDetail) => {
     triggerHaptic('light');
-    const blob = new Blob([key.config], { type: 'text/plain;charset=utf-8' });
+    const isMieruKey = key.protocol === 'mieru';
+    const isHysteriaKey = key.protocol === 'hysteria2';
+    const ext = isMieruKey ? 'json' : isHysteriaKey ? 'yaml' : 'conf';
+    const mime = isMieruKey ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8';
+    const blob = new Blob([key.config || key.vpn_uri || ''], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${key.client_name || 'avari-vpn'}.conf`;
+    a.download = `${key.client_name || 'avari-vpn'}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -609,12 +613,14 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                      activeKey.protocol === 'hysteria2'
+                      activeKey.protocol === 'mieru'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : activeKey.protocol === 'hysteria2'
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                         : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                     }`}
                   >
-                    {activeKey.protocol === 'hysteria2' ? 'Hysteria 2' : 'AmneziaWG'}
+                    {activeKey.protocol === 'mieru' ? 'Mieru' : activeKey.protocol === 'hysteria2' ? 'Hysteria 2' : 'AmneziaWG'}
                   </span>
                 </div>
 
@@ -636,7 +642,11 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                     </div>
                   )}
                   <span className="text-[11px] text-slate-600 mt-1 font-medium">
-                    Сканируйте в приложении AmneziaVPN
+                    {activeKey.protocol === 'mieru'
+                      ? 'Сканируйте в Hiddify / NekoBox'
+                      : activeKey.protocol === 'hysteria2'
+                      ? 'Сканируйте в v2rayNG / NekoBox'
+                      : 'Сканируйте в приложении AmneziaVPN'}
                   </span>
                 </div>
 
@@ -655,7 +665,13 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                       className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Скачать .conf</span>
+                      <span>
+                        {keyDetail.protocol === 'mieru'
+                          ? 'Скачать .json'
+                          : keyDetail.protocol === 'hysteria2'
+                          ? 'Скачать .yaml'
+                          : 'Скачать .conf'}
+                      </span>
                     </button>
                   </div>
                 )}
@@ -1146,11 +1162,11 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
 
               <div>
                 <label className="text-slate-400 block mb-1">Протокол</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setSelectedProtocol('awg')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold ${
+                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
                       selectedProtocol === 'awg'
                         ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
                         : 'bg-slate-950 text-slate-400 border-slate-800'
@@ -1161,13 +1177,24 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                   <button
                     type="button"
                     onClick={() => setSelectedProtocol('hysteria2')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold ${
+                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
                       selectedProtocol === 'hysteria2'
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
                     Hysteria 2
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProtocol('mieru')}
+                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
+                      selectedProtocol === 'mieru'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    Mieru
                   </button>
                 </div>
               </div>

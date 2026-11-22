@@ -300,7 +300,11 @@ export function AdminAllKeys() {
                 <td className="px-5 py-3.5">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-[#F2F0E8] text-sm">{k.device_name}</span>
-                    {k.protocol === 'hysteria2' ? (
+                    {k.protocol === 'mieru' ? (
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                        Mieru
+                      </span>
+                    ) : k.protocol === 'hysteria2' ? (
                       <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-950/80 text-violet-300 border border-violet-500/40 shadow-sm">
                         Hysteria 2
                       </span>

@@ -91,6 +91,7 @@ func (s *Storage) migrate() error {
 		is_mobile_optimized INTEGER NOT NULL DEFAULT 0,
 		is_backup INTEGER NOT NULL DEFAULT 0,
 		has_hysteria INTEGER NOT NULL DEFAULT 0,
+		has_mieru INTEGER NOT NULL DEFAULT 0,
 		auto_failover_enabled INTEGER NOT NULL DEFAULT 0,
 		failover_priority TEXT NOT NULL DEFAULT '[]',
 		is_active INTEGER NOT NULL DEFAULT 1,
@@ -210,6 +211,7 @@ func (s *Storage) migrate() error {
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN provider_url TEXT NOT NULL DEFAULT '';`)
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN is_backup INTEGER NOT NULL DEFAULT 0;`)
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_hysteria INTEGER NOT NULL DEFAULT 0;`)
+	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_mieru INTEGER NOT NULL DEFAULT 0;`)
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN auto_failover_enabled INTEGER NOT NULL DEFAULT 0;`)
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN failover_priority TEXT NOT NULL DEFAULT '[]';`)
 	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN is_pro INTEGER NOT NULL DEFAULT 0;`)
@@ -635,7 +637,7 @@ func (s *Storage) RejectPasswordResetByUserID(ctx context.Context, userID int64)
 
 
 // Node methods
-func (s *Storage) CreateNode(ctx context.Context, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized, isBackup, hasHysteria bool) (*models.Node, error) {
+func (s *Storage) CreateNode(ctx context.Context, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized, isBackup, hasHysteria bool, hasMieru ...bool) (*models.Node, error) {
 	isMobileVal := 0
 	if isMobileOptimized {
 		isMobileVal = 1
@@ -648,10 +650,14 @@ func (s *Storage) CreateNode(ctx context.Context, name, nodeType, countryCode, p
 	if hasHysteria {
 		hasHysteriaVal = 1
 	}
+	hasMieruVal := 0
+	if len(hasMieru) > 0 && hasMieru[0] {
+		hasMieruVal = 1
+	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO nodes (name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, is_active)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-	`, strings.TrimSpace(name), strings.TrimSpace(nodeType), strings.ToUpper(strings.TrimSpace(countryCode)), strings.TrimSpace(providerURL), strings.TrimSpace(apiURL), strings.TrimSpace(apiKey), isMobileVal, isBackupVal, hasHysteriaVal)
+		INSERT INTO nodes (name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, has_mieru, is_active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+	`, strings.TrimSpace(name), strings.TrimSpace(nodeType), strings.ToUpper(strings.TrimSpace(countryCode)), strings.TrimSpace(providerURL), strings.TrimSpace(apiURL), strings.TrimSpace(apiKey), isMobileVal, isBackupVal, hasHysteriaVal, hasMieruVal)
 	if err != nil {
 		return nil, err
 	}
@@ -659,7 +665,7 @@ func (s *Storage) CreateNode(ctx context.Context, name, nodeType, countryCode, p
 	return s.GetNodeByID(ctx, id)
 }
 
-func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized, isBackup, hasHysteria bool) (*models.Node, error) {
+func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, countryCode, providerURL, apiURL, apiKey string, isMobileOptimized, isBackup, hasHysteria bool, hasMieru ...bool) (*models.Node, error) {
 	isMobileVal := 0
 	if isMobileOptimized {
 		isMobileVal = 1
@@ -671,6 +677,10 @@ func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, coun
 	hasHysteriaVal := 0
 	if hasHysteria {
 		hasHysteriaVal = 1
+	}
+	hasMieruVal := 0
+	if len(hasMieru) > 0 && hasMieru[0] {
+		hasMieruVal = 1
 	}
 
 	name = strings.TrimSpace(name)
@@ -684,15 +694,15 @@ func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, coun
 	if apiKey != "" {
 		_, err = s.db.ExecContext(ctx, `
 			UPDATE nodes
-			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, api_key = ?, is_mobile_optimized = ?, is_backup = ?, has_hysteria = ?
+			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, api_key = ?, is_mobile_optimized = ?, is_backup = ?, has_hysteria = ?, has_mieru = ?
 			WHERE id = ?
-		`, name, nodeType, countryCode, providerURL, apiURL, apiKey, isMobileVal, isBackupVal, hasHysteriaVal, id)
+		`, name, nodeType, countryCode, providerURL, apiURL, apiKey, isMobileVal, isBackupVal, hasHysteriaVal, hasMieruVal, id)
 	} else {
 		_, err = s.db.ExecContext(ctx, `
 			UPDATE nodes
-			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, is_mobile_optimized = ?, is_backup = ?, has_hysteria = ?
+			SET name = ?, type = ?, country_code = ?, provider_url = ?, api_url = ?, is_mobile_optimized = ?, is_backup = ?, has_hysteria = ?, has_mieru = ?
 			WHERE id = ?
-		`, name, nodeType, countryCode, providerURL, apiURL, isMobileVal, isBackupVal, hasHysteriaVal, id)
+		`, name, nodeType, countryCode, providerURL, apiURL, isMobileVal, isBackupVal, hasHysteriaVal, hasMieruVal, id)
 	}
 
 	if err != nil {
@@ -703,18 +713,19 @@ func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, coun
 
 func (s *Storage) GetNodeByID(ctx context.Context, id int64) (*models.Node, error) {
 	var n models.Node
-	var isActive, isMobile, isBackup, hasHysteria, autoFailover int
+	var isActive, isMobile, isBackup, hasHysteria, hasMieru, autoFailover int
 	var failoverPriorityRaw string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, auto_failover_enabled, failover_priority, is_active, created_at
+		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, has_mieru, auto_failover_enabled, failover_priority, is_active, created_at
 		FROM nodes WHERE id = ?
-	`, id).Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &autoFailover, &failoverPriorityRaw, &isActive, &n.CreatedAt)
+	`, id).Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &hasMieru, &autoFailover, &failoverPriorityRaw, &isActive, &n.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	n.IsMobileOptimized = isMobile == 1
 	n.IsBackup = isBackup == 1
 	n.HasHysteria = hasHysteria == 1
+	n.HasMieru = hasMieru == 1
 	n.AutoFailoverEnabled = autoFailover == 1
 	n.FailoverPriority = []string{}
 	if failoverPriorityRaw != "" {
@@ -726,7 +737,7 @@ func (s *Storage) GetNodeByID(ctx context.Context, id int64) (*models.Node, erro
 
 func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, auto_failover_enabled, failover_priority, is_active, created_at
+		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, has_mieru, auto_failover_enabled, failover_priority, is_active, created_at
 		FROM nodes ORDER BY id ASC
 	`)
 	if err != nil {
@@ -737,14 +748,15 @@ func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 	list := []models.Node{}
 	for rows.Next() {
 		var n models.Node
-		var isActive, isMobile, isBackup, hasHysteria, autoFailover int
+		var isActive, isMobile, isBackup, hasHysteria, hasMieru, autoFailover int
 		var failoverPriorityRaw string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &autoFailover, &failoverPriorityRaw, &isActive, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &hasMieru, &autoFailover, &failoverPriorityRaw, &isActive, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		n.IsMobileOptimized = isMobile == 1
 		n.IsBackup = isBackup == 1
 		n.HasHysteria = hasHysteria == 1
+		n.HasMieru = hasMieru == 1
 		n.AutoFailoverEnabled = autoFailover == 1
 		n.FailoverPriority = []string{}
 		if failoverPriorityRaw != "" {
@@ -778,7 +790,7 @@ func (s *Storage) UpdateNodeFailoverSettings(ctx context.Context, id int64, enab
 
 func (s *Storage) ListActiveNodesPublic(ctx context.Context) ([]models.NodePublic, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, country_code, is_mobile_optimized, is_backup, has_hysteria, is_active, created_at
+		SELECT id, name, type, country_code, is_mobile_optimized, is_backup, has_hysteria, has_mieru, is_active, created_at
 		FROM nodes WHERE is_active = 1 ORDER BY id ASC
 	`)
 	if err != nil {
@@ -789,13 +801,14 @@ func (s *Storage) ListActiveNodesPublic(ctx context.Context) ([]models.NodePubli
 	list := []models.NodePublic{}
 	for rows.Next() {
 		var n models.NodePublic
-		var isActive, isMobile, isBackup, hasHysteria int
-		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &isMobile, &isBackup, &hasHysteria, &isActive, &n.CreatedAt); err != nil {
+		var isActive, isMobile, isBackup, hasHysteria, hasMieru int
+		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &isMobile, &isBackup, &hasHysteria, &hasMieru, &isActive, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		n.IsMobileOptimized = isMobile == 1
 		n.IsBackup = isBackup == 1
 		n.HasHysteria = hasHysteria == 1
+		n.HasMieru = hasMieru == 1
 		n.IsActive = isActive == 1
 		list = append(list, n)
 	}

@@ -8,6 +8,7 @@ type HealthResponse struct {
 	Service           string `json:"service"`
 	AWGAvailable      bool   `json:"awg_available"`
 	HysteriaAvailable bool   `json:"hysteria_available,omitempty"`
+	MieruAvailable    bool   `json:"mieru_available,omitempty"`
 	Version           string `json:"version,omitempty"`
 }
 
@@ -15,17 +16,17 @@ type HealthResponse struct {
 type ClientCreateRequest struct {
 	Name     string `json:"name"`
 	PSK      bool   `json:"psk,omitempty"`
-	Protocol string `json:"protocol,omitempty"` // "awg" (default) or "hysteria2"
+	Protocol string `json:"protocol,omitempty"` // "awg" (default), "hysteria2", or "mieru"
 }
 
 // ClientResponse represents the output when a client is created or retrieved.
 type ClientResponse struct {
 	Name      string `json:"name"`
 	Config    string `json:"config"`
-	Protocol  string `json:"protocol,omitempty"`    // "awg" or "hysteria2"
-	QRCode    string `json:"qr_code,omitempty"`     // Base64 PNG or SVG data URI for AWG/Hysteria
-	VPNURI    string `json:"vpn_uri,omitempty"`     // AmneziaVPN URI (vpn://...) or hysteria2://
-	VPNQRCode string `json:"vpn_qr_code,omitempty"` // Base64 PNG or SVG data URI for AmneziaVPN / Hysteria
+	Protocol  string `json:"protocol,omitempty"`    // "awg", "hysteria2", or "mieru"
+	QRCode    string `json:"qr_code,omitempty"`     // Base64 PNG or SVG data URI for AWG/Hysteria/Mieru
+	VPNURI    string `json:"vpn_uri,omitempty"`     // AmneziaVPN URI (vpn://...), hysteria2://, or mierus://
+	VPNQRCode string `json:"vpn_qr_code,omitempty"` // Base64 PNG or SVG data URI
 	PublicKey string `json:"public_key,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 }

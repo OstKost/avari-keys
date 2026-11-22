@@ -302,8 +302,12 @@ const realApi = {
     countryCode?: string,
     providerUrl?: string,
     isBackup?: boolean,
-    hasHysteria?: boolean
+    hasHysteria?: boolean,
+    hasMieru?: boolean
   ): Promise<AdminNode> {
+    if (isMockMode()) {
+      return mockApi.addAdminNode(name, type, apiUrl, apiKey, isMobileOptimized, countryCode, providerUrl, isBackup, hasHysteria, hasMieru);
+    }
     const res = await fetch(`${API_BASE}/admin/nodes`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -315,6 +319,7 @@ const realApi = {
         is_mobile_optimized: isMobileOptimized || false,
         is_backup: isBackup || false,
         has_hysteria: hasHysteria || false,
+        has_mieru: hasMieru || false,
         country_code: countryCode || '',
         provider_url: providerUrl || '',
       }),
@@ -332,10 +337,14 @@ const realApi = {
       isMobileOptimized?: boolean;
       isBackup?: boolean;
       hasHysteria?: boolean;
+      hasMieru?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
   ): Promise<AdminNode> {
+    if (isMockMode()) {
+      return mockApi.updateAdminNode(id, data);
+    }
     const res = await fetch(`${API_BASE}/admin/nodes/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
@@ -347,6 +356,7 @@ const realApi = {
         is_mobile_optimized: data.isMobileOptimized || false,
         is_backup: data.isBackup || false,
         has_hysteria: data.hasHysteria || false,
+        has_mieru: data.hasMieru || false,
         country_code: data.countryCode || '',
         provider_url: data.providerUrl || '',
       }),

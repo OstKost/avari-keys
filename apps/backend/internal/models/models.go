@@ -44,6 +44,7 @@ type Node struct {
 	IsMobileOptimized   bool      `json:"is_mobile_optimized"`
 	IsBackup            bool      `json:"is_backup"`
 	HasHysteria         bool      `json:"has_hysteria"`
+	HasMieru            bool      `json:"has_mieru"`
 	AutoFailoverEnabled bool      `json:"auto_failover_enabled"`
 	FailoverPriority    []string  `json:"failover_priority"`
 	IsActive            bool      `json:"is_active"`
@@ -59,6 +60,7 @@ type NodePublic struct {
 	IsMobileOptimized bool      `json:"is_mobile_optimized"`
 	IsBackup          bool      `json:"is_backup"`
 	HasHysteria       bool      `json:"has_hysteria"`
+	HasMieru          bool      `json:"has_mieru"`
 	IsActive          bool      `json:"is_active"`
 	CreatedAt         time.Time `json:"created_at"`
 }
@@ -104,7 +106,7 @@ type ClientConfig struct {
 	NodeName              string    `json:"node_name,omitempty"`
 	NodeType              string    `json:"node_type,omitempty"`
 	NodeCountryCode       string    `json:"node_country_code,omitempty"`
-	Protocol              string    `json:"protocol,omitempty"` // "awg" or "hysteria2"
+	Protocol              string    `json:"protocol,omitempty"` // "awg", "hysteria2", or "mieru"
 	LastHandshake         string    `json:"last_handshake,omitempty"`
 	LastHandshakeEpoch    int64     `json:"last_handshake_epoch,omitempty"`
 	IsOnline              bool      `json:"is_online,omitempty"`
@@ -160,7 +162,7 @@ type CreateKeyRequest struct {
 	NodeID     int64  `json:"node_id"`
 	DeviceName string `json:"device_name"`
 	PSK        bool   `json:"psk,omitempty"`
-	Protocol   string `json:"protocol,omitempty"` // "awg" or "hysteria2"
+	Protocol   string `json:"protocol,omitempty"` // "awg", "hysteria2", or "mieru"
 }
 
 type AddNodeRequest struct {
@@ -173,6 +175,7 @@ type AddNodeRequest struct {
 	IsMobileOptimized   bool     `json:"is_mobile_optimized"`
 	IsBackup            bool     `json:"is_backup"`
 	HasHysteria         bool     `json:"has_hysteria"`
+	HasMieru            bool     `json:"has_mieru"`
 	AutoFailoverEnabled bool     `json:"auto_failover_enabled"`
 	FailoverPriority    []string `json:"failover_priority"`
 }
@@ -187,6 +190,7 @@ type UpdateNodeRequest struct {
 	IsMobileOptimized   bool     `json:"is_mobile_optimized"`
 	IsBackup            bool     `json:"is_backup"`
 	HasHysteria         bool     `json:"has_hysteria"`
+	HasMieru            bool     `json:"has_mieru"`
 	AutoFailoverEnabled *bool    `json:"auto_failover_enabled,omitempty"`
 	FailoverPriority    []string `json:"failover_priority,omitempty"`
 }

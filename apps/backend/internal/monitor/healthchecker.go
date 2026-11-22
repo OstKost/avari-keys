@@ -410,7 +410,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 		if !isOnline {
 			status.State = "red"
 			status.Reason = "API ноды недоступен; работа сервера не подтверждена"
-		} else if res.health != nil && (!res.health.AWGAvailable || (n.HasHysteria && !res.health.HysteriaAvailable)) {
+		} else if res.health != nil && (!res.health.AWGAvailable || (n.HasHysteria && !res.health.HysteriaAvailable) || (n.HasMieru && !res.health.MieruAvailable)) {
 			status.State = "yellow"
 			status.Reason = "API отвечает, но настроенная VPN-служба недоступна"
 		}
