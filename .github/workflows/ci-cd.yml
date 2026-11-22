@@ -331,7 +331,13 @@ jobs:
 
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || return 1
 
+            # Upload and install the new avari-slave binary first so any CLI helper or daemon uses the updated binary
+            scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave || return 1
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave" || return 1
+
+            # If deploying to the cascade gateway (M0 / S0), also install egress configs and routing scripts
             if [ "$TARGET" = "$CASCADE_GATEWAY_HOST" ]; then
+              echo "==> Configuring Network Probe targets and egress routing for cascade gateway..."
               : "${NETWORK_PROBE_TARGETS:?Missing probe targets secret}"
               : "${CASCADE_EGRESS_CONFIG:?Missing cascade registry secret}"
               printf '%s' "$CASCADE_EGRESS_CONFIG" | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/avari-keys; cat > /etc/avari-keys/egress.json' || return 1
@@ -347,14 +353,11 @@ jobs:
                   raise SystemExit("Probe inventory must be single-line JSON")
               print("Environment=\"NETWORK_PROBE_TARGETS=" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("%", "%%") + "\"")
               ' | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf' || return 1
-              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP}" || return 1
               scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/ || return 1
               ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null" || return 1
             fi
 
-            scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave || return 1
-
-            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave && rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && systemctl is-active --quiet avari-slave && systemctl restart avari-slave && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && systemctl is-active --quiet avari-slave && systemctl restart avari-slave && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
             return 0
           }
 
