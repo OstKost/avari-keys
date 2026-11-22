@@ -50,6 +50,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
   const [loading, setLoading] = useState(true);
   const [diagnosing, setDiagnosing] = useState(false);
   const [switchingEgress, setSwitchingEgress] = useState(false);
+  const [checkingEgress, setCheckingEgress] = useState(false);
 
   // Restart modal
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
@@ -183,6 +184,21 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
       toast.error(err.message || 'Ошибка переключения выхода каскада');
     } finally {
       setSwitchingEgress(false);
+    }
+  };
+
+  // Check Cascade Egress Gateways
+  const handleCheckEgress = async () => {
+    if (!node || node.type !== 'cascade' || checkingEgress) return;
+    try {
+      setCheckingEgress(true);
+      const freshEgress = await api.getNodeEgress(node.id);
+      setNode((prev) => (prev ? { ...prev, egress: freshEgress } : null));
+      toast.success('Проверка шлюзов выходов завершена');
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка проверки шлюзов выходов');
+    } finally {
+      setCheckingEgress(false);
     }
   };
 
@@ -931,6 +947,16 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                 )}
 
                 <button
+                  onClick={handleCheckEgress}
+                  disabled={checkingEgress}
+                  title="Запустить немедленную проверку всех шлюзов выхода каскада"
+                  className="flex items-center space-x-2 px-3 py-1.5 rounded-xl border border-[#1C3945] bg-[#06141B] text-[#A8B4B7] hover:text-[#D9B96E] hover:border-[#D9B96E]/50 text-xs font-mono font-bold transition cursor-pointer disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${checkingEgress ? 'animate-spin text-[#D9B96E]' : ''}`} />
+                  <span>{checkingEgress ? 'Проверка...' : 'Проверить шлюзы'}</span>
+                </button>
+
+                <button
                   onClick={handleToggleAutoFailover}
                   disabled={savingFailover}
                   title={node.auto_failover_enabled ? 'Нажмите для отключения автоматического переключения' : 'Нажмите для активации автоматического переключения'}
@@ -1043,6 +1069,11 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                             Активен
                           </span>
                         )}
+                        {target.is_frozen && (
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-cyan-950/90 text-cyan-300 border border-cyan-500/40 shrink-0" title="Рукопожатие WireGuard зависло (0 B получено)">
+                            ❄️ Завис
+                          </span>
+                        )}
                       </div>
 
                       <div className="space-y-1 text-xs font-mono text-[#A8B4B7] bg-[#0A1D26] p-2.5 rounded-xl border border-[#1C3945]/50">
@@ -1058,6 +1089,16 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                           <span className="text-[#718187]">Эндпоинт:</span>
                           <span className="text-[#A8B4B7] truncate max-w-[120px]">{target.endpoint}</span>
                         </div>
+                        {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-[#718187]">Хэндшейк:</span>
+                            <span className={target.is_frozen ? 'text-cyan-400 font-bold' : 'text-[#A8B4B7]'}>
+                              {target.handshake_age_sec < 60
+                                ? `${target.handshake_age_sec} с назад`
+                                : `${Math.round(target.handshake_age_sec / 60)} мин назад`}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Micro-badges for multi-target health checks */}
@@ -1083,6 +1124,18 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                       {!target.available && target.reason && (
                         <div className="text-[10px] text-rose-400 font-sans mt-1.5 line-clamp-2 leading-tight" title={target.reason}>
                           {target.reason}
+                        </div>
+                      )}
+
+                      {target.recommendation && (
+                        <div className="mt-2 p-2 bg-cyan-950/30 border border-cyan-600/40 rounded-xl text-[10px] text-cyan-200">
+                          <div className="font-semibold flex items-center gap-1 mb-1 text-cyan-300">
+                            <AlertTriangle className="w-3 h-3 text-cyan-400 shrink-0" />
+                            <span>Рекомендация по сбросу:</span>
+                          </div>
+                          <code className="block bg-[#06141B] px-1.5 py-1 rounded text-[#D9B96E] font-mono text-[9px] break-all select-all">
+                            {target.recommendation}
+                          </code>
                         </div>
                       )}
                     </div>

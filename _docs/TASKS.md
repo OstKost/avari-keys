@@ -4,7 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
-| | | | | [TASK-073](./tasks/TASK-073-mieru-protocol-integration-and-key-transliteration.md), [TASK-072](./tasks/TASK-072-ui-ux-polish.md), [TASK-071](./tasks/TASK-071-admin-mission-control-and-ux-overhaul.md), [TASK-070](./tasks/TASK-070-mobile-first-key-setup.md), [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
+| | | | | [TASK-074](./tasks/TASK-074-cascade-egress-robust-multi-ip-probes-and-ui.md), [TASK-073](./tasks/TASK-073-mieru-protocol-integration-and-key-transliteration.md), [TASK-072](./tasks/TASK-072-ui-ux-polish.md), [TASK-071](./tasks/TASK-071-admin-mission-control-and-ux-overhaul.md), [TASK-070](./tasks/TASK-070-mobile-first-key-setup.md), [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
 | | | | | [TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md) |
 | | | | | [TASK-067](./tasks/TASK-067-cascade-egress-quorum-5-targets-grok-meta.md) |
 | | | | | [TASK-066](./tasks/TASK-066-go-native-cascade-egress-and-healthcheck-interval.md) |
@@ -42,6 +42,7 @@
 
 ## 📌 Список задач с кратким статусом
 
+- **[TASK-074](./tasks/TASK-074-cascade-egress-robust-multi-ip-probes-and-ui.md)**: ✅ Надежный пул IP-проверок (4 провайдера: ipify, icanhazip, ipinfo, myip), DoH-резолвинг в обход DNS РФ, детектирование зависаний WireGuard и UI ручной проверки Egress.
 - **[TASK-073](./tasks/TASK-073-mieru-protocol-integration-and-key-transliteration.md)**: ✅ Поддержка протокола Mieru (скрытный TCP-прокси на базе `mita` и `mieru-admin` API `:9081/v1`, AvariGate JSON + `mierus://` QR-код, мониторинг `mieru_available`), а также транслитерация кириллических названий устройств в чистую латиницу при сохранении ключей.
 - **[TASK-072](./tasks/TASK-072-ui-ux-polish.md)**: ✅ Выравнивание по горизонтали меню для пользователей и админов, фиксация лейблов пинга/онлайна/типа подключения от переноса, пульсирующие круглые индикаторы серверов (аварийный красный маячок при сбое) и редизайн страницы «Статус сети» (топология в верхнем ряду, список серверов на всю ширину).
 - **[TASK-071](./tasks/TASK-071-admin-mission-control-and-ux-overhaul.md)**: ✅ Двухрежимный интерфейс (Client / Admin Mission Control), Panic Bar Egress, топология каскада, User Drawer CRM и гигиена зомби-ключей.

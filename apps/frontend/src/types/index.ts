@@ -227,6 +227,9 @@ export interface EgressTarget {
   passed_checks?: number;
   total_checks?: number;
   checks?: TargetProbeResult[];
+  handshake_age_sec?: number;
+  is_frozen?: boolean;
+  recommendation?: string;
 }
 
 export interface EgressStatusResponse {

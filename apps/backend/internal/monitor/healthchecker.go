@@ -40,6 +40,7 @@ type HealthChecker struct {
 
 	failoverFailures map[int64]int       // nodeID -> consecutive egress failure count
 	failoverCooldown map[int64]time.Time // nodeID -> cooldown expiration
+	frozenAlerts     map[string]time.Time // "nodeID:iface" -> last frozen alert time
 
 	mu       sync.RWMutex
 	stopChan chan struct{}
@@ -93,6 +94,7 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 		prevNodeRaw:      make(map[int64]rawCounters),
 		failoverFailures: make(map[int64]int),
 		failoverCooldown: make(map[int64]time.Time),
+		frozenAlerts:     make(map[string]time.Time),
 		stopChan:         make(chan struct{}),
 	}
 }
@@ -254,6 +256,32 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 								activeEgress = status.Targets[i].Node
 							}
 							break
+						}
+					}
+
+					// Check for frozen WireGuard egress sessions and alert admin
+					for _, target := range status.Targets {
+						alertKey := fmt.Sprintf("%d:%s", n.ID, target.Interface)
+						if target.IsFrozen {
+							h.mu.Lock()
+							lastAlert, alerted := h.frozenAlerts[alertKey]
+							shouldAlert := !alerted || time.Since(lastAlert) > 1*time.Hour
+							if shouldAlert {
+								h.frozenAlerts[alertKey] = time.Now()
+							}
+							h.mu.Unlock()
+
+							if shouldAlert {
+								log.Printf("[MONITOR] ❄️ Cascade egress %s (%s) on node #%d is frozen (handshake age: %ds). Alerting admin.",
+									target.Interface, target.Label, n.ID, target.HandshakeAgeSec)
+								if h.bot != nil {
+									h.bot.NotifyCascadeEgressFrozen(n, target)
+								}
+							}
+						} else {
+							h.mu.Lock()
+							delete(h.frozenAlerts, alertKey)
+							h.mu.Unlock()
 						}
 					}
 

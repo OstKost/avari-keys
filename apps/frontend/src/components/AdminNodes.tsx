@@ -2188,13 +2188,25 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                   <ArrowRightLeft className="w-6 h-6" />
                   <h3 className="font-serif text-lg font-bold text-[#F2F0E8]">Управление выходом каскада</h3>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setEgressNode(null)}
-                  className="text-[#A8B4B7] hover:text-[#F2F0E8] p-1 rounded-lg hover:bg-[#102833]"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => egressNode && handleOpenEgress(egressNode)}
+                    disabled={loadingEgress || switchingEgress}
+                    title="Запустить немедленную проверку всех шлюзов"
+                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-[#102833] text-[#A8B4B7] hover:text-[#D9B96E] border border-[#1C3945] transition cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingEgress ? 'animate-spin text-[#D9B96E]' : ''}`} />
+                    <span>Проверить</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEgressNode(null)}
+                    className="text-[#A8B4B7] hover:text-[#F2F0E8] p-1 rounded-lg hover:bg-[#102833]"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <p className="text-xs sm:text-sm text-[#A8B4B7] font-sans">
@@ -2250,6 +2262,11 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                                   АКТИВЕН
                                 </span>
                               )}
+                              {target.is_frozen && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-500/40 font-mono">
+                                  ❄️ ЗАВИС
+                                </span>
+                              )}
                             </span>
                             <span
                               className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -2264,27 +2281,43 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
                           {/* Micro-badges for checks */}
                           {target.checks && target.checks.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-[#1C3945]/60 text-[10px]">
-                              {target.checks.map((c) => (
-                                <span
-                                  key={c.name}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5 ${
-                                    c.ok
-                                      ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
-                                      : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
-                                  }`}
-                                  title={c.error || `HTTP ${c.status || 200}`}
-                                >
-                                  <span>{c.name.toUpperCase()}</span>
-                                  <span>{c.ok ? '✓' : '✗'}</span>
+                            <div className="flex items-center justify-between flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-[#1C3945]/60 text-[10px]">
+                              <div className="flex flex-wrap gap-1">
+                                {target.checks.map((c) => (
+                                  <span
+                                    key={c.name}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5 ${
+                                      c.ok
+                                        ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
+                                        : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
+                                    }`}
+                                    title={c.error || `HTTP ${c.status || 200}`}
+                                  >
+                                    <span>{c.name.toUpperCase()}</span>
+                                    <span>{c.ok ? '✓' : '✗'}</span>
+                                  </span>
+                                ))}
+                              </div>
+                              {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && (
+                                <span className={`text-[10px] font-mono ${target.is_frozen ? 'text-cyan-400 font-bold' : 'text-[#718187]'}`}>
+                                  {target.handshake_age_sec < 60
+                                    ? `${target.handshake_age_sec}с`
+                                    : `${Math.round(target.handshake_age_sec / 60)}м`}
                                 </span>
-                              ))}
+                              )}
                             </div>
                           )}
 
                           {!target.available && target.reason && (
                             <div className="text-[11px] text-rose-400 font-sans mt-1 leading-snug">
                               {target.reason}
+                            </div>
+                          )}
+
+                          {target.recommendation && (
+                            <div className="mt-1.5 p-1.5 bg-cyan-950/30 border border-cyan-600/40 rounded-lg text-[10px] text-cyan-200">
+                              <span className="font-semibold text-cyan-300">Рекомендация: </span>
+                              <code className="text-[#D9B96E] font-mono select-all text-[9px]">{target.recommendation}</code>
                             </div>
                           )}
                         </div>

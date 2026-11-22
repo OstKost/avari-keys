@@ -3,6 +3,7 @@ package egress
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 )
 
 type mockExecutor struct {
@@ -524,5 +526,101 @@ func TestManager_ConcurrentLockRefused(t *testing.T) {
 	err = mgr.Switch(context.Background(), "awg3")
 	if err == nil || !strings.Contains(err.Error(), "другая операция") {
 		t.Fatalf("expected error about concurrent operation, got: %v", err)
+	}
+}
+
+func TestParseIPv4FromBody(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"185.213.240.136", "185.213.240.136"},
+		{" 157.228.142.20 \n", "157.228.142.20"},
+		{`{"ip":"109.107.176.224","country":"Russia","cc":"RU"}`, "109.107.176.224"},
+		{`<html><body>Your IP: 1.2.3.4</body></html>`, "1.2.3.4"},
+		{"invalid ip", ""},
+		{"", ""},
+	}
+
+	for _, c := range cases {
+		got := ParseIPv4FromBody(c.input)
+		if got != c.expected {
+			t.Errorf("ParseIPv4FromBody(%q) = %q, expected %q", c.input, got, c.expected)
+		}
+	}
+}
+
+func TestRunTargetProbe_MultiProviderFallback(t *testing.T) {
+	ctx := context.Background()
+	target := TargetConfig{
+		Interface: "awg1",
+		Endpoint:  "194.87.1.1",
+		Node:      "S1",
+		Label:     "S1",
+	}
+
+	cfg := Config{
+		IPProviders: []string{
+			"https://failing-ipify.test",
+			"https://icanhazip.test",
+			"https://api.myip.test",
+		},
+		TelegramURL: "https://api.telegram.org",
+		ChatGPTURL:  "https://chatgpt.com",
+		GrokURL:     "https://grok.com",
+		MetaURL:     "https://www.instagram.com",
+	}
+
+	// Prober fails on first provider, succeeds on second (returning JSON or plain text)
+	prober := &mockProber{
+		fetchIPFunc: func(iface, url string) (string, int, error) {
+			if url == "https://failing-ipify.test" {
+				return "", 500, errors.New("timeout connecting to lumen anycast")
+			}
+			if url == "https://icanhazip.test" {
+				return "194.87.1.1\n", 200, nil
+			}
+			return `{"ip":"194.87.1.1"}`, 200, nil
+		},
+		fetchStatusFunc: func(iface, url string) (int, error) {
+			return 200, nil
+		},
+	}
+
+	report := RunTargetProbe(ctx, cfg, target, prober)
+	if !report.Available {
+		t.Fatalf("expected target available after fallback, got reason: %s", report.Reason)
+	}
+	if !report.Checks[0].OK {
+		t.Fatalf("expected IP check to pass via fallback, got error: %s", report.Checks[0].Error)
+	}
+	if report.Checks[0].Target != "https://icanhazip.test" {
+		t.Errorf("expected Target to be icanhazip.test, got %s", report.Checks[0].Target)
+	}
+}
+
+func TestCheckInterfaceDump_Frozen(t *testing.T) {
+	ctx := context.Background()
+
+	staleEpoch := time.Now().Unix() - 600 // 10 minutes ago
+	dumpOutput := fmt.Sprintf("private\tpublic\t42745\toff\npeer_pub\t(none)\t1.2.3.4:443\t0.0.0.0/0\t%d\t0\t524288\t15\n", staleEpoch)
+
+	exec := newMockExecutor()
+	exec.runHandler = func(name string, args ...string) (string, error) {
+		if (name == "awg" || name == "wg") && len(args) == 3 && args[0] == "show" && args[1] == "awg1" && args[2] == "dump" {
+			return dumpOutput, nil
+		}
+		return "", errors.New("command not found")
+	}
+
+	info := CheckInterfaceDump(ctx, exec, "awg1")
+	if !info.Found {
+		t.Fatal("expected dump info to be found")
+	}
+	if info.LatestHandshakeEpoch != staleEpoch {
+		t.Errorf("expected epoch %d, got %d", staleEpoch, info.LatestHandshakeEpoch)
+	}
+	if info.RxBytes != 0 || info.TxBytes != 524288 {
+		t.Errorf("expected rx=0 tx=524288, got rx=%d tx=%d", info.RxBytes, info.TxBytes)
 	}
 }

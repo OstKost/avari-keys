@@ -102,15 +102,18 @@ type TargetProbeResult struct {
 
 // EgressStatusResponse represents the active and available egress routes for a cascade node.
 type EgressTarget struct {
-	Interface    string              `json:"interface"`
-	Node         string              `json:"node"`
-	Label        string              `json:"label"`
-	Endpoint     string              `json:"endpoint"`
-	Available    bool                `json:"available"`
-	Reason       string              `json:"reason,omitempty"`
-	PassedChecks int                 `json:"passed_checks,omitempty"`
-	TotalChecks  int                 `json:"total_checks,omitempty"`
-	Checks       []TargetProbeResult `json:"checks,omitempty"`
+	Interface       string              `json:"interface"`
+	Node            string              `json:"node"`
+	Label           string              `json:"label"`
+	Endpoint        string              `json:"endpoint"`
+	Available       bool                `json:"available"`
+	Reason          string              `json:"reason,omitempty"`
+	PassedChecks    int                 `json:"passed_checks,omitempty"`
+	TotalChecks     int                 `json:"total_checks,omitempty"`
+	Checks          []TargetProbeResult `json:"checks,omitempty"`
+	HandshakeAgeSec int64               `json:"handshake_age_sec,omitempty"`
+	IsFrozen        bool                `json:"is_frozen,omitempty"`
+	Recommendation  string              `json:"recommendation,omitempty"`
 }
 
 type EgressStatusResponse struct {

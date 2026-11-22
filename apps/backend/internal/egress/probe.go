@@ -2,13 +2,16 @@ package egress
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,7 +32,9 @@ type InterfaceChecker interface {
 }
 
 // DefaultHTTPProber uses curl (standard on nodes) or pure Go fallback.
-type DefaultHTTPProber struct{}
+type DefaultHTTPProber struct {
+	DoHURL string
+}
 
 // CheckInterface verifies interface existence in sysfs on Linux.
 func (p *DefaultHTTPProber) CheckInterface(iface string) error {
@@ -47,42 +52,89 @@ func (p *DefaultHTTPProber) CheckInterface(iface string) error {
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-// FetchIP queries the IP provider (e.g. api.ipify.org) and returns body and status code.
+var ipv4Regex = regexp.MustCompile(`\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b`)
+
+// ParseIPv4FromBody extracts an IPv4 address from either plain-text, JSON, or mixed text.
+func ParseIPv4FromBody(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return ""
+	}
+
+	// 1. Direct IPv4
+	if ip := net.ParseIP(trimmed); ip != nil && ip.To4() != nil {
+		return ip.String()
+	}
+
+	// 2. JSON: {"ip": "1.2.3.4", ...} (e.g. from api.myip.com)
+	var jsonPayload struct {
+		IP string `json:"ip"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &jsonPayload); err == nil && jsonPayload.IP != "" {
+		if ip := net.ParseIP(strings.TrimSpace(jsonPayload.IP)); ip != nil && ip.To4() != nil {
+			return ip.String()
+		}
+	}
+
+	// 3. Fallback regex to find first valid IPv4
+	if match := ipv4Regex.FindString(trimmed); match != "" {
+		if ip := net.ParseIP(match); ip != nil && ip.To4() != nil {
+			return ip.String()
+		}
+	}
+
+	return ""
+}
+
+func (p *DefaultHTTPProber) runCurlFetchIP(ctx context.Context, iface, targetURL, dohURL string) (string, int, error) {
+	args := []string{
+		"-4",
+		"--silent",
+		"--show-error",
+		"--noproxy", "*",
+		"-A", userAgent,
+		"--connect-timeout", "3",
+		"--max-time", "6",
+	}
+	if iface != "" {
+		args = append(args, "--interface", iface)
+	}
+	if dohURL != "" {
+		args = append(args, "--doh-url", dohURL)
+	}
+	args = append(args, "-w", "\n%{http_code}", targetURL)
+
+	cmd := exec.CommandContext(ctx, "curl", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", 0, fmt.Errorf("curl failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimRight(string(out), "\r\n"), "\n")
+	if len(lines) == 0 {
+		return "", 0, fmt.Errorf("empty response from curl")
+	}
+
+	codeStr := strings.TrimSpace(lines[len(lines)-1])
+	code, err := strconv.Atoi(codeStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid http status code %q", codeStr)
+	}
+
+	body := strings.TrimSpace(strings.Join(lines[:len(lines)-1], "\n"))
+	return body, code, nil
+}
+
+// FetchIP queries the IP provider (e.g. api.ipify.org, icanhazip.com, ipinfo.io, api.myip.com) and returns body and status code.
 func (p *DefaultHTTPProber) FetchIP(ctx context.Context, iface string, targetURL string) (string, int, error) {
 	if _, err := exec.LookPath("curl"); err == nil {
-		args := []string{
-			"-4",
-			"--silent",
-			"--show-error",
-			"--noproxy", "*",
-			"-A", userAgent,
-			"--connect-timeout", "3",
-			"--max-time", "6",
+		if p.DoHURL != "" {
+			body, code, err := p.runCurlFetchIP(ctx, iface, targetURL, p.DoHURL)
+			if err == nil && code >= 200 && code < 400 {
+				return body, code, nil
+			}
 		}
-		if iface != "" {
-			args = append(args, "--interface", iface)
-		}
-		args = append(args, "-w", "\n%{http_code}", targetURL)
-
-		cmd := exec.CommandContext(ctx, "curl", args...)
-		out, err := cmd.Output()
-		if err != nil {
-			return "", 0, fmt.Errorf("curl failed: %w", err)
-		}
-
-		lines := strings.Split(strings.TrimRight(string(out), "\r\n"), "\n")
-		if len(lines) == 0 {
-			return "", 0, fmt.Errorf("empty response from curl")
-		}
-
-		codeStr := strings.TrimSpace(lines[len(lines)-1])
-		code, err := strconv.Atoi(codeStr)
-		if err != nil {
-			return "", 0, fmt.Errorf("invalid http status code %q", codeStr)
-		}
-
-		body := strings.TrimSpace(strings.Join(lines[:len(lines)-1], "\n"))
-		return body, code, nil
+		return p.runCurlFetchIP(ctx, iface, targetURL, "")
 	}
 
 	// Fallback to pure Go HTTP client
@@ -107,36 +159,49 @@ func (p *DefaultHTTPProber) FetchIP(ctx context.Context, iface string, targetURL
 	return strings.TrimSpace(string(bodyBytes)), resp.StatusCode, nil
 }
 
+func (p *DefaultHTTPProber) runCurlFetchStatus(ctx context.Context, iface, targetURL, dohURL string) (int, error) {
+	args := []string{
+		"-4",
+		"--silent",
+		"--show-error",
+		"--noproxy", "*",
+		"-A", userAgent,
+		"-o", "/dev/null",
+		"--connect-timeout", "3",
+		"--max-time", "6",
+	}
+	if iface != "" {
+		args = append(args, "--interface", iface)
+	}
+	if dohURL != "" {
+		args = append(args, "--doh-url", dohURL)
+	}
+	args = append(args, "-w", "%{http_code}", targetURL)
+
+	cmd := exec.CommandContext(ctx, "curl", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("curl failed: %w", err)
+	}
+
+	codeStr := strings.TrimSpace(string(out))
+	code, err := strconv.Atoi(codeStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid status code %q", codeStr)
+	}
+	return code, nil
+}
+
 // FetchStatus queries the target URL discarding body, returning only HTTP status code.
 func (p *DefaultHTTPProber) FetchStatus(ctx context.Context, iface string, targetURL string) (int, error) {
 	if _, err := exec.LookPath("curl"); err == nil {
-		args := []string{
-			"-4",
-			"--silent",
-			"--show-error",
-			"--noproxy", "*",
-			"-A", userAgent,
-			"-o", "/dev/null",
-			"--connect-timeout", "3",
-			"--max-time", "6",
+		if p.DoHURL != "" {
+			code, err := p.runCurlFetchStatus(ctx, iface, targetURL, p.DoHURL)
+			if err == nil {
+				return code, nil
+			}
 		}
-		if iface != "" {
-			args = append(args, "--interface", iface)
-		}
-		args = append(args, "-w", "%{http_code}", targetURL)
-
-		cmd := exec.CommandContext(ctx, "curl", args...)
-		out, err := cmd.Output()
-		if err != nil {
-			return 0, fmt.Errorf("curl failed: %w", err)
-		}
-
-		codeStr := strings.TrimSpace(string(out))
-		code, err := strconv.Atoi(codeStr)
-		if err != nil {
-			return 0, fmt.Errorf("invalid status code %q", codeStr)
-		}
-		return code, nil
+		return p.runCurlFetchStatus(ctx, iface, targetURL, "")
 	}
 
 	// Fallback to pure Go HTTP client (don't follow redirects so 302 from telegram is captured directly)
@@ -201,24 +266,73 @@ func RunTargetProbe(ctx context.Context, cfg Config, target TargetConfig, prober
 	checks := make([]models.TargetProbeResult, 5)
 	var wg sync.WaitGroup
 
-	// 1. IP verification via api.ipify.org (Safety Gate)
+	// 1. IP verification via Multi-Provider Pool (Safety Gate)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		res := models.TargetProbeResult{Name: "ip", Target: cfg.IpifyURL}
-		ipCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
-		defer cancel()
-		actualIP, statusCode, err := prober.FetchIP(ipCtx, target.Interface, cfg.IpifyURL)
-		res.Status = statusCode
-		if err != nil {
-			res.Error = fmt.Sprintf("ipify недоступен: %v", err)
-		} else if statusCode < 200 || statusCode >= 400 {
-			res.Error = fmt.Sprintf("ipify вернул HTTP %d", statusCode)
-		} else if actualIP != target.Endpoint {
-			res.Error = fmt.Sprintf("внешний IP (%s) != ожидаемому (%s)", actualIP, target.Endpoint)
-		} else {
-			res.OK = true
+		providers := cfg.IPProviders
+		if len(providers) == 0 {
+			if cfg.IpifyURL != "" {
+				providers = []string{cfg.IpifyURL}
+			} else {
+				providers = []string{
+					"https://api.ipify.org",
+					"https://icanhazip.com",
+					"https://ipinfo.io/ip",
+					"https://api.myip.com",
+				}
+			}
 		}
+
+		res := models.TargetProbeResult{Name: "ip", Target: providers[0]}
+		var lastErr error
+		var lastStatusCode int
+		var detectedIP string
+		ipMatched := false
+
+		for _, providerURL := range providers {
+			ipCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			rawBody, statusCode, err := prober.FetchIP(ipCtx, target.Interface, providerURL)
+			cancel()
+
+			lastStatusCode = statusCode
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if statusCode < 200 || statusCode >= 400 {
+				lastErr = fmt.Errorf("HTTP %d", statusCode)
+				continue
+			}
+
+			parsedIP := ParseIPv4FromBody(rawBody)
+			if parsedIP == "" {
+				parsedIP = strings.TrimSpace(rawBody)
+			}
+			detectedIP = parsedIP
+			res.Target = providerURL
+			res.Status = statusCode
+
+			if parsedIP == target.Endpoint {
+				ipMatched = true
+				res.OK = true
+				break
+			} else {
+				lastErr = fmt.Errorf("внешний IP (%s) != ожидаемому (%s)", parsedIP, target.Endpoint)
+			}
+		}
+
+		if !ipMatched {
+			if detectedIP != "" {
+				res.Error = fmt.Sprintf("внешний IP (%s) != ожидаемому (%s) через %s", detectedIP, target.Endpoint, res.Target)
+			} else if lastErr != nil {
+				res.Error = fmt.Sprintf("все IP-провайдеры (%d) недоступны: %v", len(providers), lastErr)
+			} else {
+				res.Error = "не удалось определить внешний IP"
+			}
+			res.Status = lastStatusCode
+		}
+
 		checks[0] = res
 	}()
 
