@@ -27,6 +27,31 @@ import {
   TelegramMiniAppAuthResponse,
 } from '../types';
 
+const cyrillicToLatinMap: Record<string, string> = {
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+  'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+  'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+  'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+  'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+
+  'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo',
+  'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+  'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+  'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
+  'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
+};
+
+function transliterate(str: string): string {
+  return str.split('').map((char) => cyrillicToLatinMap[char] ?? char).join('');
+}
+
+function sanitizeDeviceName(str: string): string {
+  const translit = transliterate(str);
+  let clean = translit.replace(/[^a-zA-Z0-9_-]/g, '_');
+  clean = clean.replace(/_+/g, '_').replace(/^[-_]+|[-_]+$/g, '');
+  return clean || 'device';
+}
+
 // In-memory mock storage for standalone FE development
 let mockUsers: User[] = [
   {
@@ -185,6 +210,7 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: true,
     is_backup: false,
     has_hysteria: false,
+    has_mieru: false,
     auto_failover_enabled: true,
     failover_priority: ['awg1', 'awg4', 'awg3', 'awg5'],
     is_active: true,
@@ -202,6 +228,7 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: true,
     is_backup: true,
     has_hysteria: false,
+    has_mieru: true,
     auto_failover_enabled: false,
     failover_priority: ['awg1', 'awg3', 'awg4', 'awg5'],
     is_active: true,
@@ -219,6 +246,7 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: false,
     is_backup: false,
     has_hysteria: true,
+    has_mieru: true,
     is_active: true,
     online: true,
     latency_ms: 38,
@@ -234,6 +262,7 @@ let mockNodes: AdminNode[] = [
     is_mobile_optimized: true,
     is_backup: false,
     has_hysteria: false,
+    has_mieru: false,
     is_active: true,
     online: true,
     latency_ms: 28,
@@ -581,6 +610,31 @@ PersistentKeepalive = 25`,
     vpn_uri: 'vpn://mock16',
     created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
   },
+  {
+    id: 17,
+    user_id: 1, // Forve
+    client_name: 'u1_work_laptop',
+    device_name: 'Rabochiy Noutbuk',
+    node_id: 3,
+    node_name: 'Прямой туннель S2 (Франкфурт)',
+    node_type: 'direct',
+    protocol: 'mieru',
+    last_handshake: '5 минут назад',
+    total_traffic_bytes: 314572800,
+    month_traffic_bytes: 314572800,
+    total_traffic_formatted: '300.00 MB',
+    month_traffic_formatted: '300.00 MB',
+    config: JSON.stringify({
+      protocol_type: 'mieru',
+      server: 's2.example.net',
+      server_port: 28443,
+      transport: 'TCP',
+      username: 'u1_work_laptop',
+      password: 'demo_mieru_secret_password_456',
+    }, null, 2),
+    vpn_uri: 'mierus://u1_work_laptop:demo_mieru_secret_password_456@s2.example.net:28443?profile=u1_work_laptop&port=28443&protocol=TCP#u1_work_laptop',
+    created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
+  },
 ];
 
 export const mockApi = {
@@ -686,6 +740,7 @@ export const mockApi = {
       is_mobile_optimized: n.is_mobile_optimized,
       is_backup: n.is_backup,
       has_hysteria: n.has_hysteria,
+      has_mieru: n.has_mieru,
       is_active: n.is_active,
       created_at: n.created_at,
     }));
@@ -736,7 +791,9 @@ export const mockApi = {
     const nodeName = node ? node.name : 'Unknown Node';
     const nodeType = node ? node.type : 'direct';
     const id = mockKeys.length + 1;
-    const clientName = `u${mockCurrentUser.id}_${deviceName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
+    const translitDevice = transliterate(deviceName);
+    const cleanDevice = sanitizeDeviceName(deviceName);
+    const clientName = `u${mockCurrentUser.id}_${cleanDevice}`;
     const pskLine = psk ? '\nPresharedKey = aMockPresharedKeyForShadowrocket12345=' : '';
 
     let config = `[Interface]
@@ -758,7 +815,7 @@ Endpoint = 198.51.100.${nodeId}:51820
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25`;
 
-    let vpnUri = `vpn://eyJob3N0TmFtZSI6IjE5OC41MS4xMDAuJHtub2RlSWR9IiwiZGVzY3JpcHRpb24iOiJBdmFyaSBLZXlzICR7ZGV2aWNlTmFtZX0iLCJjb25maWciOiJ7XCJkbnMxXCI6XCIxLjEuMS4xXCIsXCJwb3J0XCI6NTE4MjAsXCJwcm90b2NvbFwiOlwiYXdnXCJ9In0=`;
+    let vpnUri = `vpn://eyJob3N0TmFtZSI6IjE5OC41MS4xMDAuJHtub2RlSWR9IiwiZGVzY3JpcHRpb24iOiJBdmFyaSBLZXlzICR7dHJhbnNsaXREZXZpY2V9IiwiY29uZmlnIjoie1wiZG5zMVwiOlwiMS4xLjEuMVwiLFwicG9ydFwiOjUxODIwLFwicHJvdG9jb2xcIjpcImF3Z1wifSJ9`;
 
     if (protocol === 'hysteria2') {
       vpnUri = `hysteria2://demo_password_123@s2.example.net:443/?sni=s2.example.net&insecure=0#${clientName}`;
@@ -770,13 +827,30 @@ tls:
 bandwidth:
   up: 50 mbps
   down: 200 mbps`;
+    } else if (protocol === 'mieru') {
+      const port = 28443;
+      const server = '157.228.142.20';
+      const pass = 'demo_mieru_pass_' + Math.random().toString(36).substring(2, 10);
+      config = JSON.stringify(
+        {
+          protocol_type: 'mieru',
+          server,
+          server_port: port,
+          transport: 'TCP',
+          username: clientName,
+          password: pass,
+        },
+        null,
+        2
+      );
+      vpnUri = `mierus://${clientName}:${pass}@${server}:${port}?profile=${clientName}&port=${port}&protocol=TCP#${clientName}`;
     }
 
     const newKeyDetail: ClientConfigDetail & { user_id: number } = {
       id,
       user_id: mockCurrentUser.id,
       client_name: clientName,
-      device_name: deviceName,
+      device_name: translitDevice,
       node_id: nodeId,
       node_name: nodeName,
       node_type: nodeType,
@@ -969,6 +1043,7 @@ bandwidth:
         service: 'amneziawg-slave',
         awg_available: node.online,
         hysteria_available: Boolean(node.has_hysteria),
+        mieru_available: Boolean(node.has_mieru),
         version: '1.6.0',
       },
       stats: {
@@ -1010,7 +1085,8 @@ bandwidth:
     countryCode?: string,
     providerUrl?: string,
     isBackup?: boolean,
-    hasHysteria?: boolean
+    hasHysteria?: boolean,
+    hasMieru?: boolean
   ): Promise<AdminNode> {
     const newNode: AdminNode = {
       id: mockNodes.length + 1,
@@ -1022,6 +1098,7 @@ bandwidth:
       is_mobile_optimized: Boolean(isMobileOptimized),
       is_backup: Boolean(isBackup),
       has_hysteria: Boolean(hasHysteria),
+      has_mieru: Boolean(hasMieru),
       is_active: true,
       online: true,
       latency_ms: Math.floor(20 + Math.random() * 20),
@@ -1041,6 +1118,7 @@ bandwidth:
       isMobileOptimized?: boolean;
       isBackup?: boolean;
       hasHysteria?: boolean;
+      hasMieru?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
@@ -1060,6 +1138,9 @@ bandwidth:
     }
     if (data.hasHysteria !== undefined) {
       node.has_hysteria = Boolean(data.hasHysteria);
+    }
+    if (data.hasMieru !== undefined) {
+      node.has_mieru = Boolean(data.hasMieru);
     }
     return { ...node };
   },
@@ -1099,18 +1180,38 @@ bandwidth:
     await new Promise((resolve) => setTimeout(resolve, 200));
     return {
       active_interface: 'awg1',
-      available_interfaces: ['awg1', 'awg3'],
+      available_interfaces: ['awg1', 'awg2', 'awg3'],
       targets: [
         {
           interface: 'awg1',
           node: 'S1',
           label: 'S1 — Нидерланды',
-          endpoint: '194.87.1.1',
+          endpoint: '185.213.240.136',
           available: true,
           passed_checks: 5,
           total_checks: 5,
+          handshake_age_sec: 18,
+          is_frozen: false,
           checks: [
             { name: 'ip', target: 'api.ipify.org', ok: true, status: 200 },
+            { name: 'telegram', target: 'api.telegram.org', ok: true, status: 302 },
+            { name: 'chatgpt', target: 'chatgpt.com', ok: true, status: 200 },
+            { name: 'grok', target: 'grok.com', ok: true, status: 200 },
+            { name: 'meta', target: 'instagram.com', ok: true, status: 200 },
+          ],
+        },
+        {
+          interface: 'awg2',
+          node: 'S2',
+          label: 'S2 — Финляндия',
+          endpoint: '157.228.142.20',
+          available: true,
+          passed_checks: 5,
+          total_checks: 5,
+          handshake_age_sec: 45,
+          is_frozen: false,
+          checks: [
+            { name: 'ip', target: 'icanhazip.com', ok: true, status: 200 },
             { name: 'telegram', target: 'api.telegram.org', ok: true, status: 302 },
             { name: 'chatgpt', target: 'chatgpt.com', ok: true, status: 200 },
             { name: 'grok', target: 'grok.com', ok: true, status: 200 },
@@ -1123,13 +1224,16 @@ bandwidth:
           label: 'S4 — Швеция',
           endpoint: '194.87.1.3',
           available: false,
-          reason: 'пройдено только 2/5 проверок (сбои: chatgpt заблокирован (HTTP 403); grok недоступен: timeout; meta недоступен: timeout)',
-          passed_checks: 2,
+          reason: 'Сессия WireGuard зависла: последнее рукопожатие 420 сек назад (0 B получено)',
+          passed_checks: 0,
           total_checks: 5,
+          handshake_age_sec: 420,
+          is_frozen: true,
+          recommendation: 'systemctl restart awg-quick@awg3',
           checks: [
-            { name: 'ip', target: 'api.ipify.org', ok: true, status: 200 },
-            { name: 'telegram', target: 'api.telegram.org', ok: true, status: 302 },
-            { name: 'chatgpt', target: 'chatgpt.com', ok: false, status: 403, error: 'HTTP 403 Forbidden' },
+            { name: 'ip', target: 'api.ipify.org', ok: false, error: 'connection timed out' },
+            { name: 'telegram', target: 'api.telegram.org', ok: false, error: 'connection timed out' },
+            { name: 'chatgpt', target: 'chatgpt.com', ok: false, error: 'connection timed out' },
             { name: 'grok', target: 'grok.com', ok: false, error: 'connection timed out' },
             { name: 'meta', target: 'instagram.com', ok: false, error: 'connection timed out' },
           ],

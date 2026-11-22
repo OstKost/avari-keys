@@ -1497,6 +1497,56 @@ func (b *Bot) NotifyCascadeFailover(node models.Node, oldIf, newIf, oldLabel, ne
 	_ = b.BroadcastAlert(msg)
 }
 
+// NotifyCascadeEgressFrozen sends an alert about frozen WireGuard cascade egress session and recommendations.
+func (b *Bot) NotifyCascadeEgressFrozen(node models.Node, target models.EgressTarget) {
+	if b == nil {
+		return
+	}
+	b.mu.RLock()
+	enabled := b.enabled
+	b.mu.RUnlock()
+
+	if !enabled {
+		return
+	}
+
+	label := target.Label
+	if label == "" {
+		label = target.Node
+	}
+	if label == "" {
+		label = target.Interface
+	}
+
+	recommendation := target.Recommendation
+	if recommendation == "" {
+		recommendation = fmt.Sprintf("systemctl restart awg-quick@%s", target.Interface)
+	}
+
+	ageStr := "более 3 минут"
+	if target.HandshakeAgeSec > 0 {
+		ageStr = fmt.Sprintf("%d мин", target.HandshakeAgeSec/60)
+	}
+
+	msg := fmt.Sprintf(
+		"❄️ <b>[Avari Alert] ЗАВИСЛА СЕССИЯ ШЛЮЗА ВЫХОДА</b>\n"+
+			"━━━━━━━━━━━━━━━━━━━━━\n"+
+			"📍 <b>Входной каскад:</b> %s (ID #%d)\n"+
+			"🌐 <b>Шлюз выхода:</b> %s (<code>%s</code>)\n"+
+			"⏱ <b>Последнее рукопожатие:</b> %s назад (0 B получено)\n"+
+			"⚠️ <b>Проблема:</b> Потеряна связь по туннелю, промежуточный NAT хостера заблокировал сессию.\n\n"+
+			"💡 <b>Рекомендация:</b>\n<code>%s</code>\n"+
+			"<i>Или воспользуйтесь кнопкой ручной проверки/перезапуска в панели управления.</i>",
+		node.Name,
+		node.ID,
+		label,
+		target.Interface,
+		ageStr,
+		recommendation,
+	)
+	_ = b.BroadcastAlert(msg)
+}
+
 // NotifyNewUser sends an alert about new user registration pending approval with inline action buttons.
 func (b *Bot) NotifyNewUser(user models.User) {
 	b.mu.RLock()

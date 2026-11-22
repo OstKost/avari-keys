@@ -18,6 +18,7 @@ export interface NodePublic {
   is_mobile_optimized?: boolean;
   is_backup?: boolean;
   has_hysteria?: boolean;
+  has_mieru?: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -32,6 +33,7 @@ export interface AdminNode {
   is_mobile_optimized?: boolean;
   is_backup: boolean;
   has_hysteria?: boolean;
+  has_mieru?: boolean;
   is_active: boolean;
   online: boolean;
   latency_ms?: number;
@@ -56,6 +58,7 @@ export interface NodeDetailResponse extends AdminNode {
     service: string;
     awg_available: boolean;
     hysteria_available?: boolean;
+    mieru_available?: boolean;
     version?: string;
   };
   stats?: {
@@ -70,7 +73,7 @@ export interface NodeDetailResponse extends AdminNode {
   client_keys?: ClientConfigSummary[];
 }
 
-export type ProtocolType = 'awg' | 'hysteria2';
+export type ProtocolType = 'awg' | 'hysteria2' | 'mieru';
 
 export interface TelegramProxyInfo {
   id: string;
@@ -224,6 +227,9 @@ export interface EgressTarget {
   passed_checks?: number;
   total_checks?: number;
   checks?: TargetProbeResult[];
+  handshake_age_sec?: number;
+  is_frozen?: boolean;
+  recommendation?: string;
 }
 
 export interface EgressStatusResponse {

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/hysteria"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/mieru"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/netprobe"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
@@ -22,6 +23,7 @@ type Config struct {
 	APIKey        string
 	Port          string
 	HysteriaStore *hysteria.Store
+	MieruStore    *mieru.Store
 }
 
 // Server is the HTTP server for Slave API.
@@ -30,6 +32,7 @@ type Server struct {
 	cfg      Config
 	runner   runner.AWGRunner
 	hysteria *hysteria.Store
+	mieru    *mieru.Store
 	mux      *http.ServeMux
 }
 
@@ -71,11 +74,56 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 		}
 	}
 
+	mStore := cfg.MieruStore
+	if mStore == nil {
+		mEnabled := os.Getenv("MIERU_ENABLED")
+		if mEnabled != "false" && mEnabled != "0" {
+			usersPath := os.Getenv("MIERU_USERS_PATH")
+			if usersPath == "" {
+				usersPath = "/opt/avari-keys/mieru_users.json"
+			}
+			mServer := os.Getenv("MIERU_SERVER")
+			if mServer == "" {
+				mServer = os.Getenv("NODE_DOMAIN")
+			}
+			mPort := 28443
+			if portStr := os.Getenv("MIERU_PORT"); portStr != "" {
+				if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
+					mPort = p
+				}
+			}
+			mTransport := os.Getenv("MIERU_TRANSPORT")
+			if mTransport == "" {
+				mTransport = "TCP"
+			}
+			mAdminURL := os.Getenv("MIERU_ADMIN_URL")
+			mTokenPath := os.Getenv("MIERU_TOKEN_PATH")
+			mConfigPath := os.Getenv("MIERU_CONFIG_PATH")
+
+			if mServer != "" {
+				var err error
+				mStore, err = mieru.NewStore(mieru.Config{
+					FilePath:       usersPath,
+					MitaConfigPath: mConfigPath,
+					AdminURL:       mAdminURL,
+					AdminTokenPath: mTokenPath,
+					Server:         mServer,
+					Port:           mPort,
+					Transport:      mTransport,
+				})
+				if err != nil {
+					log.Printf("[SLAVE] Warning: failed to init mieru store: %v", err)
+				}
+			}
+		}
+	}
+
 	s := &Server{
 		cfg:      cfg,
 		probes:   netprobe.NewCollector("S0"),
 		runner:   r,
 		hysteria: hyStore,
+		mieru:    mStore,
 		mux:      http.NewServeMux(),
 	}
 	s.routes()
@@ -169,11 +217,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if s.hysteria != nil {
 		hyAvail = s.hysteria.CheckServiceRunning()
 	}
+	mAvail := false
+	if s.mieru != nil {
+		mAvail = s.mieru.CheckServiceRunning()
+	}
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:            "ok",
 		Service:           "avari-slave",
 		AWGAvailable:      healthy,
 		HysteriaAvailable: hyAvail,
+		MieruAvailable:    mAvail,
 		Version:           "v1.6.0",
 	})
 }
@@ -232,6 +285,20 @@ func (s *Server) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Protocol == "mieru" {
+		if s.mieru == nil {
+			s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Mieru service not available on this node"})
+			return
+		}
+		res, err := s.mieru.AddUser(r.Context(), req.Name)
+		if err != nil {
+			s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		s.writeJSON(w, http.StatusCreated, res)
+		return
+	}
+
 	res, err := s.runner.AddClient(r.Context(), req.Name, req.PSK)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -251,6 +318,12 @@ func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
 		hList, err := s.hysteria.ListUsers(r.Context())
 		if err == nil {
 			clients = append(clients, hList...)
+		}
+	}
+	if s.mieru != nil {
+		mList, err := s.mieru.ListUsers(r.Context())
+		if err == nil {
+			clients = append(clients, mList...)
 		}
 	}
 	s.writeJSON(w, http.StatusOK, clients)
@@ -273,11 +346,18 @@ func (s *Server) handleGetClient(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Try AWG runner first if not explicitly hysteria2
+	// If explicitly mieru, or if mieru store contains this user, prioritize Mieru
+	if proto == "mieru" && s.mieru != nil {
+		if mRes, mErr := s.mieru.GetUser(r.Context(), name); mErr == nil {
+			s.writeJSON(w, http.StatusOK, mRes)
+			return
+		}
+	}
+
+	// Try AWG runner first if not explicitly hysteria2 or mieru
 	res, err := s.runner.GetClient(r.Context(), name)
 	if err == nil {
-		// If found in AWG runner, but user requested hysteria2 or it's actually in hysteria store
-		if proto != "hysteria2" {
+		if proto != "hysteria2" && proto != "mieru" {
 			s.writeJSON(w, http.StatusOK, res)
 			return
 		}
@@ -287,6 +367,14 @@ func (s *Server) handleGetClient(w http.ResponseWriter, r *http.Request) {
 		// Try Hysteria store fallback
 		if hRes, hErr := s.hysteria.GetUser(r.Context(), name); hErr == nil {
 			s.writeJSON(w, http.StatusOK, hRes)
+			return
+		}
+	}
+
+	if s.mieru != nil {
+		// Try Mieru store fallback
+		if mRes, mErr := s.mieru.GetUser(r.Context(), name); mErr == nil {
+			s.writeJSON(w, http.StatusOK, mRes)
 			return
 		}
 	}
@@ -309,9 +397,13 @@ func (s *Server) handleDeleteClient(w http.ResponseWriter, r *http.Request) {
 		_ = s.hysteria.RemoveUser(r.Context(), name)
 	}
 
+	if s.mieru != nil {
+		_ = s.mieru.RemoveUser(r.Context(), name)
+	}
+
 	if err := s.runner.RemoveClient(r.Context(), name); err != nil {
-		// If it was a hysteria user, removing from AWG runner might fail harmlessly
-		if s.hysteria != nil {
+		// If it was a hysteria or mieru user, removing from AWG runner might fail harmlessly
+		if s.hysteria != nil || s.mieru != nil {
 			s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
 				Success: true,
 				Message: "Client successfully removed",

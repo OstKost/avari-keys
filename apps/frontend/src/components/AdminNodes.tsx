@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Eye,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { AdminNode, EgressStatusResponse, TelegramStatusResponse } from '../types';
@@ -119,6 +120,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const [isMobileOptimized, setIsMobileOptimized] = useState(false);
   const [isBackup, setIsBackup] = useState(false);
   const [hasHysteria, setHasHysteria] = useState(false);
+  const [hasMieru, setHasMieru] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Edit node modal state
@@ -132,6 +134,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const [editIsMobileOptimized, setEditIsMobileOptimized] = useState(false);
   const [editIsBackup, setEditIsBackup] = useState(false);
   const [editHasHysteria, setEditHasHysteria] = useState(false);
+  const [editHasMieru, setEditHasMieru] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
 
   // Action modals state
@@ -277,6 +280,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
     const nodeMobile = isMobileOptimized;
     const nodeBackup = isBackup;
     const nodeHysteria = hasHysteria;
+    const nodeMieru = hasMieru;
     try {
       setSubmitting(true);
       const res = await api.addAdminNode(
@@ -288,7 +292,8 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
         nodeCountry,
         nodeProvider,
         nodeBackup,
-        nodeHysteria
+        nodeHysteria,
+        nodeMieru
       );
       setName('');
       setCountryCode('NLD');
@@ -298,6 +303,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
       setIsMobileOptimized(false);
       setIsBackup(false);
       setHasHysteria(false);
+      setHasMieru(false);
       setShowAddForm(false);
       toast.success(`Сервер «${nodeName}» успешно подключен`);
       if (res && res.id) {
@@ -322,6 +328,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
     setEditIsMobileOptimized(Boolean(node.is_mobile_optimized));
     setEditIsBackup(Boolean(node.is_backup));
     setEditHasHysteria(Boolean(node.has_hysteria));
+    setEditHasMieru(Boolean(node.has_mieru));
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -337,6 +344,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
     const updatedMobile = editIsMobileOptimized;
     const updatedBackup = editIsBackup;
     const updatedHysteria = editHasHysteria;
+    const updatedMieru = editHasMieru;
 
     const previousNodes = [...nodes];
     setNodes((prev) =>
@@ -352,6 +360,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
               is_mobile_optimized: updatedMobile,
               is_backup: updatedBackup,
               has_hysteria: updatedHysteria,
+              has_mieru: updatedMieru,
             }
           : n
       )
@@ -368,6 +377,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
         isMobileOptimized: updatedMobile,
         isBackup: updatedBackup,
         hasHysteria: updatedHysteria,
+        hasMieru: updatedMieru,
         countryCode: updatedCountry,
         providerUrl: updatedProvider,
       });
@@ -1057,6 +1067,16 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                       </span>
                     )}
 
+                    {node.has_mieru && (
+                      <span
+                        className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
+                        title="Поддерживается скрытный протокол Mieru (TCP 28443)"
+                      >
+                        <Eye className="w-3 h-3 text-emerald-300" />
+                        <span>Mieru</span>
+                      </span>
+                    )}
+
                     {node.is_mobile_optimized && (
                       <span
                         className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0"
@@ -1329,6 +1349,12 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                           <span className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                             <Zap className="w-3 h-3" />
                             <span>Hysteria 2</span>
+                          </span>
+                        )}
+                        {node.has_mieru && (
+                          <span className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
+                            <Eye className="w-3 h-3 text-emerald-300" />
+                            <span>Mieru</span>
                           </span>
                         )}
                         {node.is_backup && (
@@ -1736,6 +1762,28 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     </div>
                   </div>
                 </div>
+
+                <div
+                  onClick={() => setHasMieru(!hasMieru)}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    hasMieru ? 'border-emerald-500 bg-emerald-950/30' : 'border-[#1C3945] bg-[#06141B]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <input
+                      type="checkbox"
+                      checked={hasMieru}
+                      onChange={(e) => setHasMieru(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 text-emerald-400 accent-emerald-500"
+                    />
+                    <div>
+                      <span className="font-semibold text-xs sm:text-sm text-[#F2F0E8]">
+                        Поддержка Mieru (TCP 28443)
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3 pt-2">
@@ -1935,6 +1983,28 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     </div>
                   </div>
                 </div>
+
+                <div
+                  onClick={() => setEditHasMieru(!editHasMieru)}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    editHasMieru ? 'border-emerald-500 bg-emerald-950/30' : 'border-[#1C3945] bg-[#06141B]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <input
+                      type="checkbox"
+                      checked={editHasMieru}
+                      onChange={(e) => setEditHasMieru(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 text-emerald-400 accent-emerald-500"
+                    />
+                    <div>
+                      <span className="font-semibold text-xs sm:text-sm text-[#F2F0E8]">
+                        Поддержка Mieru (TCP 28443)
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3 pt-2">
@@ -2118,13 +2188,25 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                   <ArrowRightLeft className="w-6 h-6" />
                   <h3 className="font-serif text-lg font-bold text-[#F2F0E8]">Управление выходом каскада</h3>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setEgressNode(null)}
-                  className="text-[#A8B4B7] hover:text-[#F2F0E8] p-1 rounded-lg hover:bg-[#102833]"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => egressNode && handleOpenEgress(egressNode)}
+                    disabled={loadingEgress || switchingEgress}
+                    title="Запустить немедленную проверку всех шлюзов"
+                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-[#102833] text-[#A8B4B7] hover:text-[#D9B96E] border border-[#1C3945] transition cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingEgress ? 'animate-spin text-[#D9B96E]' : ''}`} />
+                    <span>Проверить</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEgressNode(null)}
+                    className="text-[#A8B4B7] hover:text-[#F2F0E8] p-1 rounded-lg hover:bg-[#102833]"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <p className="text-xs sm:text-sm text-[#A8B4B7] font-sans">
@@ -2180,6 +2262,11 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                                   АКТИВЕН
                                 </span>
                               )}
+                              {target.is_frozen && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-500/40 font-mono">
+                                  ❄️ ЗАВИС
+                                </span>
+                              )}
                             </span>
                             <span
                               className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -2194,27 +2281,43 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
                           {/* Micro-badges for checks */}
                           {target.checks && target.checks.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-[#1C3945]/60 text-[10px]">
-                              {target.checks.map((c) => (
-                                <span
-                                  key={c.name}
-                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5 ${
-                                    c.ok
-                                      ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
-                                      : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
-                                  }`}
-                                  title={c.error || `HTTP ${c.status || 200}`}
-                                >
-                                  <span>{c.name.toUpperCase()}</span>
-                                  <span>{c.ok ? '✓' : '✗'}</span>
+                            <div className="flex items-center justify-between flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-[#1C3945]/60 text-[10px]">
+                              <div className="flex flex-wrap gap-1">
+                                {target.checks.map((c) => (
+                                  <span
+                                    key={c.name}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5 ${
+                                      c.ok
+                                        ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
+                                        : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
+                                    }`}
+                                    title={c.error || `HTTP ${c.status || 200}`}
+                                  >
+                                    <span>{c.name.toUpperCase()}</span>
+                                    <span>{c.ok ? '✓' : '✗'}</span>
+                                  </span>
+                                ))}
+                              </div>
+                              {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && (
+                                <span className={`text-[10px] font-mono ${target.is_frozen ? 'text-cyan-400 font-bold' : 'text-[#718187]'}`}>
+                                  {target.handshake_age_sec < 60
+                                    ? `${target.handshake_age_sec}с`
+                                    : `${Math.round(target.handshake_age_sec / 60)}м`}
                                 </span>
-                              ))}
+                              )}
                             </div>
                           )}
 
                           {!target.available && target.reason && (
                             <div className="text-[11px] text-rose-400 font-sans mt-1 leading-snug">
                               {target.reason}
+                            </div>
+                          )}
+
+                          {target.recommendation && (
+                            <div className="mt-1.5 p-1.5 bg-cyan-950/30 border border-cyan-600/40 rounded-lg text-[10px] text-cyan-200">
+                              <span className="font-semibold text-cyan-300">Рекомендация: </span>
+                              <code className="text-[#D9B96E] font-mono select-all text-[9px]">{target.recommendation}</code>
                             </div>
                           )}
                         </div>

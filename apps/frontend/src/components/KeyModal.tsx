@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { animatedPortal as createPortal } from './animatedPortal';
-import { X, Copy, Check, Download, QrCode as QrIcon, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap, ShieldCheck, HelpCircle, Smartphone } from 'lucide-react';
+import { X, Copy, Check, Download, QrCode as QrIcon, FileText, AlertTriangle, ChevronDown, ChevronUp, Zap, ShieldCheck, HelpCircle, Smartphone, Eye } from 'lucide-react';
 import QRCode from 'qrcode';
 import { ClientConfigDetail } from '../types';
 import { useToast } from '../context/ToastContext';
@@ -86,20 +86,29 @@ export function KeyModal({ keyData, onClose }: Props) {
     : /Android/i.test(navigator.userAgent)
       ? 'android'
       : null;
+  const isMieru = Boolean(
+    keyData.protocol === 'mieru' ||
+    (keyData.vpn_uri && keyData.vpn_uri.toLowerCase().startsWith('mierus://')) ||
+    (keyData.config && keyData.config.includes('"protocol_type": "mieru"')) ||
+    (keyData.config && keyData.config.includes('"protocol_type":"mieru"'))
+  );
   const isHysteria = Boolean(
     keyData.protocol === 'hysteria2' ||
     (keyData.vpn_uri && keyData.vpn_uri.toLowerCase().startsWith('hysteria2://')) ||
     (keyData.config && !keyData.config.includes('[Interface]') && (keyData.config.includes('auth:') || keyData.config.includes('server:')))
   );
-  const [protocol, setProtocol] = useState<'awg' | 'vpn' | 'hysteria2'>(isHysteria ? 'hysteria2' : 'awg');
+  const [protocol, setProtocol] = useState<'awg' | 'vpn' | 'hysteria2' | 'mieru'>(
+    isMieru ? 'mieru' : isHysteria ? 'hysteria2' : 'awg'
+  );
 
   useEffect(() => {
-    setProtocol(isHysteria ? 'hysteria2' : 'awg');
-  }, [isHysteria, keyData.id]);
+    setProtocol(isMieru ? 'mieru' : isHysteria ? 'hysteria2' : 'awg');
+  }, [isMieru, isHysteria, keyData.id]);
   const [copied, setCopied] = useState(false);
   const [awgQrUrl, setAwgQrUrl] = useState<string>('');
   const [vpnQrUrl, setVpnQrUrl] = useState<string>('');
   const [hysteriaQrUrl, setHysteriaQrUrl] = useState<string>('');
+  const [mieruQrUrl, setMieruQrUrl] = useState<string>('');
   const [showRawLogs, setShowRawLogs] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
@@ -117,6 +126,19 @@ export function KeyModal({ keyData, onClose }: Props) {
   const rawWithoutAnsi = useMemo(() => {
     return (keyData.config || '').replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\([a-zA-Z]/g, '').trim();
   }, [keyData.config]);
+
+  // Generate Mieru QR
+  useEffect(() => {
+    if (isMieru && vpnUri) {
+      QRCode.toDataURL(vpnUri, {
+        width: 320,
+        margin: 2,
+        color: { dark: '#06141B', light: '#FFFFFF' },
+      })
+        .then(setMieruQrUrl)
+        .catch(console.error);
+    }
+  }, [isMieru, vpnUri]);
 
   // Generate Hysteria QR
   useEffect(() => {
@@ -172,6 +194,18 @@ export function KeyModal({ keyData, onClose }: Props) {
   }, [keyData, vpnUri, hasVpnUri, isHysteria]);
 
   const handleCopy = () => {
+    if (protocol === 'mieru') {
+      if (!hasVpnUri) {
+        toast.error('Ссылка Mieru отсутствует');
+        return;
+      }
+      navigator.clipboard.writeText(vpnUri);
+      setCopied(true);
+      toast.success('Ссылка Mieru (mierus://) скопирована в буфер обмена');
+      setTimeout(() => setCopied(false), 2000);
+      return;
+    }
+
     if (protocol === 'hysteria2') {
       if (!hasVpnUri) {
         toast.error('URI Hysteria 2 отсутствует');
@@ -206,6 +240,20 @@ export function KeyModal({ keyData, onClose }: Props) {
   };
 
   const handleDownload = () => {
+    if (protocol === 'mieru') {
+      const blob = new Blob([keyData.config || vpnUri], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${keyData.client_name}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Конфиг ${keyData.client_name}.json скачан`);
+      return;
+    }
+
     if (protocol === 'hysteria2') {
       const blob = new Blob([keyData.config || vpnUri], { type: 'text/yaml;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -281,7 +329,12 @@ export function KeyModal({ keyData, onClose }: Props) {
                   {routing.fullText}
                 </span>
                 <span className="text-[#718187]">•</span>
-                {isHysteria ? (
+                {isMieru ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-500/40">
+                    <Eye className="w-3 h-3 text-emerald-400" />
+                    Mieru
+                  </span>
+                ) : isHysteria ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-purple-950/60 text-purple-300 border border-purple-500/40">
                     <Zap className="w-3 h-3 text-purple-400" />
                     Hysteria 2
@@ -332,7 +385,14 @@ export function KeyModal({ keyData, onClose }: Props) {
         )}
 
         {/* Protocol Switcher Tabs */}
-        {isHysteria ? (
+        {isMieru ? (
+          <div className="flex p-1 bg-[#06141B] border border-[#1C3945] rounded-2xl mb-5 sm:mb-6 shadow-inner">
+            <div className="flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-mono uppercase tracking-wider bg-[#102833] text-emerald-400 font-bold border border-emerald-500/40 shadow-md shadow-black/40">
+              <Eye className="w-4 h-4 text-emerald-400" />
+              <span>Mieru (TCP Proxy)</span>
+            </div>
+          </div>
+        ) : isHysteria ? (
           <div className="flex p-1 bg-[#06141B] border border-[#1C3945] rounded-2xl mb-5 sm:mb-6 shadow-inner">
             <div className="flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-mono uppercase tracking-wider bg-[#102833] text-[#D9B96E] font-bold border border-[#D9B96E]/40 shadow-md shadow-black/40">
               <Zap className="w-4 h-4 text-[#D9B96E]" />
@@ -369,7 +429,60 @@ export function KeyModal({ keyData, onClose }: Props) {
         )}
 
         {/* Main Content Area: Adaptive 2-Column on md+ screens */}
-        {protocol === 'hysteria2' ? (
+        {protocol === 'mieru' ? (
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch mb-6">
+            {/* QR Code Column */}
+            <div className="md:col-span-5 flex flex-col items-center justify-center bg-white p-5 sm:p-6 rounded-2xl shadow-xl border-4 border-[#102833] min-h-[260px]">
+              {mieruQrUrl ? (
+                <>
+                  <img src={mieruQrUrl} alt="Mieru QR Code" className="w-48 h-48 sm:w-56 sm:h-56 object-contain rounded-lg" />
+                  <span className="text-xs sm:text-sm text-slate-800 font-mono tracking-wider font-semibold mt-3 text-center">
+                    Сканируйте в Hiddify / NekoBox / Sing-box
+                  </span>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-48 text-[#718187] text-xs font-mono">
+                  Генерация Mieru QR...
+                </div>
+              )}
+            </div>
+
+            {/* URI Box & Actions Column */}
+            <div className="md:col-span-7 flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs sm:text-sm font-mono font-semibold text-emerald-400 uppercase tracking-wider flex items-center space-x-1.5">
+                    <FileText className="w-4 h-4" />
+                    <span>Mieru Ссылка подключения</span>
+                  </span>
+                  <span className="text-xs text-[#A8B4B7] font-mono">mierus://</span>
+                </div>
+                <pre className="bg-[#06141B] border border-[#1C3945] text-[#F2F0E8] text-xs p-4 rounded-2xl overflow-x-auto max-h-56 md:max-h-64 font-mono scrollbar-thin leading-relaxed whitespace-pre-wrap break-all">
+                  {vpnUri}
+                </pre>
+              </div>
+
+              {/* Actions inside column */}
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <button
+                  onClick={handleCopy}
+                  className="flex items-center justify-center space-x-2 bg-[#102833] text-[#F2F0E8] font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl border border-[#1C3945] hover:bg-[#1C3945] hover:border-emerald-500/50 transition cursor-pointer"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-emerald-400" />}
+                  <span>{copied ? 'Скопировано!' : 'Скопировать URI'}</span>
+                </button>
+
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center justify-center space-x-2 bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-700 hover:from-emerald-400 hover:to-teal-500 text-[#06141B] font-bold font-mono text-xs sm:text-sm uppercase tracking-wider py-3.5 px-3 rounded-xl shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Скачать .json</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : protocol === 'hysteria2' ? (
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch mb-6">
             {/* QR Code Column */}
             <div className="md:col-span-5 flex flex-col items-center justify-center bg-white p-5 sm:p-6 rounded-2xl shadow-xl border-4 border-[#102833] min-h-[260px]">
@@ -594,7 +707,9 @@ export function KeyModal({ keyData, onClose }: Props) {
             <div className="flex items-center space-x-3 text-left">
               <MascotAvatar size="xs" withGlow={false} />
               <div className="text-xs text-[#D9E1E3] font-sans">
-                {isHysteria ? (
+                {isMieru ? (
+                  <span>Отсканируйте QR в Hiddify / NekoBox / Sing-box или скопируйте ссылку <code>mierus://</code>.</span>
+                ) : isHysteria ? (
                   <span>Отсканируйте QR в v2rayNG / NekoBox / Shadowrocket или скопируйте ссылку <code>hysteria2://</code>.</span>
                 ) : (
                   <span>Отсканируйте QR в приложении AmneziaWG на телефоне или сохраните .conf для ПК.</span>

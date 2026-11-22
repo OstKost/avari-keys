@@ -84,6 +84,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
   const [refreshingNodes, setRefreshingNodes] = useState(false);
   const [egressStatus, setEgressStatus] = useState<EgressStatusResponse | null>(null);
   const [switchingEgress, setSwitchingEgress] = useState(false);
+  const [checkingEgress, setCheckingEgress] = useState(false);
   const [egressSuccessMsg, setEgressSuccessMsg] = useState<string | null>(null);
 
   // Mock Mode Switcher state
@@ -247,11 +248,15 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
 
   const handleDownloadConf = (key: ClientConfigDetail) => {
     triggerHaptic('light');
-    const blob = new Blob([key.config], { type: 'text/plain;charset=utf-8' });
+    const isMieruKey = key.protocol === 'mieru';
+    const isHysteriaKey = key.protocol === 'hysteria2';
+    const ext = isMieruKey ? 'json' : isHysteriaKey ? 'yaml' : 'conf';
+    const mime = isMieruKey ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8';
+    const blob = new Blob([key.config || key.vpn_uri || ''], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${key.client_name || 'avari-vpn'}.conf`;
+    a.download = `${key.client_name || 'avari-vpn'}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -304,6 +309,21 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
       alert(`Ошибка переключения каскада: ${err.message}`);
     } finally {
       setSwitchingEgress(false);
+    }
+  };
+
+  const handleCheckCascadeEgress = async (cascadeNodeId: number) => {
+    triggerHaptic('medium');
+    setCheckingEgress(true);
+    try {
+      const egress = await api.getNodeEgress(cascadeNodeId);
+      setEgressStatus(egress);
+      triggerNotificationHaptic('success');
+    } catch (err: any) {
+      triggerNotificationHaptic('error');
+      alert(`Ошибка проверки шлюзов: ${err.message}`);
+    } finally {
+      setCheckingEgress(false);
     }
   };
 
@@ -609,12 +629,14 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                      activeKey.protocol === 'hysteria2'
+                      activeKey.protocol === 'mieru'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : activeKey.protocol === 'hysteria2'
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                         : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                     }`}
                   >
-                    {activeKey.protocol === 'hysteria2' ? 'Hysteria 2' : 'AmneziaWG'}
+                    {activeKey.protocol === 'mieru' ? 'Mieru' : activeKey.protocol === 'hysteria2' ? 'Hysteria 2' : 'AmneziaWG'}
                   </span>
                 </div>
 
@@ -636,7 +658,11 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                     </div>
                   )}
                   <span className="text-[11px] text-slate-600 mt-1 font-medium">
-                    Сканируйте в приложении AmneziaVPN
+                    {activeKey.protocol === 'mieru'
+                      ? 'Сканируйте в Hiddify / NekoBox'
+                      : activeKey.protocol === 'hysteria2'
+                      ? 'Сканируйте в v2rayNG / NekoBox'
+                      : 'Сканируйте в приложении AmneziaVPN'}
                   </span>
                 </div>
 
@@ -655,7 +681,13 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                       className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Скачать .conf</span>
+                      <span>
+                        {keyDetail.protocol === 'mieru'
+                          ? 'Скачать .json'
+                          : keyDetail.protocol === 'hysteria2'
+                          ? 'Скачать .yaml'
+                          : 'Скачать .conf'}
+                      </span>
                     </button>
                   </div>
                 )}
@@ -948,55 +980,128 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                       <span>{cascadeNode.name}</span>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 text-xs font-semibold">
-                    Double-Hop
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={checkingEgress || switchingEgress}
+                      onClick={() => handleCheckCascadeEgress(cascadeNode.id)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-amber-300 border border-slate-700 text-xs font-medium transition active:scale-95 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${checkingEgress ? 'animate-spin text-amber-400' : ''}`} />
+                      <span>{checkingEgress ? '...' : 'Проверить'}</span>
+                    </button>
+                    <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 text-xs font-semibold">
+                      Double-Hop
+                    </span>
+                  </div>
                 </div>
 
                 <div>
                   <span className="text-xs font-semibold text-slate-300 block mb-2">
-                    Активный Egress и направления:
+                    Шлюзы выхода и диагностика:
                   </span>
-                  <div className="grid grid-cols-1 gap-2">
+                  <div className="grid grid-cols-1 gap-2.5">
                     {egressTargets.map((target) => {
                       const isActive = egressStatus?.active_interface === target.interface;
                       return (
-                        <button
+                        <div
                           key={target.interface}
-                          disabled={switchingEgress || isActive}
-                          onClick={() => handleSwitchCascadeEgress(cascadeNode.id, target.interface, target.label)}
-                          className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                          className={`p-3 rounded-xl border text-left transition-all ${
                             isActive
                               ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 shadow-sm'
-                              : 'bg-slate-950/80 hover:bg-slate-800/80 border-slate-800 text-slate-300'
+                              : target.is_frozen
+                              ? 'bg-cyan-950/20 border-cyan-800/40 text-slate-300'
+                              : !target.available
+                              ? 'bg-rose-950/20 border-rose-900/40 text-slate-300'
+                              : 'bg-slate-950/80 border-slate-800 text-slate-300'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-lg">🌐</span>
-                            <div>
-                              <div className="text-xs font-bold text-white flex items-center gap-2">
-                                <span>{target.label || target.node}</span>
-                                {isActive && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                    АКТИВЕН
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <span className="text-base shrink-0">🌐</span>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
+                                  <span className="truncate">{target.label || target.node}</span>
+                                  {isActive && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                      АКТИВЕН
+                                    </span>
+                                  )}
+                                  {target.is_frozen && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                                      ❄️ ЗАВИС
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                                      target.available
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    }`}
+                                  >
+                                    {target.available ? `✓ ${target.passed_checks ?? 5}/${target.total_checks ?? 5}` : 'СБОЙ'}
                                   </span>
-                                )}
-                              </div>
-                              <div className="text-[10px] text-slate-500">
-                                Интерфейс: {target.interface} • {target.endpoint || 'VPN Туннель'}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                  {target.interface} • {target.endpoint || 'VPN'}
+                                  {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && (
+                                    <span className={target.is_frozen ? ' text-cyan-400 font-bold ml-1' : ' text-slate-500 ml-1'}>
+                                      • Хэндшейк: {target.handshake_age_sec < 60 ? `${target.handshake_age_sec}с` : `${Math.round(target.handshake_age_sec / 60)}м`}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
+
+                            <button
+                              disabled={switchingEgress || isActive || !target.available}
+                              onClick={() => handleSwitchCascadeEgress(cascadeNode.id, target.interface, target.label)}
+                              className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors shrink-0 ${
+                                isActive
+                                  ? 'bg-amber-500 text-slate-950 border-amber-400 opacity-90 cursor-default'
+                                  : !target.available
+                                  ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 active:scale-95'
+                              }`}
+                            >
+                              {isActive ? 'Текущий' : switchingEgress ? '...' : 'Выбрать'}
+                            </button>
                           </div>
-                          <span
-                            className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
-                              isActive
-                                ? 'bg-amber-500 text-slate-950 border-amber-400'
-                                : 'bg-slate-800 text-slate-300 border-slate-700'
-                            }`}
-                          >
-                            {isActive ? 'Текущий' : switchingEgress ? '...' : 'Выбрать'}
-                          </span>
-                        </button>
+
+                          {/* Check badges */}
+                          {target.checks && target.checks.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-slate-800/80 text-[9px]">
+                              {target.checks.map((c) => (
+                                <span
+                                  key={c.name}
+                                  className={`px-1 py-0.2 rounded font-mono ${
+                                    c.ok
+                                      ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/40'
+                                      : 'bg-rose-950/60 text-rose-300 border border-rose-800/40'
+                                  }`}
+                                  title={c.error || `HTTP ${c.status || 200}`}
+                                >
+                                  {c.name.toUpperCase()} {c.ok ? '✓' : '✗'}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {!target.available && target.reason && (
+                            <div className="text-[10px] text-rose-400 mt-1.5 font-sans leading-tight">
+                              {target.reason}
+                            </div>
+                          )}
+
+                          {target.recommendation && (
+                            <div className="mt-2 p-1.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 text-[10px] text-cyan-200">
+                              <span className="font-semibold text-cyan-300">💡 Рекомендация по сбросу: </span>
+                              <code className="text-amber-300 font-mono text-[9px] block bg-slate-950 px-1 py-0.5 rounded select-all break-all mt-0.5">
+                                {target.recommendation}
+                              </code>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -1146,11 +1251,11 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
 
               <div>
                 <label className="text-slate-400 block mb-1">Протокол</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setSelectedProtocol('awg')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold ${
+                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
                       selectedProtocol === 'awg'
                         ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
                         : 'bg-slate-950 text-slate-400 border-slate-800'
@@ -1161,13 +1266,24 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                   <button
                     type="button"
                     onClick={() => setSelectedProtocol('hysteria2')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-semibold ${
+                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
                       selectedProtocol === 'hysteria2'
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
                     Hysteria 2
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProtocol('mieru')}
+                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
+                      selectedProtocol === 'mieru'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    Mieru
                   </button>
                 </div>
               </div>

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // TargetConfig represents an egress target interface configuration.
@@ -26,10 +27,12 @@ type Config struct {
 	LockPath     string
 
 	IpifyURL    string
+	IPProviders []string
 	TelegramURL string
 	ChatGPTURL  string
 	GrokURL     string
 	MetaURL     string
+	DoHURL      string
 }
 
 var ifaceRegex = regexp.MustCompile(`^awg[1-9][0-9]*$`)
@@ -61,6 +64,26 @@ func DefaultConfig() Config {
 	if ipifyURL == "" {
 		ipifyURL = "https://api.ipify.org"
 	}
+
+	ipProviders := []string{
+		ipifyURL,
+		"https://icanhazip.com",
+		"https://ipinfo.io/ip",
+		"https://api.myip.com",
+	}
+	if customProviders := os.Getenv("AVARI_PROBE_IP_PROVIDERS"); customProviders != "" {
+		parts := strings.Split(customProviders, ",")
+		var clean []string
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				clean = append(clean, trimmed)
+			}
+		}
+		if len(clean) > 0 {
+			ipProviders = clean
+		}
+	}
+
 	tgURL := os.Getenv("AVARI_PROBE_TELEGRAM_URL")
 	if tgURL == "" {
 		tgURL = "https://api.telegram.org"
@@ -78,6 +101,11 @@ func DefaultConfig() Config {
 		metaURL = "https://www.instagram.com"
 	}
 
+	dohURL := os.Getenv("AVARI_PROBE_DOH_URL")
+	if dohURL == "" {
+		dohURL = "https://dns.google/dns-query"
+	}
+
 	return Config{
 		RegistryPath: reg,
 		StatePath:    state,
@@ -85,10 +113,12 @@ func DefaultConfig() Config {
 		SubnetPath:   subnet,
 		LockPath:     lock,
 		IpifyURL:     ipifyURL,
+		IPProviders:  ipProviders,
 		TelegramURL:  tgURL,
 		ChatGPTURL:   chatgptURL,
 		GrokURL:      grokURL,
 		MetaURL:      metaURL,
+		DoHURL:       dohURL,
 	}
 }
 
