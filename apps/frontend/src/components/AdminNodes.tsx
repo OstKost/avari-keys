@@ -933,16 +933,16 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                 <div className="space-y-4">
                   {/* Card Header: Location + ID + Status + Ping */}
                   <div className="flex items-start justify-between gap-2 pt-1">
-                    <div className="flex items-center space-x-2">
-                      <div className="p-2 rounded-xl bg-[#102833] border border-[#1C3945] text-lg leading-none shadow-sm">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <div className="p-2 rounded-xl bg-[#102833] border border-[#1C3945] text-lg leading-none shadow-sm shrink-0">
                         {countryInfo?.flag || '🌐'}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center space-x-1.5">
-                          <span className="text-xs font-mono font-bold text-[#D9B96E] uppercase tracking-wider">
+                          <span className="text-xs font-mono font-bold text-[#D9B96E] uppercase tracking-wider whitespace-nowrap shrink-0">
                             {countryInfo?.code || node.country_code || 'VPN'}
                           </span>
-                          <span className="text-xs font-mono text-[#718187]">#{node.id}</span>
+                          <span className="text-xs font-mono text-[#718187] whitespace-nowrap shrink-0">#{node.id}</span>
                         </div>
                         <div className="text-xs text-[#A8B4B7] font-sans truncate max-w-[150px]">
                           {countryInfo?.name || 'Зарубежный шлюз'}
@@ -950,26 +950,39 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-1.5">
+                    <div className="flex items-center space-x-1.5 shrink-0">
                       {node.online && typeof node.latency_ms === 'number' && (
                         <span
-                          className="px-2 py-0.5 rounded-full bg-[#06141B] text-[#D9B96E] border border-[#1C3945] text-xs font-mono font-semibold"
+                          className="px-2 py-0.5 rounded-full bg-[#06141B] text-[#D9B96E] border border-[#1C3945] text-xs font-mono font-semibold whitespace-nowrap shrink-0"
                           title="Время отклика API узла"
                         >
                           ⚡ {node.latency_ms} ms
                         </span>
                       )}
 
-                      <span
-                        className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${
-                          node.online
-                            ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-700/50'
-                            : 'bg-rose-950/80 text-rose-400 border border-rose-700/50'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${node.online ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
-                        <span>{node.online ? 'Online' : 'Offline'}</span>
-                      </span>
+                      <Tooltip content={node.online ? 'Узел в сети (Online)' : 'Внимание: узел недоступен (Offline)'}>
+                        <div
+                          className={`inline-flex items-center justify-center p-1.5 rounded-full border transition cursor-help shrink-0 ${
+                            node.online
+                              ? 'bg-emerald-950/60 border-emerald-700/50 hover:border-emerald-500'
+                              : 'bg-rose-950/80 border-rose-600/70 hover:border-rose-400'
+                          }`}
+                        >
+                          <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                            {node.online ? (
+                              <>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40 duration-1000" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 animate-beacon-green" />
+                              </>
+                            ) : (
+                              <>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-90" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 animate-beacon-red" />
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      </Tooltip>
                     </div>
                   </div>
 
@@ -994,7 +1007,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     <div className="mt-2.5 p-2.5 rounded-xl bg-[#06141B]/70 border border-[#1C3945]/60 flex items-center justify-between gap-2">
                       <div className="flex items-center space-x-1.5 text-xs font-mono min-w-0">
                         <span
-                          className={`px-2 py-0.5 rounded-md font-bold uppercase tracking-wider shrink-0 ${
+                          className={`px-2 py-0.5 rounded-md font-bold uppercase tracking-wider shrink-0 whitespace-nowrap ${
                             node.type === 'cascade'
                               ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
                               : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40'
@@ -1002,9 +1015,9 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                         >
                           {node.type === 'cascade' ? 'Каскад' : 'Прямой'}
                         </span>
-                        <span className="text-[#A8B4B7] truncate">
+                        <span className="text-[#A8B4B7] truncate whitespace-nowrap">
                           {node.type === 'cascade' ? (
-                            <>Выход: <strong className="text-[#F2F0E8] font-bold">{currentLabel}</strong></>
+                            <>Выход: <strong className="text-[#F2F0E8] font-bold whitespace-nowrap">{currentLabel}</strong></>
                           ) : (
                             routing.fullText
                           )}
@@ -1014,7 +1027,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                       {node.type === 'cascade' && (
                         <button
                           onClick={() => handleOpenEgress(node)}
-                          className="px-2 py-1 rounded-lg bg-[#102833] hover:bg-[#1C3945] border border-[#D9B96E]/40 text-[#D9B96E] text-xs font-mono flex items-center space-x-1 transition shrink-0 cursor-pointer"
+                          className="px-2 py-1 rounded-lg bg-[#102833] hover:bg-[#1C3945] border border-[#D9B96E]/40 text-[#D9B96E] text-xs font-mono flex items-center space-x-1 transition shrink-0 cursor-pointer whitespace-nowrap"
                           title="Переключить выход каскада"
                         >
                           <ArrowRightLeft className="w-3 h-3" />
@@ -1027,7 +1040,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                   {/* Feature & Protocol Badges */}
                   <div className="flex items-center flex-wrap gap-1.5">
                     <span
-                      className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm"
+                      className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
                       title="Поддерживается протокол AmneziaWG (AWG)"
                     >
                       <Shield className="w-3 h-3 text-[#D9B96E]" />
@@ -1036,7 +1049,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
                     {node.has_hysteria && (
                       <span
-                        className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm"
+                        className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
                         title="Поддерживается высокоскоростной протокол Hysteria 2 (UDP 443)"
                       >
                         <Zap className="w-3 h-3 text-purple-300" />
@@ -1046,7 +1059,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
                     {node.is_mobile_optimized && (
                       <span
-                        className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold"
+                        className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0"
                         title="Оптимизирован для мобильных сетей (--mobile 443/UDP)"
                       >
                         <Smartphone className="w-3 h-3" />
@@ -1056,7 +1069,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
                     {node.is_backup && (
                       <span
-                        className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm"
+                        className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
                         title="Запасной сервер — доступен только для тарифа PRO"
                       >
                         <Sparkles className="w-3 h-3 text-purple-300" />
@@ -1288,7 +1301,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     <td className="px-5 py-4">
                       <div className="space-y-1">
                         <span
-                          className={`inline-flex items-center space-x-1 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full ${
+                          className={`inline-flex items-center space-x-1 text-xs font-mono font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${
                             node.type === 'cascade'
                               ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
                               : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40'
@@ -1297,9 +1310,9 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                           {node.type === 'cascade' ? 'Каскад' : routing.fullText}
                         </span>
                         {node.type === 'cascade' && (
-                          <div className="text-xs font-mono text-[#D9B96E] flex items-center space-x-1">
+                          <div className="text-xs font-mono text-[#D9B96E] flex items-center space-x-1 whitespace-nowrap">
                             <span className="text-[#718187]">Выход:</span>
-                            <span className="font-bold">{currentLabel}</span>
+                            <span className="font-bold whitespace-nowrap">{currentLabel}</span>
                           </div>
                         )}
                       </div>
@@ -1308,24 +1321,24 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     {/* Protocols & Badges */}
                     <td className="px-5 py-4">
                       <div className="flex items-center flex-wrap gap-1.5 max-w-[200px]">
-                        <span className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold">
+                        <span className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                           <Shield className="w-3 h-3 text-[#D9B96E]" />
                           <span>AWG</span>
                         </span>
                         {node.has_hysteria && (
-                          <span className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold">
+                          <span className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                             <Zap className="w-3 h-3" />
                             <span>Hysteria 2</span>
                           </span>
                         )}
                         {node.is_backup && (
-                          <span className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold">
+                          <span className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-600/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                             <Sparkles className="w-3 h-3" />
                             <span>PRO</span>
                           </span>
                         )}
                         {node.is_mobile_optimized && (
-                          <span className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold">
+                          <span className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                             <Smartphone className="w-3 h-3" />
                             <span>LTE</span>
                           </span>
@@ -1337,19 +1350,32 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     <td className="px-5 py-4">
                       <div className="space-y-1.5">
                         <div className="flex items-center space-x-2">
-                          <span
-                            className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-mono font-bold ${
-                              node.online
-                                ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-700/50'
-                                : 'bg-rose-950/80 text-rose-400 border border-rose-700/50'
-                            }`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${node.online ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
-                            <span>{node.online ? 'Online' : 'Offline'}</span>
-                          </span>
+                          <Tooltip content={node.online ? 'Узел в сети (Online)' : 'Внимание: узел недоступен (Offline)'}>
+                            <div
+                              className={`inline-flex items-center justify-center p-1.5 rounded-full border transition cursor-help shrink-0 ${
+                                node.online
+                                  ? 'bg-emerald-950/60 border-emerald-700/50 hover:border-emerald-500'
+                                  : 'bg-rose-950/80 border-rose-600/70 hover:border-rose-400'
+                              }`}
+                            >
+                              <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                                {node.online ? (
+                                  <>
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40 duration-1000" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 animate-beacon-green" />
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-90" />
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 animate-beacon-red" />
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          </Tooltip>
 
                           {node.online && typeof node.latency_ms === 'number' && (
-                            <span className="text-xs font-mono text-[#D9B96E]">
+                            <span className="text-xs font-mono text-[#D9B96E] whitespace-nowrap shrink-0">
                               ⚡ {node.latency_ms} ms
                             </span>
                           )}

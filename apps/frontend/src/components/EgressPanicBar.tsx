@@ -89,20 +89,20 @@ export function EgressPanicBar({ onNavigateNodes }: EgressPanicBarProps) {
         </div>
         <div>
           <div className="flex items-center space-x-2">
-            <span className="text-[11px] uppercase tracking-wider text-[#A8B4B7]">
+            <span className="text-[11px] uppercase tracking-wider text-[#A8B4B7] whitespace-nowrap shrink-0">
               Каскадный Egress:
             </span>
-            <span className="font-bold text-[#F0D48D] text-sm">
+            <span className="font-bold text-[#F0D48D] text-sm whitespace-nowrap">
               {activeTarget?.label || egressData?.active_interface || 'Авто'}
             </span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm" />
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shrink-0" />
           </div>
           <div className="text-[11px] text-[#718187] flex items-center space-x-2 mt-0.5">
-            <span>Кластер: {onlineNodesCount}/{nodes.length} онлайн</span>
+            <span className="whitespace-nowrap">Кластер: {onlineNodesCount}/{nodes.length} онлайн</span>
             {activeTarget?.passed_checks !== undefined && (
               <>
                 <span>•</span>
-                <span className="text-emerald-400 font-semibold">
+                <span className="text-emerald-400 font-semibold whitespace-nowrap">
                   Кворум {activeTarget.passed_checks}/{activeTarget.total_checks ?? 5}
                 </span>
               </>

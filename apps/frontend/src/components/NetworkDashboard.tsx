@@ -20,6 +20,7 @@ import { AnalogGauge } from './AnalogGauge';
 import { useToast } from '../context/ToastContext';
 import { Loader } from './Loader';
 import { formatNodeRouting } from '../utils/country';
+import { Tooltip } from './Tooltip';
 
 interface NetworkDashboardProps {
   currentUser: User;
@@ -197,106 +198,105 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
         </div>
       </div>
 
-      {/* SECTION 2: Metric Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Traffic */}
-        <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
-          <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#D9B96E]">
-            <HardDrive className="w-6 h-6" />
+      {/* SECTION 2: Metric Cards & Topology Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
+        {/* Metric Cards (7 cols on lg, 8 cols on xl) */}
+        <div className="lg:col-span-7 xl:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Card 1: Total Traffic */}
+          <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
+            <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#D9B96E] shrink-0">
+              <HardDrive className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm text-[#A8B4B7] uppercase tracking-wider font-mono whitespace-nowrap">
+                Трафик за все время
+              </div>
+              <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5 whitespace-nowrap">
+                {stats.total_traffic_formatted}
+              </div>
+              <div className="text-xs sm:text-sm text-[#718187] font-mono mt-0.5 truncate">
+                Шифрование ChaCha20-Poly1305
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="text-sm text-[#A8B4B7] uppercase tracking-wider font-mono">
-              Трафик за все время
+
+          {/* Card 2: Community Members */}
+          <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
+            <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#34D399] shrink-0">
+              <Users className="w-6 h-6" />
             </div>
-            <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5">
-              {stats.total_traffic_formatted}
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm text-[#A8B4B7] uppercase tracking-wider font-mono whitespace-nowrap">
+                Хранители (Участники)
+              </div>
+              <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5 whitespace-nowrap">
+                {stats.active_users} <span className="text-xs sm:text-sm text-[#718187] font-normal">/ {stats.total_users}</span>
+              </div>
+              <div className="text-xs sm:text-sm text-emerald-400 font-mono mt-0.5 whitespace-nowrap">
+                {stats.active_users} активных аккаунтов
+              </div>
             </div>
-            <div className="text-sm text-[#718187] font-mono mt-0.5">
-              Шифрование ChaCha20-Poly1305
+          </div>
+
+          {/* Card 3: VPN Devices */}
+          <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
+            <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#38BDF8] shrink-0">
+              <Key className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm text-[#A8B4B7] uppercase tracking-wider font-mono whitespace-nowrap">
+                Выпущено ключей
+              </div>
+              <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5 whitespace-nowrap">
+                {stats.total_keys}
+              </div>
+              <div className="text-xs sm:text-sm text-[#38BDF8] font-mono mt-0.5 whitespace-nowrap">
+                {stats.active_devices_online} онлайн прямо сейчас
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Infrastructure Nodes */}
+          <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
+            <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#FBBF24] shrink-0">
+              <Server className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm text-[#A8B4B7] uppercase tracking-wider font-mono whitespace-nowrap">
+                Узлы сети (Ноды)
+              </div>
+              <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5 whitespace-nowrap">
+                {stats.online_nodes} <span className="text-xs sm:text-sm text-[#718187] font-normal">/ {stats.total_nodes}</span>
+              </div>
+              <div className="text-xs sm:text-sm text-emerald-400 font-mono mt-0.5 whitespace-nowrap">
+                {stats.system_status === 'operational' ? '● Все узлы доступны' : '● Деградация узлов'}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Community Members */}
-        <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
-          <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#34D399]">
-            <Users className="w-6 h-6" />
-          </div>
+        {/* Topology Breakdown (5 cols on lg, 4 cols on xl) */}
+        <div className="lg:col-span-5 xl:col-span-4 bg-[#0D222C]/90 border border-[#1C3945] rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col justify-between">
           <div>
-            <div className="text-sm text-[#A8B4B7] uppercase tracking-wider font-mono">
-              Хранители (Участники)
-            </div>
-            <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5">
-              {stats.active_users} <span className="text-sm text-[#718187] font-normal">/ {stats.total_users}</span>
-            </div>
-            <div className="text-sm text-emerald-400 font-mono mt-0.5">
-              {stats.active_users} активных аккаунтов
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: VPN Devices */}
-        <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
-          <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#38BDF8]">
-            <Key className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="text-sm text-[#A8B4B7] uppercase tracking-wider font-mono">
-              Выпущено ключей
-            </div>
-            <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5">
-              {stats.total_keys}
-            </div>
-            <div className="text-sm text-[#38BDF8] font-mono mt-0.5">
-              {stats.active_devices_online} онлайн прямо сейчас
-            </div>
-          </div>
-        </div>
-
-        {/* Card 4: Infrastructure Nodes */}
-        <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-2xl p-4 shadow-lg flex items-center space-x-3.5">
-          <div className="p-3 rounded-xl bg-[#102833] border border-[#1C3945] text-[#FBBF24]">
-            <Server className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="text-sm text-[#A8B4B7] uppercase tracking-wider font-mono">
-              Узлы сети (Ноды)
-            </div>
-            <div className="text-xl font-bold font-mono text-[#F2F0E8] mt-0.5">
-              {stats.online_nodes} <span className="text-sm text-[#718187] font-normal">/ {stats.total_nodes}</span>
-            </div>
-            <div className="text-sm text-emerald-400 font-mono mt-0.5">
-              {stats.system_status === 'operational' ? '● Все узлы доступны' : '● Деградация узлов'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 3: Topology Breakdown & Node Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Topology Breakdown (1 Col) */}
-        <div className="bg-[#0D222C]/90 border border-[#1C3945] rounded-3xl p-6 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center space-x-2 mb-4">
+            <div className="flex items-center space-x-2 mb-3">
               <Zap className="w-4 h-4 text-[#D9B96E]" />
-              <h4 className="font-serif font-bold text-[#F2F0E8] text-base">
+              <h4 className="font-serif font-bold text-[#F2F0E8] text-sm sm:text-base whitespace-nowrap">
                 Распределение топологии
               </h4>
             </div>
 
-            <p className="text-sm text-[#A8B4B7] font-sans mb-6">
+            <p className="text-xs sm:text-sm text-[#A8B4B7] font-sans mb-4">
               Соотношение сетевого трафика между каскадными узлами сокрытия и прямыми шлюзами.
             </p>
 
             {/* Split Progress Bar */}
-            <div className="space-y-2 mb-6">
-              <div className="flex justify-between text-sm font-mono">
-                <span className="text-amber-300 font-bold">Каскад ({stats.topology_breakdown.cascade_percentage}%)</span>
-                <span className="text-[#6EA8C4] font-bold">Прямой ({stats.topology_breakdown.direct_percentage}%)</span>
+            <div className="space-y-2 mb-4">
+              <div className="flex justify-between text-xs sm:text-sm font-mono whitespace-nowrap">
+                <span className="text-amber-300 font-bold whitespace-nowrap">Каскад ({stats.topology_breakdown.cascade_percentage}%)</span>
+                <span className="text-[#6EA8C4] font-bold whitespace-nowrap">Прямой ({stats.topology_breakdown.direct_percentage}%)</span>
               </div>
 
-              <div className="w-full h-3.5 bg-[#06141B] rounded-full overflow-hidden border border-[#1C3945] flex">
+              <div className="w-full h-3 bg-[#06141B] rounded-full overflow-hidden border border-[#1C3945] flex">
                 <div
                   style={{ width: `${stats.topology_breakdown.cascade_percentage}%` }}
                   className="bg-gradient-to-r from-amber-600 to-amber-400 h-full transition-all duration-700"
@@ -310,77 +310,79 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
               </div>
             </div>
 
-            <div className="space-y-3 font-sans text-sm">
-              <div className="flex justify-between items-center bg-[#06141B]/70 p-3 rounded-xl border border-[#1C3945]/70">
-                <div className="flex items-center space-x-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <span className="text-[#F2F0E8] font-medium">Каскадные подключения:</span>
+            <div className="space-y-2 font-sans text-xs sm:text-sm">
+              <div className="flex justify-between items-center bg-[#06141B]/70 p-2.5 rounded-xl border border-[#1C3945]/70">
+                <div className="flex items-center space-x-2 whitespace-nowrap">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                  <span className="text-[#F2F0E8] font-medium whitespace-nowrap">Каскадные подключения:</span>
                 </div>
-                <span className="font-mono text-[#D9B96E]">
+                <span className="font-mono text-[#D9B96E] whitespace-nowrap shrink-0">
                   {stats.topology_breakdown.cascade_traffic_formatted}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center bg-[#06141B]/70 p-3 rounded-xl border border-[#1C3945]/70">
-                <div className="flex items-center space-x-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#6EA8C4]" />
-                  <span className="text-[#F2F0E8] font-medium">Прямые подключения:</span>
+              <div className="flex justify-between items-center bg-[#06141B]/70 p-2.5 rounded-xl border border-[#1C3945]/70">
+                <div className="flex items-center space-x-2 whitespace-nowrap">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#6EA8C4] shrink-0" />
+                  <span className="text-[#F2F0E8] font-medium whitespace-nowrap">Прямые подключения:</span>
                 </div>
-                <span className="font-mono text-[#6EA8C4]">
+                <span className="font-mono text-[#6EA8C4] whitespace-nowrap shrink-0">
                   {stats.topology_breakdown.direct_traffic_formatted}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t border-[#1C3945]/80 text-sm text-[#718187] font-mono">
-            Состав кластера и доступность узлов загружаются из мониторинга. Премиум-узлы доступны для выпуска ключей с тарифом PRO.
+          <div className="mt-4 pt-3 border-t border-[#1C3945]/80 text-xs text-[#718187] font-mono">
+            Премиум-узлы доступны для тарифа PRO.
           </div>
         </div>
+      </div>
 
-        {/* Nodes Cluster Overview (2 Cols) */}
-        <div className="lg:col-span-2 bg-[#0D222C]/90 border border-[#1C3945] rounded-3xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <Server className="w-4 h-4 text-[#D9B96E]" />
-              <h4 className="font-serif font-bold text-[#F2F0E8] text-base">
-                Серверы AWG и Hysteria 2
-              </h4>
-            </div>
-
-            <span className="text-sm font-mono text-[#A8B4B7]">
-              Онлайн {stats.online_nodes} из {stats.total_nodes}
-            </span>
+      {/* SECTION 3: Nodes Cluster Overview - Full Width */}
+      <div className="w-full bg-[#0D222C]/90 border border-[#1C3945] rounded-3xl p-5 sm:p-6 lg:p-8 shadow-xl">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-2">
+            <Server className="w-5 h-5 text-[#D9B96E]" />
+            <h4 className="font-serif font-bold text-[#F2F0E8] text-base sm:text-lg">
+              Серверы AWG и Hysteria 2
+            </h4>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {(stats.nodes || []).map((n) => (
-              <div
-                key={n.id}
-                className="bg-[#06141B]/80 border border-[#1C3945] hover:border-[#D9B96E]/40 rounded-2xl p-4 flex flex-col justify-between transition group"
-              >
-                <div>
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center space-x-2.5">
-                      <div className="p-2 rounded-xl bg-[#102833] border border-[#1C3945] text-[#D9B96E]">
-                        <Globe className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h5
-                          onClick={() => currentUser.role === 'admin' && onNavigateTab && onNavigateTab('nodes', n.id)}
-                          className={`font-serif font-bold text-sm text-[#F2F0E8] group-hover:text-gold-gradient transition ${
-                            currentUser.role === 'admin' ? 'cursor-pointer hover:underline' : ''
-                          }`}
-                          title={currentUser.role === 'admin' ? 'Открыть подробную страницу сервера' : undefined}
-                        >
-                          {n.name}
-                        </h5>
-                        <span className="text-sm text-[#718187] font-mono">ID #{n.id}{n.is_backup ? ' · PRO' : ''}</span>
-                      </div>
-                    </div>
+          <span className="text-xs sm:text-sm font-mono text-[#A8B4B7] whitespace-nowrap shrink-0">
+            Онлайн {stats.online_nodes} из {stats.total_nodes}
+          </span>
+        </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
+          {(stats.nodes || []).map((n) => (
+            <div
+              key={n.id}
+              className="bg-[#06141B]/80 border border-[#1C3945] hover:border-[#D9B96E]/40 rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition group"
+            >
+              <div>
+                <div className="flex items-start justify-between mb-3 gap-2">
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div className="p-2 rounded-xl bg-[#102833] border border-[#1C3945] text-[#D9B96E] shrink-0">
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h5
+                        onClick={() => currentUser.role === 'admin' && onNavigateTab && onNavigateTab('nodes', n.id)}
+                        className={`font-serif font-bold text-sm sm:text-base text-[#F2F0E8] group-hover:text-gold-gradient transition truncate ${
+                          currentUser.role === 'admin' ? 'cursor-pointer hover:underline' : ''
+                        }`}
+                        title={currentUser.role === 'admin' ? 'Открыть подробную страницу сервера' : undefined}
+                      >
+                        {n.name}
+                      </h5>
+                      <span className="text-xs sm:text-sm text-[#718187] font-mono whitespace-nowrap">ID #{n.id}{n.is_backup ? ' · PRO' : ''}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 shrink-0">
                     <span
-                      className={`text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                      className={`text-xs sm:text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${
                         n.type === 'cascade'
                           ? 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
                           : 'bg-[#102833] text-[#6EA8C4] border border-[#6EA8C4]/40'
@@ -388,50 +390,85 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
                     >
                       {n.type === 'cascade' ? 'Каскад' : formatNodeRouting(n.type, n.country_code).fullText}
                     </span>
-                  </div>
 
-                  <div className="space-y-2 text-sm font-sans text-[#A8B4B7] bg-[#0A1D26]/70 p-3.5 rounded-xl border border-[#1C3945]/50">
-                    {n.type === 'cascade' && (
-                      <div className="flex justify-between items-center gap-2">
-                        <span className="text-sm text-[#718187]">Выход каскада:</span>
-                        <span className="font-mono text-sm text-[#D9B96E]">{n.active_egress || 'Не подтверждён'}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-[#718187]">Статус:</span>
-                      <div className="flex items-center space-x-1.5">
-                        <span className={`w-2 h-2 rounded-full ${n.online ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
-                        <span className={n.online ? 'text-emerald-400 font-mono text-sm' : 'text-rose-400 font-mono text-sm'}>
-                          {n.online ? 'Online' : 'Offline'}
+                    <Tooltip content={n.online ? 'Узел в сети (Online)' : 'Внимание: узел недоступен (Offline)'}>
+                      <div
+                        className={`inline-flex items-center justify-center p-1.5 rounded-full border transition cursor-help shrink-0 ${
+                          n.online
+                            ? 'bg-emerald-950/60 border-emerald-700/50 hover:border-emerald-500'
+                            : 'bg-rose-950/80 border-rose-600/70 hover:border-rose-400'
+                        }`}
+                      >
+                        <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                          {n.online ? (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40 duration-1000" />
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 animate-beacon-green" />
+                            </>
+                          ) : (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-90" />
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 animate-beacon-red" />
+                            </>
+                          )}
                         </span>
                       </div>
-                    </div>
+                    </Tooltip>
+                  </div>
+                </div>
 
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-[#718187]">Задержка:</span>
-                      <span className="font-mono text-sm text-[#F2F0E8]">{n.latency_ms} ms</span>
+                <div className="space-y-2 text-xs sm:text-sm font-sans text-[#A8B4B7] bg-[#0A1D26]/70 p-3.5 rounded-xl border border-[#1C3945]/50">
+                  {n.type === 'cascade' && (
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[#718187] whitespace-nowrap">Выход каскада:</span>
+                      <span className="font-mono text-[#D9B96E] whitespace-nowrap truncate">{n.active_egress || 'Не подтверждён'}</span>
                     </div>
+                  )}
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-[#718187] whitespace-nowrap">Статус:</span>
+                    <Tooltip content={n.online ? 'Узел в сети (Online)' : 'Внимание: узел недоступен (Offline)'}>
+                      <div className="flex items-center cursor-help">
+                        <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                          {n.online ? (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40 duration-1000" />
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 animate-beacon-green" />
+                            </>
+                          ) : (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-90" />
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 animate-beacon-red" />
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    </Tooltip>
+                  </div>
 
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-[#718187]">Пиров подключено:</span>
-                      <span className="font-mono text-sm text-[#D9B96E]">{n.peer_count} устройств</span>
-                    </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-[#718187] whitespace-nowrap">Задержка:</span>
+                    <span className="font-mono text-[#F2F0E8] whitespace-nowrap">{n.latency_ms} ms</span>
+                  </div>
 
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-[#718187]">Трафик узла:</span>
-                      <span className="font-mono text-sm text-[#F2F0E8]">{n.total_traffic_formatted}</span>
-                    </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-[#718187] whitespace-nowrap">Пиров подключено:</span>
+                    <span className="font-mono text-[#D9B96E] whitespace-nowrap">{n.peer_count} устройств</span>
+                  </div>
+
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-[#718187] whitespace-nowrap">Трафик узла:</span>
+                    <span className="font-mono text-[#F2F0E8] whitespace-nowrap">{n.total_traffic_formatted}</span>
                   </div>
                 </div>
               </div>
-            ))}
+            </div>
+          ))}
 
-            {(stats.nodes || []).length === 0 && (
-              <div className="col-span-2 text-center py-8 text-[#718187] text-sm font-mono uppercase tracking-wider">
-                Узлы сети еще не настроены.
-              </div>
-            )}
-          </div>
+          {(stats.nodes || []).length === 0 && (
+            <div className="col-span-full text-center py-8 text-[#718187] text-sm font-mono uppercase tracking-wider">
+              Узлы сети еще не настроены.
+            </div>
+          )}
         </div>
       </div>
 
