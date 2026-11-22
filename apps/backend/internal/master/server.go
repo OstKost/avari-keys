@@ -631,19 +631,22 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create unique sanitized client name on the node: e.g. u1_phone
-	cleanDevice := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			return r
-		}
-		return '_'
-	}, req.DeviceName)
+	// Transliterate Russian/Cyrillic device names into clean Latin for client names and stored device name
+	translitDevice := Transliterate(req.DeviceName)
+	cleanDevice := SanitizeDeviceNameForClient(req.DeviceName)
 	clientName := fmt.Sprintf("u%d_%s", claims.UserID, cleanDevice)
 	proto := strings.ToLower(strings.TrimSpace(req.Protocol))
 	if proto == "hysteria2" {
 		if !node.HasHysteria {
 			s.writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "Выбранный сервер не поддерживает протокол Hysteria 2",
+			})
+			return
+		}
+	} else if proto == "mieru" {
+		if !node.HasMieru {
+			s.writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "Выбранный сервер не поддерживает протокол Mieru",
 			})
 			return
 		}
@@ -675,8 +678,8 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Save record in DB with PublicKey, AllocatedIP, and Protocol
-	keyRecord, err := s.storage.CreateClientConfig(r.Context(), claims.UserID, node.ID, clientName, req.DeviceName, slaveResp.PublicKey, allocIP, proto)
+	// Save record in DB with PublicKey, AllocatedIP, and Protocol (using transliterated device name)
+	keyRecord, err := s.storage.CreateClientConfig(r.Context(), claims.UserID, node.ID, clientName, translitDevice, slaveResp.PublicKey, allocIP, proto)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -688,10 +691,12 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if proto == "hysteria2" {
 		pskDetails += " [Hysteria 2]"
+	} else if proto == "mieru" {
+		pskDetails += " [Mieru]"
 	}
-	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryKeys, "key_create", fmt.Sprintf("Создан VPN-ключ «%s» (%s)%s на сервере «%s»", req.DeviceName, clientName, pskDetails, node.Name))
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryKeys, "key_create", fmt.Sprintf("Создан VPN-ключ «%s» (%s)%s на сервере «%s»", translitDevice, clientName, pskDetails, node.Name))
 
-	if proto != "hysteria2" {
+	if proto != "hysteria2" && proto != "mieru" {
 		cleanConfig := runner.SanitizeAWGConfig(slaveResp.Config)
 		if cleanConfig != "" {
 			slaveResp.Config = cleanConfig
@@ -703,7 +708,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusCreated, map[string]any{
 		"id":                keyRecord.ID,
 		"client_name":       clientName,
-		"device_name":       req.DeviceName,
+		"device_name":       keyRecord.DeviceName,
 		"node_id":           node.ID,
 		"node_name":         node.Name,
 		"node_type":         node.Type,
@@ -751,7 +756,7 @@ func (s *Server) handleGetKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if keyRecord.Protocol != "hysteria2" {
+	if keyRecord.Protocol != "hysteria2" && keyRecord.Protocol != "mieru" {
 		cleanKeyConfig := runner.SanitizeAWGConfig(slaveResp.Config)
 		if cleanKeyConfig != "" {
 			slaveResp.Config = cleanKeyConfig
@@ -1278,7 +1283,7 @@ func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria)
+	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria, req.HasMieru)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1296,11 +1301,15 @@ func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 	if node.HasHysteria {
 		hysteriaTag = " [Hysteria 2]"
 	}
+	mieruTag := ""
+	if node.HasMieru {
+		mieruTag = " [Mieru]"
+	}
 	countryTag := ""
 	if node.CountryCode != "" {
 		countryTag = fmt.Sprintf(" [%s]", node.CountryCode)
 	}
-	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_create", fmt.Sprintf("Добавлен новый сервер «%s» (%s%s%s%s%s, URL: %s)", node.Name, node.Type, countryTag, mobileTag, backupTag, hysteriaTag, node.APIURL))
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_create", fmt.Sprintf("Добавлен новый сервер «%s» (%s%s%s%s%s%s, URL: %s)", node.Name, node.Type, countryTag, mobileTag, backupTag, hysteriaTag, mieruTag, node.APIURL))
 
 	s.invalidateDashboardCache()
 
@@ -1338,7 +1347,7 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria)
+	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria, req.HasMieru)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1372,11 +1381,15 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 	if node.HasHysteria {
 		hysteriaTag = " [Hysteria 2]"
 	}
+	mieruTag := ""
+	if node.HasMieru {
+		mieruTag = " [Mieru]"
+	}
 	countryTag := ""
 	if node.CountryCode != "" {
 		countryTag = fmt.Sprintf(" [%s]", node.CountryCode)
 	}
-	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_update", fmt.Sprintf("Обновлены параметры сервера «%s» (ID #%d, %s%s%s%s%s, URL: %s)", node.Name, node.ID, node.Type, countryTag, mobileTag, backupTag, hysteriaTag, node.APIURL))
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_update", fmt.Sprintf("Обновлены параметры сервера «%s» (ID #%d, %s%s%s%s%s%s, URL: %s)", node.Name, node.ID, node.Type, countryTag, mobileTag, backupTag, hysteriaTag, mieruTag, node.APIURL))
 
 	s.invalidateDashboardCache()
 

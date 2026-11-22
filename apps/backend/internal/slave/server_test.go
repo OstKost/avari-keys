@@ -318,3 +318,57 @@ func TestHysteriaClientAndAuth(t *testing.T) {
 		t.Fatalf("expected 200 OK on delete client, got %d", rec.Code)
 	}
 }
+
+func TestMieruClient(t *testing.T) {
+	t.Setenv("MIERU_SERVER", "s2.example.test")
+	srv, apiKey := setupTestSlave()
+
+	// 1. Create Mieru client
+	createReq, _ := json.Marshal(models.ClientCreateRequest{
+		Name:     "u1_mieru_test",
+		Protocol: "mieru",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/clients", bytes.NewReader(createReq))
+	req.Header.Set("X-API-Key", apiKey)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for Mieru, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var created models.ClientResponse
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+
+	if created.Protocol != "mieru" || !strings.HasPrefix(created.VPNURI, "mierus://") {
+		t.Fatalf("unexpected client response: %+v", created)
+	}
+
+	// 2. Test GetClient
+	req = httptest.NewRequest("GET", "/api/v1/clients/u1_mieru_test?protocol=mieru", nil)
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on get client, got %d", rec.Code)
+	}
+
+	var fetched models.ClientResponse
+	_ = json.NewDecoder(rec.Body).Decode(&fetched)
+	if fetched.Protocol != "mieru" || fetched.VPNURI != created.VPNURI {
+		t.Fatalf("fetched response mismatch: %+v", fetched)
+	}
+
+	// 3. Test DeleteClient
+	req = httptest.NewRequest("DELETE", "/api/v1/clients/u1_mieru_test", nil)
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on delete client, got %d", rec.Code)
+	}
+}

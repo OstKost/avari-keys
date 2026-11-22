@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Eye,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { AdminNode, EgressStatusResponse, TelegramStatusResponse } from '../types';
@@ -119,6 +120,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const [isMobileOptimized, setIsMobileOptimized] = useState(false);
   const [isBackup, setIsBackup] = useState(false);
   const [hasHysteria, setHasHysteria] = useState(false);
+  const [hasMieru, setHasMieru] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Edit node modal state
@@ -132,6 +134,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const [editIsMobileOptimized, setEditIsMobileOptimized] = useState(false);
   const [editIsBackup, setEditIsBackup] = useState(false);
   const [editHasHysteria, setEditHasHysteria] = useState(false);
+  const [editHasMieru, setEditHasMieru] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
 
   // Action modals state
@@ -277,6 +280,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
     const nodeMobile = isMobileOptimized;
     const nodeBackup = isBackup;
     const nodeHysteria = hasHysteria;
+    const nodeMieru = hasMieru;
     try {
       setSubmitting(true);
       const res = await api.addAdminNode(
@@ -288,7 +292,8 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
         nodeCountry,
         nodeProvider,
         nodeBackup,
-        nodeHysteria
+        nodeHysteria,
+        nodeMieru
       );
       setName('');
       setCountryCode('NLD');
@@ -298,6 +303,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
       setIsMobileOptimized(false);
       setIsBackup(false);
       setHasHysteria(false);
+      setHasMieru(false);
       setShowAddForm(false);
       toast.success(`Сервер «${nodeName}» успешно подключен`);
       if (res && res.id) {
@@ -322,6 +328,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
     setEditIsMobileOptimized(Boolean(node.is_mobile_optimized));
     setEditIsBackup(Boolean(node.is_backup));
     setEditHasHysteria(Boolean(node.has_hysteria));
+    setEditHasMieru(Boolean(node.has_mieru));
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -337,6 +344,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
     const updatedMobile = editIsMobileOptimized;
     const updatedBackup = editIsBackup;
     const updatedHysteria = editHasHysteria;
+    const updatedMieru = editHasMieru;
 
     const previousNodes = [...nodes];
     setNodes((prev) =>
@@ -352,6 +360,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
               is_mobile_optimized: updatedMobile,
               is_backup: updatedBackup,
               has_hysteria: updatedHysteria,
+              has_mieru: updatedMieru,
             }
           : n
       )
@@ -368,6 +377,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
         isMobileOptimized: updatedMobile,
         isBackup: updatedBackup,
         hasHysteria: updatedHysteria,
+        hasMieru: updatedMieru,
         countryCode: updatedCountry,
         providerUrl: updatedProvider,
       });
@@ -1057,6 +1067,16 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                       </span>
                     )}
 
+                    {node.has_mieru && (
+                      <span
+                        className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
+                        title="Поддерживается скрытный протокол Mieru (TCP 28443)"
+                      >
+                        <Eye className="w-3 h-3 text-emerald-300" />
+                        <span>Mieru</span>
+                      </span>
+                    )}
+
                     {node.is_mobile_optimized && (
                       <span
                         className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0"
@@ -1329,6 +1349,12 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                           <span className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                             <Zap className="w-3 h-3" />
                             <span>Hysteria 2</span>
+                          </span>
+                        )}
+                        {node.has_mieru && (
+                          <span className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
+                            <Eye className="w-3 h-3 text-emerald-300" />
+                            <span>Mieru</span>
                           </span>
                         )}
                         {node.is_backup && (
@@ -1736,6 +1762,28 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     </div>
                   </div>
                 </div>
+
+                <div
+                  onClick={() => setHasMieru(!hasMieru)}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    hasMieru ? 'border-emerald-500 bg-emerald-950/30' : 'border-[#1C3945] bg-[#06141B]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <input
+                      type="checkbox"
+                      checked={hasMieru}
+                      onChange={(e) => setHasMieru(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 text-emerald-400 accent-emerald-500"
+                    />
+                    <div>
+                      <span className="font-semibold text-xs sm:text-sm text-[#F2F0E8]">
+                        Поддержка Mieru (TCP 28443)
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3 pt-2">
@@ -1931,6 +1979,28 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                     <div>
                       <span className="font-semibold text-xs sm:text-sm text-[#F2F0E8]">
                         Поддержка Hysteria 2 (QUIC / UDP 443)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setEditHasMieru(!editHasMieru)}
+                  className={`p-3 rounded-xl border cursor-pointer transition ${
+                    editHasMieru ? 'border-emerald-500 bg-emerald-950/30' : 'border-[#1C3945] bg-[#06141B]'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <input
+                      type="checkbox"
+                      checked={editHasMieru}
+                      onChange={(e) => setEditHasMieru(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 text-emerald-400 accent-emerald-500"
+                    />
+                    <div>
+                      <span className="font-semibold text-xs sm:text-sm text-[#F2F0E8]">
+                        Поддержка Mieru (TCP 28443)
                       </span>
                     </div>
                   </div>

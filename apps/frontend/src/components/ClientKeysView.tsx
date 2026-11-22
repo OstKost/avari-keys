@@ -195,7 +195,11 @@ export const ClientKeysView: React.FC<ClientKeysViewProps> = ({
                         {routing.fullText}
                       </span>
 
-                      {k.protocol === 'hysteria2' ? (
+                      {k.protocol === 'mieru' ? (
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                          Mieru
+                        </span>
+                      ) : k.protocol === 'hysteria2' ? (
                         <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-950/80 text-violet-300 border border-violet-500/40 shadow-sm">
                           Hysteria 2
                         </span>
@@ -385,7 +389,11 @@ export const ClientKeysView: React.FC<ClientKeysViewProps> = ({
                       >
                         {routing.fullText}
                       </span>
-                      {k.protocol === 'hysteria2' ? (
+                      {k.protocol === 'mieru' ? (
+                        <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                          Mieru
+                        </span>
+                      ) : k.protocol === 'hysteria2' ? (
                         <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-950/80 text-violet-300 border border-violet-500/40 shadow-sm">
                           Hysteria 2
                         </span>

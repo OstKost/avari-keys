@@ -29,6 +29,7 @@ import {
   ArrowRightLeft,
   Layers,
   Cpu,
+  Eye,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { NodeDetailResponse } from '../types';
@@ -73,6 +74,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
   const [editIsMobileOptimized, setEditIsMobileOptimized] = useState(false);
   const [editIsBackup, setEditIsBackup] = useState(false);
   const [editHasHysteria, setEditHasHysteria] = useState(false);
+  const [editHasMieru, setEditHasMieru] = useState(false);
   const [editAutoFailoverEnabled, setEditAutoFailoverEnabled] = useState(false);
   const [savingFailover, setSavingFailover] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
@@ -267,6 +269,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
     setEditIsMobileOptimized(Boolean(node.is_mobile_optimized));
     setEditIsBackup(Boolean(node.is_backup));
     setEditHasHysteria(Boolean(node.has_hysteria));
+    setEditHasMieru(Boolean(node.has_mieru));
     setEditAutoFailoverEnabled(Boolean(node.auto_failover_enabled));
     setShowEditModal(true);
   };
@@ -285,6 +288,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
         isMobileOptimized: editIsMobileOptimized,
         isBackup: editIsBackup,
         hasHysteria: editHasHysteria,
+        hasMieru: editHasMieru,
         countryCode: editCountryCode,
         providerUrl: editProviderUrl,
       });
@@ -444,6 +448,13 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                 <span className="inline-flex items-center space-x-1 bg-purple-950/80 text-purple-300 border border-purple-500/40 text-xs font-mono px-2.5 py-1 rounded-full font-bold">
                   <Zap className="w-3.5 h-3.5 text-purple-300" />
                   <span>Hysteria 2 (UDP 443)</span>
+                </span>
+              )}
+
+              {node.has_mieru && (
+                <span className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-xs font-mono px-2.5 py-1 rounded-full font-bold">
+                  <Eye className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Mieru (TCP 28443)</span>
                 </span>
               )}
 
@@ -634,6 +645,12 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                   <span className="text-[#A8B4B7]">Hysteria 2:</span>
                   <span className={`font-bold ${node.health?.hysteria_available ? 'text-emerald-400' : node.has_hysteria ? 'text-amber-400' : 'text-[#718187]'}`}>
                     {node.health?.hysteria_available ? '● Активна' : node.has_hysteria ? '● Не запущена' : 'Отключен'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center bg-[#06141B] px-2.5 py-1 rounded-lg border border-[#1C3945]/60">
+                  <span className="text-[#A8B4B7]">Mieru:</span>
+                  <span className={`font-bold ${node.health?.mieru_available ? 'text-emerald-400' : node.has_mieru ? 'text-amber-400' : 'text-[#718187]'}`}>
+                    {node.health?.mieru_available ? '● Активна' : node.has_mieru ? '● Не запущена' : 'Отключен'}
                   </span>
                 </div>
               </div>
@@ -1440,6 +1457,16 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                     className="rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945]"
                   />
                   <span className="text-[#F2F0E8]">Поддерживать протокол Hysteria 2</span>
+                </label>
+
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editHasMieru}
+                    onChange={(e) => setEditHasMieru(e.target.checked)}
+                    className="rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945]"
+                  />
+                  <span className="text-[#F2F0E8]">Поддерживать протокол Mieru</span>
                 </label>
 
                 {editType === 'cascade' && (

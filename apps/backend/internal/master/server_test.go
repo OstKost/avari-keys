@@ -52,8 +52,8 @@ func setupTestEnvironment(t *testing.T) (*master.Server, *httptest.Server, *stor
 	}, mockRunner)
 	slaveHttpSrv := httptest.NewServer(slaveSrv.Handler())
 
-	// Add mock slave node to DB (with Hysteria 2 enabled)
-	_, err = store.CreateNode(context.Background(), "Mock Cascade Node", "cascade", "NLD", "https://aeza.net", slaveHttpSrv.URL, slaveToken, true, false, true)
+	// Add mock slave node to DB (with Hysteria 2 and Mieru enabled)
+	_, err = store.CreateNode(context.Background(), "Mock Cascade Node", "cascade", "NLD", "https://aeza.net", slaveHttpSrv.URL, slaveToken, true, false, true, true)
 	if err != nil {
 		t.Fatalf("failed to create mock node: %v", err)
 	}
@@ -1589,6 +1589,99 @@ func TestHysteriaNodeValidationFlow(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201 Created on Hysteria node, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMieruKeyCreationAndCyrillicTransliteration(t *testing.T) {
+	t.Setenv("MIERU_SERVER", "s2.example.test")
+	masterSrv, slaveHttpSrv, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+	ctx := context.Background()
+
+	// 1. Create a node without Mieru
+	nodeNoMieru, err := store.CreateNode(ctx, "Node Without Mieru", "direct", "DEU", "https://hetzner.com", slaveHttpSrv.URL, "slave-secret-123", false, false, false, false)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	// 2. Login as admin
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var loginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+	token := loginResp.Token
+
+	// 3. Try creating Mieru key on node without Mieru -> Expect 400 Bad Request
+	failBody, _ := json.Marshal(models.CreateKeyRequest{
+		NodeID:     nodeNoMieru.ID,
+		DeviceName: "Айфон Тест",
+		Protocol:   "mieru",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(failBody))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when creating Mieru key on node without Mieru, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "не поддерживает протокол Mieru") {
+		t.Fatalf("expected error message to mention Mieru support, got: %s", rec.Body.String())
+	}
+
+	// 4. Create Mieru key on node with HasMieru=true and Cyrillic name ("Рабочий Айфон Forve")
+	successBody, _ := json.Marshal(models.CreateKeyRequest{
+		NodeID:     1, // Mock Cascade Node has has_mieru=true
+		DeviceName: "Рабочий Айфон Forve",
+		Protocol:   "mieru",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/keys", bytes.NewReader(successBody))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created on Mieru node, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var createdKey map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&createdKey)
+	if createdKey["protocol"] != "mieru" {
+		t.Fatalf("expected protocol 'mieru', got %v", createdKey["protocol"])
+	}
+	// Check transliterated device name and sanitized client name
+	if createdKey["device_name"] != "Rabochiy Ayfon Forve" {
+		t.Fatalf("expected transliterated device_name 'Rabochiy Ayfon Forve', got: %v", createdKey["device_name"])
+	}
+	if !strings.Contains(createdKey["client_name"].(string), "Rabochiy_Ayfon_Forve") {
+		t.Fatalf("expected client_name with transliterated device, got: %v", createdKey["client_name"])
+	}
+	vpnURI, _ := createdKey["vpn_uri"].(string)
+	if !strings.HasPrefix(vpnURI, "mierus://") {
+		t.Fatalf("expected mierus:// uri, got %v", vpnURI)
+	}
+
+	// 5. Verify GET /api/v1/keys/:id
+	keyID := int64(createdKey["id"].(float64))
+	req = httptest.NewRequest("GET", fmt.Sprintf("/api/v1/keys/%d", keyID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on GET key, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var getKeyResp map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&getKeyResp)
+	if getKeyResp["protocol"] != "mieru" {
+		t.Fatalf("expected protocol mieru, got: %v", getKeyResp["protocol"])
 	}
 }
 
