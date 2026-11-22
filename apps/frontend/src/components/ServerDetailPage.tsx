@@ -407,17 +407,26 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
             {/* Badges / Capabilities */}
             <div className="flex flex-wrap items-center gap-2 mt-4">
               {/* Online indicator */}
-              <div className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border ${
+              <div className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border whitespace-nowrap shrink-0 ${
                 node.online
                   ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/40'
                   : 'bg-rose-950/80 text-rose-400 border-rose-600/40'
               }`}>
-                <span className={`w-2 h-2 rounded-full ${node.online ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
+                <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+                  {node.online ? (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  ) : (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-90" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500 animate-beacon-red" />
+                    </>
+                  )}
+                </span>
                 <span>{node.online ? 'LIVE ONLINE' : 'OFFLINE'}</span>
               </div>
 
               {/* Cascade / Direct Badge */}
-              <span className={`text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${
+              <span className={`text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full border whitespace-nowrap shrink-0 ${
                 node.type === 'cascade'
                   ? 'bg-amber-950/80 text-amber-300 border-amber-600/40'
                   : 'bg-[#102833] text-[#6EA8C4] border-[#6EA8C4]/40'
@@ -426,7 +435,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
               </span>
 
               {/* Protocol Tags */}
-              <span className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2.5 py-1 rounded-full font-bold">
+              <span className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-xs font-mono px-2.5 py-1 rounded-full font-bold whitespace-nowrap shrink-0">
                 <Shield className="w-3.5 h-3.5 text-[#D9B96E]" />
                 <span>AmneziaWG</span>
               </span>

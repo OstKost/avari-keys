@@ -488,7 +488,7 @@ export default function App() {
         {currentUser.role === 'admin' && appMode === 'admin' ? (
           <div className="space-y-4 pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80">
             {/* Admin Tabs */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 sm:mx-0 sm:px-0 flex-nowrap">
               <button
                 onClick={() => navigateToTab('overview')}
                 className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
@@ -580,7 +580,7 @@ export default function App() {
             <EgressPanicBar onNavigateNodes={() => navigateToTab('nodes')} />
           </div>
         ) : (
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80 -mx-3 px-3 sm:mx-0 sm:px-0 sm:flex-wrap">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-3 mb-6 sm:mb-8 border-b border-[#1C3945]/80 -mx-3 px-3 sm:mx-0 sm:px-0 flex-nowrap">
             <button
               onClick={() => navigateToTab('keys')}
               className={`flex-shrink-0 whitespace-nowrap flex items-center space-x-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium text-xs sm:text-sm uppercase tracking-wider font-mono transition duration-200 ${
