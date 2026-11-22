@@ -23,8 +23,27 @@ type HTTPProber interface {
 	FetchStatus(ctx context.Context, iface string, url string) (int, error)
 }
 
+// InterfaceChecker is an optional interface that a prober can implement to verify interface presence.
+type InterfaceChecker interface {
+	CheckInterface(iface string) error
+}
+
 // DefaultHTTPProber uses curl (standard on nodes) or pure Go fallback.
 type DefaultHTTPProber struct{}
+
+// CheckInterface verifies interface existence in sysfs on Linux.
+func (p *DefaultHTTPProber) CheckInterface(iface string) error {
+	if iface == "" {
+		return nil
+	}
+	sysPath := filepath.Join("/sys/class/net", iface)
+	if _, err := os.Stat("/sys/class/net"); err == nil {
+		if _, err := os.Stat(sysPath); err != nil {
+			return fmt.Errorf("туннель %s не запущен: %w", iface, err)
+		}
+	}
+	return nil
+}
 
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
@@ -166,11 +185,10 @@ func ProbeTarget(ctx context.Context, cfg Config, target TargetConfig, prober HT
 //
 // The target is considered available if IP matches AND at least 3 out of 5 checks pass.
 func RunTargetProbe(ctx context.Context, cfg Config, target TargetConfig, prober HTTPProber) ProbeReport {
-	// 1. Sysfs interface check if running on Linux
-	sysPath := filepath.Join("/sys/class/net", target.Interface)
-	if _, err := os.Stat("/sys/class/net"); err == nil {
-		if _, err := os.Stat(sysPath); err != nil {
-			errStr := fmt.Sprintf("туннель %s не запущен: %v", target.Interface, err)
+	// 1. Sysfs interface check if prober implements InterfaceChecker
+	if checker, ok := prober.(InterfaceChecker); ok {
+		if err := checker.CheckInterface(target.Interface); err != nil {
+			errStr := err.Error()
 			return ProbeReport{
 				Available:   false,
 				TotalChecks: 5,

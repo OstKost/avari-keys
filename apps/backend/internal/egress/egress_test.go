@@ -76,8 +76,16 @@ func (m *mockExecutor) Raw(ctx context.Context, name string, args ...string) (in
 }
 
 type mockProber struct {
-	fetchIPFunc     func(iface, url string) (string, int, error)
-	fetchStatusFunc func(iface, url string) (int, error)
+	fetchIPFunc        func(iface, url string) (string, int, error)
+	fetchStatusFunc    func(iface, url string) (int, error)
+	checkInterfaceFunc func(iface string) error
+}
+
+func (p *mockProber) CheckInterface(iface string) error {
+	if p.checkInterfaceFunc != nil {
+		return p.checkInterfaceFunc(iface)
+	}
+	return nil
 }
 
 func (p *mockProber) FetchIP(ctx context.Context, iface string, url string) (string, int, error) {
@@ -225,6 +233,20 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 	}
 	if rep.PassedChecks != 4 || rep.TotalChecks != 5 {
 		t.Fatalf("expected 4 passed checks and 5 total, got %d/%d", rep.PassedChecks, rep.TotalChecks)
+	}
+
+	// Scenario 2c: Interface down via CheckInterface
+	proberIfaceDown := &mockProber{
+		checkInterfaceFunc: func(iface string) error {
+			return fmt.Errorf("туннель %s не запущен: no such device", iface)
+		},
+	}
+	repDown := RunTargetProbe(ctx, cfg, target, proberIfaceDown)
+	if repDown.Available {
+		t.Fatal("expected target to be unavailable when interface is down")
+	}
+	if !strings.Contains(repDown.Reason, "туннель awg1 не запущен") {
+		t.Fatalf("unexpected reason: %s", repDown.Reason)
 	}
 	if len(rep.Checks) != 5 {
 		t.Fatalf("expected 5 check results in report, got %d", len(rep.Checks))
