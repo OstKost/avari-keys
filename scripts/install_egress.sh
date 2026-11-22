@@ -43,5 +43,5 @@ PY
 bash -n /root/awg/awg-routing.sh
 systemctl daemon-reload
 # No route changes or service restarts at installation time.
-/usr/local/libexec/avari-egress status
+/usr/local/libexec/avari-egress status || true
 printf 'Backup: %s\n' "$BACKUP"
