@@ -94,7 +94,7 @@ func (p *mockProber) FetchIP(ctx context.Context, iface string, url string) (str
 	if p.fetchIPFunc != nil {
 		return p.fetchIPFunc(iface, url)
 	}
-	return "194.87.1.1", 200, nil
+	return "192.0.2.1", 200, nil
 }
 
 func (p *mockProber) FetchStatus(ctx context.Context, iface string, url string) (int, error) {
@@ -113,8 +113,8 @@ func TestReadRegistry(t *testing.T) {
 
 	// Valid
 	validData := `[
-		{"interface": "awg1", "endpoint": "194.87.1.1", "node": "S1", "label": "S1 Netherlands"},
-		{"interface": "awg3", "endpoint": "194.87.1.2", "node": "S4", "label": "S4 Sweden"}
+		{"interface": "awg1", "endpoint": "192.0.2.1", "node": "S1", "label": "S1 Netherlands"},
+		{"interface": "awg3", "endpoint": "192.0.2.2", "node": "S4", "label": "S4 Sweden"}
 	]`
 	if err := os.WriteFile(regPath, []byte(validData), 0600); err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestReadRegistry(t *testing.T) {
 	}
 
 	// Invalid interface
-	invalidIface := `[{"interface": "eth0", "endpoint": "194.87.1.1"}]`
+	invalidIface := `[{"interface": "eth0", "endpoint": "192.0.2.1"}]`
 	_ = os.WriteFile(regPath, []byte(invalidIface), 0600)
 	if _, err := ReadRegistry(regPath); err == nil {
 		t.Fatal("expected error for invalid interface name eth0")
@@ -143,7 +143,7 @@ func TestReadRegistry(t *testing.T) {
 	}
 
 	// Duplicate interface
-	dupIface := `[{"interface": "awg1", "endpoint": "194.87.1.1"}, {"interface": "awg1", "endpoint": "194.87.1.2"}]`
+	dupIface := `[{"interface": "awg1", "endpoint": "192.0.2.1"}, {"interface": "awg1", "endpoint": "192.0.2.2"}]`
 	_ = os.WriteFile(regPath, []byte(dupIface), 0600)
 	if _, err := ReadRegistry(regPath); err == nil {
 		t.Fatal("expected error for duplicate interface")
@@ -187,7 +187,7 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 	cfg := DefaultConfig()
 	target := TargetConfig{
 		Interface: "awg1",
-		Endpoint:  "194.87.1.1",
+		Endpoint:  "192.0.2.1",
 		Node:      "S1",
 		Label:     "S1 Netherlands",
 	}
@@ -217,7 +217,7 @@ func TestProbeTarget_Scenarios(t *testing.T) {
 	// Scenario 2b: Safety Gate violation: IP mismatch (even though 4 web services succeed)
 	proberIPLeak := &mockProber{
 		fetchIPFunc: func(iface, url string) (string, int, error) {
-			return "95.161.1.1", 200, nil // IP leak / wrong exit IP
+			return "192.0.2.99", 200, nil // IP leak / wrong exit IP
 		},
 		fetchStatusFunc: func(iface, url string) (int, error) {
 			return 200, nil
@@ -332,14 +332,14 @@ func setupTestEnvironment(t *testing.T) (Config, *mockExecutor, *mockProber) {
 	}
 
 	entries := []TargetConfig{
-		{Interface: "awg1", Endpoint: "194.87.1.1", Node: "S1", Label: "S1 Netherlands"},
-		{Interface: "awg3", Endpoint: "194.87.1.3", Node: "S4", Label: "S4 Sweden"},
+		{Interface: "awg1", Endpoint: "192.0.2.1", Node: "S1", Label: "S1 Netherlands"},
+		{Interface: "awg3", Endpoint: "192.0.2.3", Node: "S4", Label: "S4 Sweden"},
 	}
 	data, _ := json.Marshal(entries)
 	_ = os.WriteFile(cfg.RegistryPath, data, 0600)
 
 	_ = os.WriteFile(cfg.SubnetPath, []byte("10.8.0.0/24\n"), 0600)
-	_ = os.WriteFile(cfg.StatePath, []byte("AWG1_IF=\"awg1\"\nAWG1_ENDPOINT=\"194.87.1.1\"\n"), 0600)
+	_ = os.WriteFile(cfg.StatePath, []byte("AWG1_IF=\"awg1\"\nAWG1_ENDPOINT=\"192.0.2.1\"\n"), 0600)
 
 	exec := newMockExecutor()
 	exec.activeRoute = "awg1"
@@ -347,9 +347,9 @@ func setupTestEnvironment(t *testing.T) (Config, *mockExecutor, *mockProber) {
 	prober := &mockProber{
 		fetchIPFunc: func(iface, url string) (string, int, error) {
 			if iface == "awg1" {
-				return "194.87.1.1", 200, nil
+				return "192.0.2.1", 200, nil
 			}
-			return "194.87.1.3", 200, nil
+			return "192.0.2.3", 200, nil
 		},
 		fetchStatusFunc: func(iface, url string) (int, error) {
 			if strings.Contains(url, "telegram") {
@@ -451,9 +451,9 @@ func TestManager_Switch_PostflightFailure_Rollback(t *testing.T) {
 	prober.fetchIPFunc = func(iface, url string) (string, int, error) {
 		if iface == "awg3" {
 			atomic.AddInt32(&awg3Checks, 1)
-			return "194.87.1.3", 200, nil
+			return "192.0.2.3", 200, nil
 		}
-		return "194.87.1.1", 200, nil
+		return "192.0.2.1", 200, nil
 	}
 
 	mgr := NewManagerWith(cfg, exec, prober)
@@ -477,7 +477,7 @@ func TestManager_Recover_Pending(t *testing.T) {
 	cfg, exec, prober := setupTestEnvironment(t)
 
 	// Create pending snapshot simulating a crashed process
-	prevSel := "AWG1_IF=\"awg1\"\nAWG1_ENDPOINT=\"194.87.1.1\"\n"
+	prevSel := "AWG1_IF=\"awg1\"\nAWG1_ENDPOINT=\"192.0.2.1\"\n"
 	snap := Snapshot{
 		Subnet: "10.8.0.0/24",
 		Routes: map[string][]string{
@@ -534,10 +534,10 @@ func TestParseIPv4FromBody(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"185.213.240.136", "185.213.240.136"},
-		{" 157.228.142.20 \n", "157.228.142.20"},
-		{`{"ip":"109.107.176.224","country":"Russia","cc":"RU"}`, "109.107.176.224"},
-		{`<html><body>Your IP: 1.2.3.4</body></html>`, "1.2.3.4"},
+		{"192.0.2.10", "192.0.2.10"},
+		{" 192.0.2.20 \n", "192.0.2.20"},
+		{`{"ip":"192.0.2.30","country":"Russia","cc":"RU"}`, "192.0.2.30"},
+		{`<html><body>Your IP: 192.0.2.4</body></html>`, "192.0.2.4"},
 		{"invalid ip", ""},
 		{"", ""},
 	}
@@ -554,7 +554,7 @@ func TestRunTargetProbe_MultiProviderFallback(t *testing.T) {
 	ctx := context.Background()
 	target := TargetConfig{
 		Interface: "awg1",
-		Endpoint:  "194.87.1.1",
+		Endpoint:  "192.0.2.1",
 		Node:      "S1",
 		Label:     "S1",
 	}
@@ -578,9 +578,9 @@ func TestRunTargetProbe_MultiProviderFallback(t *testing.T) {
 				return "", 500, errors.New("timeout connecting to lumen anycast")
 			}
 			if url == "https://icanhazip.test" {
-				return "194.87.1.1\n", 200, nil
+				return "192.0.2.1\n", 200, nil
 			}
-			return `{"ip":"194.87.1.1"}`, 200, nil
+			return `{"ip":"192.0.2.1"}`, 200, nil
 		},
 		fetchStatusFunc: func(iface, url string) (int, error) {
 			return 200, nil
@@ -603,7 +603,7 @@ func TestCheckInterfaceDump_Frozen(t *testing.T) {
 	ctx := context.Background()
 
 	staleEpoch := time.Now().Unix() - 600 // 10 minutes ago
-	dumpOutput := fmt.Sprintf("private\tpublic\t42745\toff\npeer_pub\t(none)\t1.2.3.4:443\t0.0.0.0/0\t%d\t0\t524288\t15\n", staleEpoch)
+	dumpOutput := fmt.Sprintf("private\tpublic\t42745\toff\npeer_pub\t(none)\t192.0.2.4:443\t0.0.0.0/0\t%d\t0\t524288\t15\n", staleEpoch)
 
 	exec := newMockExecutor()
 	exec.runHandler = func(name string, args ...string) (string, error) {
