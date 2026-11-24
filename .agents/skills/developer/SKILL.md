@@ -49,17 +49,26 @@ This skill provides implementation standards, coding guidelines, and verificatio
 
 ## 2. Standard Implementation Workflow
 
-1. **Review Task Specification**:
+1. **Review Task Specification & Architecture**:
    - Read the relevant `_docs/tasks/TASK-XXX-<slug>.md`.
+   - Check the modular architecture guide in [`_docs/architecture/INDEX.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/INDEX.md) for the affected subsystem.
    - Check existing contracts in [`apps/backend/internal/models/contracts.go`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/models/contracts.go) and [`apps/frontend/src/types/index.ts`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/frontend/src/types/index.ts).
 2. **Implement Backend**:
    - Add/update storage methods in `apps/backend/internal/storage/sqlite.go`.
-   - Implement handler in `apps/backend/internal/master/server.go` or `slave/server.go`.
+   - Implement handler in the corresponding domain file in `apps/backend/internal/master/`:
+     - `handlers_auth.go` — авторизация, профиль, сброс паролей, TMA.
+     - `handlers_keys.go` — CRUD пользовательских ключей, транслитерация.
+     - `handlers_nodes.go` — управление нодами, диагностика, Egress, Auto-Failover.
+     - `handlers_admin.go` — модерация пользователей, аудит-логи, Telegram-настройки.
+     - `handlers_billing.go` — биллинг, реквизиты, взносы, отсрочки, дашборд.
+     - `handlers_news.go` — новости и рассылка.
+     - Или `apps/backend/internal/slave/server.go` для Slave API.
+   - Register route in `apps/backend/internal/master/server.go` (`routes()`).
    - Add unit/contract tests in `*_test.go`.
 3. **Implement Frontend**:
    - Update TypeScript interfaces in `apps/frontend/src/types/index.ts`.
    - Implement API call in `apps/frontend/src/api/client.ts`.
-   - **Implement mock behavior in `apps/frontend/src/api/mockClient.ts`**.
+   - **MANDATORY**: Implement mock behavior in `apps/frontend/src/api/mockClient.ts` (`npm run dev:mock`).
    - Build or update UI components in `apps/frontend/src/components/`.
 4. **Local Verification**:
    - Execute verification commands before committing or creating a handoff report.
