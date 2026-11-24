@@ -83,7 +83,25 @@
 
 ---
 
-## 3. Карта репозитория
+## 3. Архитектурный навигатор по подсистемам (Subsystem Quick Index)
+
+> [!TIP]
+> **Для AI-агентов (Codex, Antigravity) и разработчиков**:
+> Чтобы не засорять контекстное окно чтением всей кодовой базы, перед выполнением задачи обратитесь к соответствующему модульному справочнику из каталога [`_docs/architecture/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/INDEX.md):
+
+| Подсистема / Задача | Фоновый справочник | Точки входа в код |
+|---|---|---|
+| **API Бэкенда (Master & Slave)**: роуты, middleware, доменные обработчики, Runner | [`_docs/architecture/BACKEND_STRUCTURE.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/BACKEND_STRUCTURE.md) | [`apps/backend/internal/master/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/master/) (`server.go`, `handlers_*.go`), [`internal/slave/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/slave/) |
+| **СХД и миграции**: чистый Go SQLite, версионирование, RetentionWorker | [`_docs/architecture/STORAGE_AND_MIGRATIONS.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/STORAGE_AND_MIGRATIONS.md) | [`internal/storage/sqlite.go`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/storage/sqlite.go), [`internal/retention/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/retention/) |
+| **Каскад и Egress**: M0 $\rightarrow$ S1/S4, кворум-проверки, Auto-Failover, Watchdog | [`_docs/architecture/CASCADE_AND_EGRESS.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/CASCADE_AND_EGRESS.md) | [`internal/egress/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/egress/), [`internal/monitor/healthchecker.go`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/monitor/healthchecker.go) |
+| **Телеметрия и биллинг**: Delta Engine, Curve25519, трафик за месяц, взносы | [`_docs/architecture/TELEMETRY_AND_BILLING.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/TELEMETRY_AND_BILLING.md) | [`internal/storage/sqlite.go`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/storage/sqlite.go), [`internal/master/handlers_billing.go`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/master/handlers_billing.go) |
+| **Безопасность и Auth**: Rate Limiter, 1MB limit, Decoy, Constant-time, loopback | [`_docs/architecture/SECURITY_AND_AUTH.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/SECURITY_AND_AUTH.md) | [`internal/master/ratelimit.go`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/master/ratelimit.go), [`internal/auth/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/auth/) |
+| **Telegram-бот и Mini App (TMA)**: HMAC-SHA256 initData, Decoy, inline-модерация | [`_docs/architecture/TELEGRAM_AND_TMA.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/TELEGRAM_AND_TMA.md) | [`internal/telegram/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/backend/internal/telegram/), [`apps/frontend/src/components/TelegramMiniApp.tsx`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/frontend/src/components/TelegramMiniApp.tsx) |
+| **Фронтенд SPA**: React 18, lazy loading, чанки, роутинг, обязательный мок-паритет | [`_docs/architecture/FRONTEND_SPA.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/FRONTEND_SPA.md) | [`apps/frontend/src/api/client.ts`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/frontend/src/api/client.ts), [`mockClient.ts`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/frontend/src/api/mockClient.ts), [`App.tsx`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/frontend/src/App.tsx) |
+
+---
+
+## 4. Карта репозитория
 
 ```text
 avari-keys-mvp/
@@ -93,34 +111,48 @@ avari-keys-mvp/
 │       ├── developer/          # Скилл разработчика (Go, React, mockClient, тесты)
 │       └── qa-tester/          # Скилл тестировщика (go test, vet, build-linux)
 ├── apps/
-│   ├── backend/                # Go 1.22+ backend
+│   ├── backend/                # Go 1.22+ backend (Zero CGo, CGO_ENABLED=0)
 │   │   ├── cmd/
-│   │   │   ├── master/         # Master API Gateway & Web Server
-│   │   │   └── slave/          # Slave Node Agent над manage_amneziawg.sh
+│   │   │   ├── master/         # Master API Gateway & Web Server (main.go)
+│   │   │   └── slave/          # Slave Node Agent над manage_amneziawg.sh (main.go)
 │   │   └── internal/
-│   │       ├── auth/           # JWT, хэширование паролей, контекст пользователя
+│   │       ├── auth/           # JWT, хэширование паролей bcrypt, контекст пользователя
 │   │       ├── client/         # Master -> Slave HTTP API Client
+│   │       ├── egress/         # Управление Egress-шлюзами каскада, кворум 5 целей
 │   │       ├── hysteria/       # Хранилище и валидация Hysteria2 нод
-│   │       ├── master/         # Обработчики Master API эндпоинтов
+│   │       ├── logger/         # log/slog структурированное логирование (JSON/Text)
+│   │       ├── master/         # Декомпозированные доменные обработчики:
+│   │       │   ├── server.go             # Config, Server struct, роутинг, middleware
+│   │       │   ├── handlers_auth.go      # Авторизация, профиль, сброс пароля, TMA
+│   │       │   ├── handlers_keys.go      # CRUD клиентских ключей, транслитерация
+│   │       │   ├── handlers_nodes.go     # Управление нодами, диагностика, Egress
+│   │       │   ├── handlers_admin.go     # Модерация пользователей, аудит-логи, TG
+│   │       │   ├── handlers_billing.go   # Биллинг, реквизиты, дашборд
+│   │       │   ├── handlers_news.go      # Новости и рассылка
+│   │       │   └── ratelimit.go          # In-memory sliding-window IPRateLimiter
+│   │       ├── mieru/          # Интеграция протокола Mieru (TCP-прокси, JSON, QR)
 │   │       ├── models/         # DTO контракты и структуры данных
 │   │       ├── monitor/        # HealthChecker доступности нод и телеметрия
 │   │       ├── netprobe/       # Легковесные сетевые зонды с изоляцией Linux/Darwin
+│   │       ├── retention/      # Периодическая ротация логов и телеметрии (24h)
 │   │       ├── runner/         # Интерфейс вызова CLI AWG (Real + Mock runner)
-│   │       ├── slave/          # Обработчики эндпоинтов Slave API
+│   │       ├── slave/          # Обработчики эндпоинтов Slave API (Decoy, ConstantTime)
 │   │       ├── storage/        # Чистый Go SQLite (миграции, пользователи, ключи, аудит)
-│   │       └── telegram/       # Бот: алерты, инлайн-модерация, сброс паролей
-│   └── frontend/               # React 18.3 SPA
+│   │       ├── telegram/       # Бот: алерты, инлайн-модерация, сброс паролей
+│   │       └── vless/          # Контроллер и конфигурации VLESS Reality
+│   └── frontend/               # React 18.3 SPA (Vite + Code-Splitting)
 │       └── src/
-│           ├── api/            # client.ts (боевой) и mockClient.ts (демо-режим)
+│           ├── api/            # client.ts (боевой) и mockClient.ts (демо-режим dev:mock)
 │           ├── components/     # UI-компоненты (Cyber-Fantasy стилистика, маскот Ари)
 │           ├── context/        # ToastContext и глобальные состояния
 │           ├── types/          # TypeScript интерфейсы
 │           └── utils/          # route.ts, country.ts, faqData.ts
 ├── deploy/                     # Конфигурации развертывания (OpenResty, Caddy, Systemd, AWG)
-├── scripts/                    # Автоматизация (avari-egress.py, deploy_slave_nodes.sh и др.)
+├── scripts/                    # Автоматизация (deploy_slave_nodes.sh и др.)
 ├── _docs/                      # Документация, архитектура, задачи и релизы
+│   ├── architecture/           # 📚 Модульные архитектурные справочники (INDEX.md и др.)
 │   ├── tasks/                  # Отдельные спецификации задач (TASK-XXX-*.md)
-│   ├── ARCHITECTURE.md         # Сетевая топология и контракты
+│   ├── ARCHITECTURE.md         # Сетевая топология и физический реестр нод
 │   ├── TASKS.md                # Канбан-доска проекта
 │   └── RELEASE-vX.Y.Z.md       # Журналы версий и релизов
 ├── Makefile                    # Сборка, линтинг, тесты и локальный dev-запуск
@@ -129,7 +161,7 @@ avari-keys-mvp/
 
 ---
 
-## 4. Gitflow и управление ветками
+## 5. Gitflow и управление ветками
 
 ```mermaid
 gitGraph

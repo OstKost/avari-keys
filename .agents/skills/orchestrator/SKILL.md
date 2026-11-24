@@ -27,16 +27,18 @@ This skill provides step-by-step procedures and runbooks for any agent operating
 
 When receiving a new feature request or architectural change:
 
-1. **Verify Architectural Invariants**:
-   - Review [AGENTS.md](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/AGENTS.md) Section 2.
+1. **Verify Architectural Invariants & Subsystem Guides**:
+   - Review [AGENTS.md](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/AGENTS.md) Section 2 and Section 3 ("Архитектурный навигатор").
+   - Consult relevant subsystem guides in [`_docs/architecture/`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/architecture/INDEX.md).
    - Ensure the proposal does not introduce CGo, private key leakage to Master DB, unmocked frontend dependencies, or unhandled cross-platform socket issues.
 2. **Assign Task Identifier**:
-   - Inspect [`_docs/TASKS.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/TASKS.md) to find the next available task ID (e.g., `TASK-060`).
+   - Inspect [`_docs/TASKS.md`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/_docs/TASKS.md) to find the next available task ID (e.g., `TASK-083`).
 3. **Draft Task Specification**:
    - Create `_docs/tasks/TASK-XXX-<slug>.md`.
    - Specify:
      - Objective & Background.
      - Affected modules (`apps/backend`, `apps/frontend`, `deploy`, `scripts`).
+     - Reference to relevant guide in `_docs/architecture/*.md`.
      - Data models & API contracts (Request/Response DTOs).
      - Synchronous requirement for both [`apps/frontend/src/api/client.ts`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/frontend/src/api/client.ts) and [`apps/frontend/src/api/mockClient.ts`](file:///Volumes/KingstonM2/Projects/avari-keys-mvp/apps/frontend/src/api/mockClient.ts).
      - Verification checklist.

@@ -4,7 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
-| | | | [TASK-076](./tasks/TASK-076-mini-app-hosting.md) | [TASK-081](./tasks/TASK-081-structured-slog-and-audit-retention.md), [TASK-078](./tasks/TASK-078-master-backend-decomposition.md), [TASK-080](./tasks/TASK-080-cascade-egress-stall-watchdog.md), [TASK-079](./tasks/TASK-079-frontend-code-splitting.md), [TASK-077](./tasks/TASK-077-security-hardening.md), [TASK-082](./tasks/TASK-082-monthly-traffic-accounting.md) |
+| | | | [TASK-076](./tasks/TASK-076-mini-app-hosting.md) | [TASK-083](./tasks/TASK-083-modular-architecture-documentation.md), [TASK-081](./tasks/TASK-081-structured-slog-and-audit-retention.md), [TASK-078](./tasks/TASK-078-master-backend-decomposition.md), [TASK-080](./tasks/TASK-080-cascade-egress-stall-watchdog.md), [TASK-079](./tasks/TASK-079-frontend-code-splitting.md), [TASK-077](./tasks/TASK-077-security-hardening.md), [TASK-082](./tasks/TASK-082-monthly-traffic-accounting.md) |
 | | | | | [TASK-075](./tasks/TASK-075-vless-reality.md) |
 | | | | | [TASK-074](./tasks/TASK-074-cascade-egress-robust-multi-ip-probes-and-ui.md), [TASK-073](./tasks/TASK-073-mieru-protocol-integration-and-key-transliteration.md), [TASK-072](./tasks/TASK-072-ui-ux-polish.md), [TASK-071](./tasks/TASK-071-admin-mission-control-and-ux-overhaul.md), [TASK-070](./tasks/TASK-070-mobile-first-key-setup.md), [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
 | | | | | [TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md) |
@@ -44,6 +44,7 @@
 
 ## 📌 Список задач с кратким статусом
 
+- **[TASK-083](./tasks/TASK-083-modular-architecture-documentation.md)**: ✅ Модульная архитектурная документация и навигатор подсистем для AI-агентов: каталог `_docs/architecture/` (8 руководств: бэкенд, СХД/миграции, каскад/Watchdog, телеметрия/биллинг, безопасность, Telegram/TMA, React SPA), Быстрый навигатор в `AGENTS.md` и актуализация скиллов разработчика/оркестратора.
 - **[TASK-081](./tasks/TASK-081-structured-slog-and-audit-retention.md)**: ✅ Структурированное логирование `log/slog` (JSON/Text, уровни DEBUG/INFO/WARN/ERROR, bridge стандартного `log.Print`) и фоновый воркер ротации логов/телеметрии `RetentionWorker` (периодическая очистка `audit_logs`, `peer_traffic_daily`, `node_traffic_daily`, сбросов паролей и просроченных токенов).
 - **[TASK-078](./tasks/TASK-078-master-backend-decomposition.md)**: ✅ Модульная декомпозиция Master Backend (2300 строк `server.go` разбиты на доменные обработчики `handlers_auth.go`, `handlers_keys.go`, `handlers_nodes.go`, `handlers_admin.go`, `handlers_billing.go`, `handlers_news.go`), версионированные миграции SQLite (`schema_migrations`) и ликвидация full scan анти-паттернов.
 - **[TASK-080](./tasks/TASK-080-cascade-egress-stall-watchdog.md)**: ✅ Сторожевой таймер (Watchdog) и перезапуск туннелей каскада в 1 клик: авто-восстановление зависших сессий WireGuard (TX>50KB, RX==0), вызовы `POST /api/v1/cascade/egress/restart` и интеграция в `HealthChecker`.
