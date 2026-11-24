@@ -25,6 +25,10 @@ import {
   TelegramProxyInfo,
   ProtocolType,
   TelegramMiniAppAuthResponse,
+  TrafficPolicyMode,
+  TrafficPolicyView,
+  TrafficPolicyFanoutResponse,
+  TorrentBlocklistEntry,
 } from '../types';
 
 const cyrillicToLatinMap: Record<string, string> = {
@@ -1098,7 +1102,7 @@ bandwidth:
         hysteria_available: Boolean(node.has_hysteria),
         mieru_available: Boolean(node.has_mieru),
         vless_available: Boolean(node.online && node.has_vless),
-        version: '1.9.0',
+        version: '1.10.0',
       },
       stats: {
         active_peers: matchedKeys.length,
@@ -1822,6 +1826,53 @@ bandwidth:
     mockNews = mockNews.filter((n) => n.id !== id);
     return { success: true, message: 'Новость успешно удалена' };
   },
+
+  async getTrafficPolicy(): Promise<TrafficPolicyView> {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return {
+      mode: mockTrafficPolicyMode,
+      blocklist: [...mockTorrentBlocklist],
+    };
+  },
+
+  async updateTrafficPolicy(mode: TrafficPolicyMode): Promise<TrafficPolicyFanoutResponse> {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    mockTrafficPolicyMode = mode;
+    return {
+      mode,
+      applied_nodes: 3,
+      failed_nodes: 0,
+      errors: [],
+    };
+  },
+
+  async listTorrentBlocklist(): Promise<TorrentBlocklistEntry[]> {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return [...mockTorrentBlocklist];
+  },
+
+  async addTorrentBlocklist(domain: string): Promise<TorrentBlocklistEntry> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const normalized = domain.trim().toLowerCase();
+    const existing = mockTorrentBlocklist.find((e) => e.domain === normalized);
+    if (existing) {
+      return { ...existing };
+    }
+    const entry: TorrentBlocklistEntry = {
+      id: mockTorrentBlocklist.length ? Math.max(...mockTorrentBlocklist.map((e) => e.id)) + 1 : 1,
+      domain: normalized,
+      added_by: 'Forve',
+      created_at: new Date().toISOString(),
+    };
+    mockTorrentBlocklist = [...mockTorrentBlocklist, entry];
+    return entry;
+  },
+
+  async deleteTorrentBlocklist(id: number): Promise<{ success: boolean; message: string }> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    mockTorrentBlocklist = mockTorrentBlocklist.filter((e) => e.id !== id);
+    return { success: true, message: 'Домен удален из блок-листа' };
+  },
 };
 
 let mockNews: NewsItem[] = [
@@ -1934,6 +1985,18 @@ const mockBillingRecords: BillingRecord[] = [
 ];
 
 const mockSnoozeMap: Record<number, string> = {};
+
+let mockTrafficPolicyMode: TrafficPolicyMode = 'off';
+
+let mockTorrentBlocklist: TorrentBlocklistEntry[] = [
+  { id: 1, domain: 'openbittorrent.com', added_by: 'system', created_at: new Date().toISOString() },
+  { id: 2, domain: 'tracker.opentrackr.org', added_by: 'system', created_at: new Date().toISOString() },
+  { id: 3, domain: 'thetracker.org', added_by: 'system', created_at: new Date().toISOString() },
+  { id: 4, domain: 'router.bittorrent.com', added_by: 'system', created_at: new Date().toISOString() },
+  { id: 5, domain: 'router.utorrent.com', added_by: 'system', created_at: new Date().toISOString() },
+  { id: 6, domain: 'dht.transmissionbt.com', added_by: 'system', created_at: new Date().toISOString() },
+  { id: 7, domain: 'dht.libtorrent.org', added_by: 'system', created_at: new Date().toISOString() },
+];
 
 
 
