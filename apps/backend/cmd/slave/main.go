@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/egress"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/logger"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/slave"
 )
@@ -76,6 +77,8 @@ func main() {
 		}
 	}
 
+	logger.Init("avari-slave")
+
 	port := os.Getenv("SLAVE_PORT")
 	if port == "" {
 		port = "8081"
@@ -86,7 +89,7 @@ func main() {
 
 	var awgRunner runner.AWGRunner
 	if useMock {
-		log.Println("[SLAVE] Running in MOCK mode (simulating manage_amneziawg.sh)")
+		slog.Info("Running in MOCK mode (simulating manage_amneziawg.sh)")
 		awgRunner = runner.NewMockRunner(true)
 	} else {
 		scriptPath := os.Getenv("AWG_SCRIPT_PATH")
@@ -108,8 +111,9 @@ func main() {
 	srv := slave.NewServer(cfg, awgRunner)
 
 	addr := fmt.Sprintf(":%s", port)
-	log.Printf("[SLAVE] Server listening on http://0.0.0.0:%s", port)
+	slog.Info("Slave server listening", "port", port, "url", fmt.Sprintf("http://0.0.0.0:%s", port))
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
-		log.Fatalf("[SLAVE] Server startup failed: %v", err)
+		slog.Error("Slave server startup failed", "error", err)
+		os.Exit(1)
 	}
 }

@@ -1478,7 +1478,7 @@ func (s *Storage) ListAuditLogs(ctx context.Context, filter models.AuditLogFilte
 
 func (s *Storage) PurgeAuditLogsOlderThan(ctx context.Context, days int) (int64, error) {
 	if days <= 0 {
-		days = 90
+		days = 30
 	}
 
 	query := fmt.Sprintf("DELETE FROM audit_logs WHERE created_at < datetime('now', '-%d days')", days)
@@ -1487,6 +1487,81 @@ func (s *Storage) PurgeAuditLogsOlderThan(ctx context.Context, days int) (int64,
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// PurgeTelemetryOlderThan removes daily peer and node traffic records older than the specified days.
+func (s *Storage) PurgeTelemetryOlderThan(ctx context.Context, days int) (int64, error) {
+	if days <= 0 {
+		days = 90
+	}
+
+	peerRes, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM peer_traffic_daily WHERE date < date('now', '-%d days')", days))
+	if err != nil {
+		return 0, fmt.Errorf("failed to purge peer_traffic_daily: %w", err)
+	}
+	peerDeleted, _ := peerRes.RowsAffected()
+
+	nodeRes, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM node_traffic_daily WHERE date < date('now', '-%d days')", days))
+	if err != nil {
+		return peerDeleted, fmt.Errorf("failed to purge node_traffic_daily: %w", err)
+	}
+	nodeDeleted, _ := nodeRes.RowsAffected()
+
+	return peerDeleted + nodeDeleted, nil
+}
+
+// PurgeExpiredResetRequests removes completed or rejected password reset requests older than the specified days.
+func (s *Storage) PurgeExpiredResetRequests(ctx context.Context, days int) (int64, error) {
+	if days <= 0 {
+		days = 14
+	}
+
+	query := fmt.Sprintf("DELETE FROM password_reset_requests WHERE status != 'pending' AND created_at < datetime('now', '-%d days')", days)
+	res, err := s.db.ExecContext(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// PurgeExpiredTelegramTokens removes Telegram link tokens older than 7 days.
+func (s *Storage) PurgeExpiredTelegramTokens(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM telegram_link_tokens WHERE created_at < datetime('now', '-7 days')")
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// RunRetention performs a complete retention cycle for audit logs, telemetry, reset requests, and link tokens.
+func (s *Storage) RunRetention(ctx context.Context, auditDays, telemetryDays int) (models.RetentionStats, error) {
+	var stats models.RetentionStats
+
+	auditDeleted, err := s.PurgeAuditLogsOlderThan(ctx, auditDays)
+	if err != nil {
+		return stats, fmt.Errorf("audit logs purge error: %w", err)
+	}
+	stats.AuditLogsDeleted = auditDeleted
+
+	telemetryDeleted, err := s.PurgeTelemetryOlderThan(ctx, telemetryDays)
+	if err != nil {
+		return stats, fmt.Errorf("telemetry purge error: %w", err)
+	}
+	stats.TelemetryDeleted = telemetryDeleted
+
+	resetDeleted, err := s.PurgeExpiredResetRequests(ctx, 14)
+	if err != nil {
+		return stats, fmt.Errorf("reset requests purge error: %w", err)
+	}
+	stats.ResetRequestsDeleted = resetDeleted
+
+	tokensDeleted, err := s.PurgeExpiredTelegramTokens(ctx)
+	if err != nil {
+		return stats, fmt.Errorf("telegram tokens purge error: %w", err)
+	}
+	stats.ExpiredTokensDeleted = tokensDeleted
+
+	return stats, nil
 }
 
 // Billing Methods
