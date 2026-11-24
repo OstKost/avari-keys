@@ -123,3 +123,60 @@ type EgressStatusResponse struct {
 	AvailableInterfaces []string       `json:"available_interfaces"`
 	Details             string         `json:"details,omitempty"`
 }
+
+// TrafficPolicy represents the torrent traffic filtering mode.
+type TrafficPolicy string
+
+const (
+	PolicyOff    TrafficPolicy = "off"
+	PolicySoft   TrafficPolicy = "soft"
+	PolicyStrict TrafficPolicy = "strict" // reserved for future L7/DPI, not implemented yet
+)
+
+// Valid reports whether the policy value is a known mode.
+func (p TrafficPolicy) Valid() bool {
+	switch p {
+	case PolicyOff, PolicySoft, PolicyStrict:
+		return true
+	default:
+		return false
+	}
+}
+
+// TrafficPolicyRequest payload for updating the torrent traffic filtering mode.
+type TrafficPolicyRequest struct {
+	Mode TrafficPolicy `json:"mode"`
+}
+
+// TrafficPolicyResponse represents the applied traffic filtering mode.
+type TrafficPolicyResponse struct {
+	Mode    TrafficPolicy `json:"mode"`
+	Applied bool          `json:"applied"`
+	Message string        `json:"message,omitempty"`
+}
+
+// FirewallStatusResponse represents the local firewall state on a node.
+type FirewallStatusResponse struct {
+	Mode           TrafficPolicy `json:"mode"`
+	RulesCount     int           `json:"rules_count"`
+	BlockedDomains []string      `json:"blocked_domains"`
+	LastAppliedAt  string        `json:"last_applied_at,omitempty"`
+}
+
+// TorrentBlocklistEntry represents an editable tracker/DHT domain in the blocklist.
+type TorrentBlocklistEntry struct {
+	ID        int64     `json:"id"`
+	Domain    string    `json:"domain"`
+	AddedBy   string    `json:"added_by"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TorrentBlocklistRequest payload for adding a domain to the blocklist.
+type TorrentBlocklistRequest struct {
+	Domain string `json:"domain"`
+}
+
+// TorrentBlocklistApplyRequest payload for pushing the domain list to a node.
+type TorrentBlocklistApplyRequest struct {
+	Domains []string `json:"domains"`
+}
