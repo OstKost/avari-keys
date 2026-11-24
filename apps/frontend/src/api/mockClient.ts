@@ -1311,6 +1311,14 @@ bandwidth:
     };
   },
 
+  async restartNodeEgress(id: number, targetInterface: string): Promise<{ success: boolean; message: string }> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return {
+      success: true,
+      message: `Туннель ${targetInterface} узла #${id} успешно перезапущен`,
+    };
+  },
+
   async updateAdminNodeFailover(
     id: number,
     autoFailoverEnabled: boolean,

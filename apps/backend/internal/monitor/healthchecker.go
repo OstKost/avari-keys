@@ -288,9 +288,9 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 						}
 					}
 
-					// Auto-Failover for cascade nodes
+					// Auto-Failover & Watchdog for cascade nodes
 					if n.AutoFailoverEnabled {
-						if activeTarget != nil && !activeTarget.Available {
+						if activeTarget != nil && (!activeTarget.Available || activeTarget.IsFrozen) {
 							h.mu.Lock()
 							h.failoverFailures[n.ID]++
 							fails := h.failoverFailures[n.ID]
@@ -298,8 +298,19 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 							inCooldown := hasCooldown && time.Now().Before(cooldownUntil)
 							h.mu.Unlock()
 
-							log.Printf("[MONITOR] ⚠️ Cascade egress %s on node #%d (%s) is down: %s (consecutive fails: %d/2, in_cooldown: %v)",
-								status.ActiveInterface, n.ID, n.Name, activeTarget.Reason, fails, inCooldown)
+							reason := activeTarget.Reason
+							if activeTarget.IsFrozen {
+								reason = fmt.Sprintf("WireGuard frozen: %s", activeTarget.Recommendation)
+							}
+
+							log.Printf("[MONITOR] ⚠️ Cascade egress %s on node #%d (%s) is down/frozen: %s (consecutive fails: %d/2, in_cooldown: %v)",
+								status.ActiveInterface, n.ID, n.Name, reason, fails, inCooldown)
+
+							// Watchdog auto-restart attempt on first frozen detection
+							if fails == 1 && activeTarget.IsFrozen && !inCooldown {
+								log.Printf("[MONITOR] 🔄 Watchdog attempting auto-restart of frozen egress %s on node #%d", activeTarget.Interface, n.ID)
+								_ = slaveCli.RestartCascadeEgress(ctx, activeTarget.Interface)
+							}
 
 							// Fast Confirmation Retry:
 							// When initial failure occurs (fails == 1) and not in cooldown,

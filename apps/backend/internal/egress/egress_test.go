@@ -624,3 +624,32 @@ func TestCheckInterfaceDump_Frozen(t *testing.T) {
 		t.Errorf("expected rx=0 tx=524288, got rx=%d tx=%d", info.RxBytes, info.TxBytes)
 	}
 }
+
+func TestRestartInterface(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Invalid interface name rejected
+	mgr := NewManager()
+	if err := mgr.RestartInterface(ctx, "eth0; rm -rf /"); err == nil {
+		t.Fatal("expected error for invalid interface name")
+	}
+
+	// 2. Successful restart via systemctl
+	exec := newMockExecutor()
+	systemctlCalled := false
+	exec.runHandler = func(name string, args ...string) (string, error) {
+		if name == "systemctl" && len(args) == 2 && args[0] == "restart" && args[1] == "awg-quick@awg1" {
+			systemctlCalled = true
+			return "", nil
+		}
+		return "", errors.New("command not found")
+	}
+
+	mgrMock := NewManagerWith(DefaultConfig(), exec, &mockProber{})
+	if err := mgrMock.RestartInterface(ctx, "awg1"); err != nil {
+		t.Fatalf("unexpected error restarting interface: %v", err)
+	}
+	if !systemctlCalled {
+		t.Fatal("expected systemctl restart awg-quick@awg1 to be called")
+	}
+}

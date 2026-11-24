@@ -331,6 +331,36 @@ func (c *SlaveClient) SwitchCascadeEgress(ctx context.Context, devName string) e
 	return nil
 }
 
+// RestartCascadeEgress requests the Slave to restart a stalled/frozen egress interface (e.g. 'awg1').
+func (c *SlaveClient) RestartCascadeEgress(ctx context.Context, devName string) error {
+	body, err := json.Marshal(models.SwitchEgressRequest{Interface: devName})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/cascade/egress/restart", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	restartClient := *c.httpClient
+	restartClient.Timeout = 45 * time.Second
+	resp, err := restartClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("slave restart cascade egress failed with status %d: %s", resp.StatusCode, errResp["error"])
+	}
+	return nil
+}
+
 // NetworkProbes returns only the configured and cached probes from the gateway.
 func (c *SlaveClient) NetworkProbes(ctx context.Context) ([]models.NetworkProbe, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/network/probes", nil)

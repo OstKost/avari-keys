@@ -236,6 +236,17 @@ func TestCascadeEgressEndpoints(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 error for invalid interface eth0, got %d", rec.Code)
 	}
+
+	// 5. Test restart egress
+	restartBody, _ := json.Marshal(models.SwitchEgressRequest{Interface: "awg1"})
+	req = httptest.NewRequest("POST", "/api/v1/cascade/egress/restart", bytes.NewReader(restartBody))
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on restart egress, got %d: %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestHysteriaClientAndAuth(t *testing.T) {
