@@ -817,3 +817,130 @@ func TestPasswordResetStorageFlow(t *testing.T) {
 	}
 }
 
+func TestUserAndKeyMonthTrafficAccounting(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := createTestDB(t)
+	defer cleanup()
+
+	// 1. Create 2 users
+	u1, err := store.CreateUser(ctx, "traffic_user_1", "pass123")
+	if err != nil {
+		t.Fatalf("failed to create user 1: %v", err)
+	}
+	u2, err := store.CreateUser(ctx, "traffic_user_2", "pass123")
+	if err != nil {
+		t.Fatalf("failed to create user 2: %v", err)
+	}
+
+	// 2. Create node
+	node, err := store.CreateNode(ctx, "Direct S1", "direct", "DEU", "https://s1.test", "https://s1.test:8081", "key123", false, false, false, false, false)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	// 3. Create 2 keys for u1, 1 key for u2
+	k1, err := store.CreateClientConfig(ctx, u1.ID, node.ID, "u1-key1", "Phone", "pub1", "10.0.0.2", "awg")
+	if err != nil {
+		t.Fatalf("failed to create k1: %v", err)
+	}
+	k2, err := store.CreateClientConfig(ctx, u1.ID, node.ID, "u1-key2", "Laptop", "pub2", "10.0.0.3", "awg")
+	if err != nil {
+		t.Fatalf("failed to create k2: %v", err)
+	}
+	k3, err := store.CreateClientConfig(ctx, u2.ID, node.ID, "u2-key1", "PC", "pub3", "10.0.0.4", "awg")
+	if err != nil {
+		t.Fatalf("failed to create k3: %v", err)
+	}
+
+	// Simulate cumulative legacy traffic on k2 without daily entry this month
+	_, err = store.DB().ExecContext(ctx, `UPDATE client_configs SET total_rx_bytes = 50000000, total_tx_bytes = 50000000 WHERE id = ?`, k2.ID)
+	if err != nil {
+		t.Fatalf("failed to set k2 legacy traffic: %v", err)
+	}
+
+	// 4. Record daily traffic for k1 (u1) and k3 (u2) in current month
+	if err := store.RecordPeerTelemetry(ctx, k1.ID, 30000000, 10000000, 1700000000, true); err != nil {
+		t.Fatalf("failed to record peer traffic for k1: %v", err)
+	}
+	if err := store.RecordPeerTelemetry(ctx, k3.ID, 15000000, 5000000, 1700000000, true); err != nil {
+		t.Fatalf("failed to record peer traffic for k3: %v", err)
+	}
+
+	// 5. Verify idle key k2 has MonthTrafficBytes == 0, NOT 100000000
+	k2Fetched, err := store.GetClientConfigByID(ctx, k2.ID)
+	if err != nil {
+		t.Fatalf("failed to get k2: %v", err)
+	}
+	if k2Fetched.TotalTrafficBytes != 100000000 {
+		t.Fatalf("expected k2 total traffic 100000000, got %d", k2Fetched.TotalTrafficBytes)
+	}
+	if k2Fetched.MonthTrafficBytes != 0 {
+		t.Fatalf("expected k2 month traffic to be 0 for idle key, got %d", k2Fetched.MonthTrafficBytes)
+	}
+
+	// Verify active key k1 has MonthTrafficBytes == 40000000
+	k1Fetched, err := store.GetClientConfigByID(ctx, k1.ID)
+	if err != nil {
+		t.Fatalf("failed to get k1: %v", err)
+	}
+	if k1Fetched.MonthTrafficBytes != 40000000 {
+		t.Fatalf("expected k1 month traffic 40000000, got %d", k1Fetched.MonthTrafficBytes)
+	}
+
+	// 6. Test GetUserMonthTraffic for u1 and u2
+	u1Traffic, err := store.GetUserMonthTraffic(ctx, u1.ID, "")
+	if err != nil {
+		t.Fatalf("failed to get u1 month traffic: %v", err)
+	}
+	if u1Traffic.TotalBytes != 40000000 {
+		t.Fatalf("expected u1 month total bytes 40000000, got %d", u1Traffic.TotalBytes)
+	}
+	if u1Traffic.RxBytes != 30000000 || u1Traffic.TxBytes != 10000000 {
+		t.Fatalf("expected u1 Rx 30000000 Tx 10000000, got Rx %d Tx %d", u1Traffic.RxBytes, u1Traffic.TxBytes)
+	}
+
+	u2Traffic, err := store.GetUserMonthTraffic(ctx, u2.ID, "")
+	if err != nil {
+		t.Fatalf("failed to get u2 month traffic: %v", err)
+	}
+	if u2Traffic.TotalBytes != 20000000 {
+		t.Fatalf("expected u2 month total bytes 20000000, got %d", u2Traffic.TotalBytes)
+	}
+
+	// 7. Test GetUsersMonthTrafficMap
+	usersMap, err := store.GetUsersMonthTrafficMap(ctx, "")
+	if err != nil {
+		t.Fatalf("failed to get users month traffic map: %v", err)
+	}
+	if usersMap[u1.ID] != 40000000 {
+		t.Fatalf("expected u1 in map to be 40000000, got %d", usersMap[u1.ID])
+	}
+	if usersMap[u2.ID] != 20000000 {
+		t.Fatalf("expected u2 in map to be 20000000, got %d", usersMap[u2.ID])
+	}
+
+	// 8. Test ListUsers enriches users with month traffic
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("failed to list users: %v", err)
+	}
+	foundU1, foundU2 := false, false
+	for _, user := range users {
+		if user.ID == u1.ID {
+			foundU1 = true
+			if user.MonthTrafficBytes != 40000000 {
+				t.Fatalf("expected user 1 month traffic in ListUsers to be 40000000, got %d", user.MonthTrafficBytes)
+			}
+		}
+		if user.ID == u2.ID {
+			foundU2 = true
+			if user.MonthTrafficBytes != 20000000 {
+				t.Fatalf("expected user 2 month traffic in ListUsers to be 20000000, got %d", user.MonthTrafficBytes)
+			}
+		}
+	}
+	if !foundU1 || !foundU2 {
+		t.Fatalf("expected to find both users in ListUsers")
+	}
+}
+

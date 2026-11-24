@@ -906,3 +906,18 @@ func (r *RealRunner) GetEgressStatus(ctx context.Context) (*models.EgressStatusR
 	mgr := egress.NewManager()
 	return mgr.GetStatus(ctx)
 }
+
+func (r *RealRunner) RestartEgress(ctx context.Context, devName string) error {
+	if !regexp.MustCompile(`^awg[1-9][0-9]*$`).MatchString(devName) {
+		return fmt.Errorf("invalid egress interface %q", devName)
+	}
+	if helper := os.Getenv("AWG_EGRESS_HELPER"); helper != "" {
+		output, err := exec.CommandContext(ctx, helper, "restart", devName).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("egress restart failed: %s: %w", strings.TrimSpace(string(output)), err)
+		}
+		return nil
+	}
+	mgr := egress.NewManager()
+	return mgr.RestartInterface(ctx, devName)
+}

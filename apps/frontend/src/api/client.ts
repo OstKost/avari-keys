@@ -416,6 +416,15 @@ const realApi = {
     return handleResponse<{ success: boolean; message: string }>(res);
   },
 
+  async restartNodeEgress(id: number, targetInterface: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/egress/restart`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ interface: targetInterface }),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
   async updateAdminNodeFailover(
     id: number,
     autoFailoverEnabled: boolean,

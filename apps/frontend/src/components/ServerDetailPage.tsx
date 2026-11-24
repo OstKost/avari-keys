@@ -50,6 +50,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
   const [loading, setLoading] = useState(true);
   const [diagnosing, setDiagnosing] = useState(false);
   const [switchingEgress, setSwitchingEgress] = useState(false);
+  const [restartingEgress, setRestartingEgress] = useState<string | null>(null);
   const [checkingEgress, setCheckingEgress] = useState(false);
 
   // Restart modal
@@ -185,6 +186,22 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
       toast.error(err.message || 'Ошибка переключения выхода каскада');
     } finally {
       setSwitchingEgress(false);
+    }
+  };
+
+  // Restart Cascade Egress Tunnel
+  const handleRestartEgress = async (targetInterface: string) => {
+    if (!node || node.type !== 'cascade' || restartingEgress) return;
+    try {
+      setRestartingEgress(targetInterface);
+      const res = await api.restartNodeEgress(node.id, targetInterface);
+      toast.success(res.message || `Туннель ${targetInterface} успешно перезапущен`);
+      fetchDetail(true);
+      if (onNodeUpdated) onNodeUpdated();
+    } catch (err: any) {
+      toast.error(err.message || `Ошибка перезапуска туннеля ${targetInterface}`);
+    } finally {
+      setRestartingEgress(null);
     }
   };
 
@@ -1177,6 +1194,16 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                             <ArrowDown className="w-3 h-3" />
                           </button>
                         </div>
+
+                        <button
+                          onClick={() => handleRestartEgress(target.interface)}
+                          disabled={Boolean(restartingEgress)}
+                          title="Перезапустить туннель (systemctl restart awg-quick@...) без SSH"
+                          className="text-xs font-mono font-medium text-[#A8B4B7] hover:text-[#F0D48D] uppercase tracking-wider px-2 py-1 rounded-lg bg-[#102833] hover:bg-[#1C3945] border border-[#1C3945] transition cursor-pointer disabled:opacity-50 flex items-center space-x-1"
+                        >
+                          <RotateCw className={`w-3 h-3 ${restartingEgress === target.interface ? 'animate-spin text-[#D9B96E]' : ''}`} />
+                          <span className="hidden sm:inline">Перезапуск</span>
+                        </button>
 
                         {!isActive && target.available && (
                           <button

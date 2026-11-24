@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,11 +11,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/logger"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/master"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/storage"
 )
 
 func main() {
+	// Initialize structured logging (slog + standard log bridge)
+	logger.Init("avari-master")
+
 	port := os.Getenv("MASTER_PORT")
 	if port == "" {
 		port = "8080"
@@ -47,25 +51,42 @@ func main() {
 		}
 	}
 
+	auditRetentionDays := 30
+	if daysStr := os.Getenv("AUDIT_RETENTION_DAYS"); daysStr != "" {
+		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 {
+			auditRetentionDays = d
+		}
+	}
+
+	telemetryRetentionDays := 90
+	if daysStr := os.Getenv("TELEMETRY_RETENTION_DAYS"); daysStr != "" {
+		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 {
+			telemetryRetentionDays = d
+		}
+	}
+
 	store, err := storage.NewSQLiteStorage(dbPath)
 	if err != nil {
-		log.Fatalf("[MASTER] Failed to initialize SQLite database: %v", err)
+		slog.Error("Failed to initialize SQLite database", "error", err, "path", dbPath)
+		os.Exit(1)
 	}
 	defer store.Close()
 
 	if err := store.EnsureDefaultAnnouncements(context.Background()); err != nil {
-		log.Printf("[MASTER] Notice: Failed to ensure default announcements: %v", err)
+		slog.Warn("Failed to ensure default announcements", "error", err)
 	}
 
 	cfg := master.Config{
-		Port:                port,
-		JWTSecret:           jwtSecret,
-		TelegramBotToken:    tgToken,
-		TelegramBotUsername: tgUsername,
-		TelegramAdminChatID: tgAdminChatID,
-		TelegramAdminSecret: tgAdminSecret,
-		HealthCheckInterval: time.Duration(intervalSec) * time.Second,
-		HealthCheckTimeout:  time.Duration(timeoutSec) * time.Second,
+		Port:                   port,
+		JWTSecret:              jwtSecret,
+		TelegramBotToken:       tgToken,
+		TelegramBotUsername:    tgUsername,
+		TelegramAdminChatID:    tgAdminChatID,
+		TelegramAdminSecret:    tgAdminSecret,
+		HealthCheckInterval:    time.Duration(intervalSec) * time.Second,
+		HealthCheckTimeout:     time.Duration(timeoutSec) * time.Second,
+		AuditRetentionDays:     auditRetentionDays,
+		TelemetryRetentionDays: telemetryRetentionDays,
 	}
 
 	srv := master.NewServer(cfg, store)
@@ -73,7 +94,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start background workers (Telegram long-polling & HealthChecker)
+	// Start background workers (Telegram long-polling, HealthChecker, Retention Worker)
 	srv.StartBackgroundWorkers(ctx)
 
 	httpServer := &http.Server{
@@ -87,7 +108,7 @@ func main() {
 
 	go func() {
 		<-stopChan
-		log.Println("[MASTER] Shutting down gracefully...")
+		slog.Info("Shutting down master server gracefully...")
 		srv.StopBackgroundWorkers()
 		shutdownCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer sCancel()
@@ -95,8 +116,9 @@ func main() {
 		cancel()
 	}()
 
-	log.Printf("[MASTER] Server listening on http://0.0.0.0:%s", port)
+	slog.Info("Master server listening", "port", port, "url", fmt.Sprintf("http://0.0.0.0:%s", port))
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("[MASTER] Server startup failed: %v", err)
+		slog.Error("Master server startup failed", "error", err)
+		os.Exit(1)
 	}
 }

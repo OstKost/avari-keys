@@ -214,3 +214,12 @@ func (m *MockRunner) GetEgressStatus(ctx context.Context) (*models.EgressStatusR
 	}, nil
 }
 
+func (m *MockRunner) RestartEgress(ctx context.Context, devName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if devName != "awg1" && devName != "awg3" {
+		return fmt.Errorf("invalid egress interface '%s' (must be awg1 or awg3)", devName)
+	}
+	return nil
+}
+

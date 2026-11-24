@@ -640,6 +640,17 @@ func TestAdminCascadeEgressSwitchFlow(t *testing.T) {
 	if egressResp.ActiveInterface != "awg3" {
 		t.Fatalf("expected active interface 'awg3' after switch, got '%s'", egressResp.ActiveInterface)
 	}
+
+	// 5. Restart egress interface awg3
+	restartBody, _ := json.Marshal(models.SwitchEgressRequest{Interface: "awg3"})
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/egress/restart", bytes.NewReader(restartBody))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for restart egress, got %d: %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestAdminCascadeAutoFailoverSettingsFlow(t *testing.T) {
@@ -1982,4 +1993,205 @@ func TestTelegramMiniAppAuthFlow(t *testing.T) {
 		t.Errorf("expected Forve to be recognized as admin in TMA")
 	}
 }
+
+func TestMeEndpointMonthTrafficAndAdminUserTraffic(t *testing.T) {
+	srv, _, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := srv.Handler()
+	ctx := context.Background()
+
+	// 1. Admin logs in
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var adminLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminLoginResp)
+	adminToken := adminLoginResp.Token
+
+	// 2. Register & activate regular user "traffic_tester"
+	regBody, _ := json.Marshal(models.RegisterRequest{
+		Username: "traffic_tester",
+		Password: "Password123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(regBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for register, got %d", rec.Code)
+	}
+
+	user, err := store.GetUserByUsername(ctx, "traffic_tester")
+	if err != nil {
+		t.Fatalf("failed to find traffic_tester: %v", err)
+	}
+	_ = store.SetUserActive(ctx, user.ID, true)
+
+	// User logs in
+	userLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "traffic_tester",
+		Password: "Password123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(userLoginBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for user login, got %d", rec.Code)
+	}
+	var userLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&userLoginResp)
+	userToken := userLoginResp.Token
+
+	// 3. Add a direct node and key
+	node, err := store.CreateNode(ctx, "Direct DE", "direct", "DEU", "https://de.test", "https://de.test:8081", "key123", false, false, false, false, false)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+	key, err := store.CreateClientConfig(ctx, user.ID, node.ID, "phone-traffic", "iPhone", "pubkey123", "10.0.0.5", "awg")
+	if err != nil {
+		t.Fatalf("failed to create key: %v", err)
+	}
+
+	// Record peer telemetry
+	if err := store.RecordPeerTelemetry(ctx, key.ID, 18000000, 7000000, 1700000000, true); err != nil {
+		t.Fatalf("failed to record peer telemetry: %v", err)
+	}
+
+	// 4. Test GET /api/v1/auth/me returns user month traffic
+	req = httptest.NewRequest("GET", "/api/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/v1/auth/me, got %d", rec.Code)
+	}
+	var me models.UserPublic
+	if err := json.NewDecoder(rec.Body).Decode(&me); err != nil {
+		t.Fatalf("failed to decode /me response: %v", err)
+	}
+
+	if me.MonthTraffic == nil {
+		t.Fatalf("expected MonthTraffic to be populated in /me response")
+	}
+	if me.MonthTraffic.TotalBytes != 25000000 {
+		t.Fatalf("expected MonthTraffic.TotalBytes to be 25000000, got %d", me.MonthTraffic.TotalBytes)
+	}
+	if me.MonthTraffic.RxBytes != 18000000 || me.MonthTraffic.TxBytes != 7000000 {
+		t.Fatalf("expected Rx 18000000 Tx 7000000, got Rx %d Tx %d", me.MonthTraffic.RxBytes, me.MonthTraffic.TxBytes)
+	}
+	if me.MonthTrafficBytes != 25000000 {
+		t.Fatalf("expected MonthTrafficBytes 25000000, got %d", me.MonthTrafficBytes)
+	}
+
+	// 5. Test GET /api/v1/admin/users returns month traffic for user
+	req = httptest.NewRequest("GET", "/api/v1/admin/users", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/v1/admin/users, got %d", rec.Code)
+	}
+	var users []models.UserPublic
+	if err := json.NewDecoder(rec.Body).Decode(&users); err != nil {
+		t.Fatalf("failed to decode users: %v", err)
+	}
+
+	foundUser := false
+	for _, u := range users {
+		if u.ID == user.ID {
+			foundUser = true
+			if u.MonthTrafficBytes != 25000000 {
+				t.Fatalf("expected user month traffic in admin list to be 25000000, got %d", u.MonthTrafficBytes)
+			}
+			if u.MonthTrafficFormatted == "" {
+				t.Fatalf("expected formatted month traffic to not be empty")
+			}
+		}
+	}
+	if !foundUser {
+		t.Fatalf("expected to find traffic_tester in admin users list")
+	}
+}
+
+func TestSecurityHeadersAndRateLimiting(t *testing.T) {
+	srv, _, _, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+	handler := srv.Handler()
+
+	// 1. Verify Security Headers
+	req := httptest.NewRequest("GET", "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("expected X-Content-Type-Options: nosniff, got %q", rec.Header().Get("X-Content-Type-Options"))
+	}
+	if rec.Header().Get("X-XSS-Protection") != "1; mode=block" {
+		t.Errorf("expected X-XSS-Protection: 1; mode=block, got %q", rec.Header().Get("X-XSS-Protection"))
+	}
+	if rec.Header().Get("Referrer-Policy") != "strict-origin-when-cross-origin" {
+		t.Errorf("expected Referrer-Policy: strict-origin-when-cross-origin, got %q", rec.Header().Get("Referrer-Policy"))
+	}
+	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "default-src 'self'") {
+		t.Errorf("expected CSP default-src 'self', got %q", rec.Header().Get("Content-Security-Policy"))
+	}
+
+	// 2. Test Rate Limiting on /api/v1/auth/login (limit is 5 req/min)
+	loginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "ratelimit_user",
+		Password: "wrongpassword",
+	})
+	clientIP := "203.0.113.42:54321"
+
+	for i := 1; i <= 5; i++ {
+		req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(loginBody))
+		req.RemoteAddr = clientIP
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("request #%d unexpectedly rate limited (429)", i)
+		}
+	}
+
+	// 6th request from same IP should be blocked with 429
+	req6 := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(loginBody))
+	req6.RemoteAddr = clientIP
+	rec6 := httptest.NewRecorder()
+	handler.ServeHTTP(rec6, req6)
+	if rec6.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 6th request to be 429 Too Many Requests, got %d", rec6.Code)
+	}
+	if rec6.Header().Get("Retry-After") == "" {
+		t.Errorf("expected Retry-After header on 429 response")
+	}
+
+	// Request from another IP should still succeed
+	reqOther := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(loginBody))
+	reqOther.RemoteAddr = "203.0.113.99:12345"
+	recOther := httptest.NewRecorder()
+	handler.ServeHTTP(recOther, reqOther)
+	if recOther.Code == http.StatusTooManyRequests {
+		t.Fatalf("request from different IP should not be rate limited")
+	}
+
+	// 3. Test MaxBytes Limit (> 1MB should be rejected)
+	largeJSON := `{"username":"` + strings.Repeat("a", 1024*1024+100) + `"}`
+	reqLarge := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(largeJSON))
+	reqLarge.RemoteAddr = "203.0.113.150:1111"
+	recLarge := httptest.NewRecorder()
+	handler.ServeHTTP(recLarge, reqLarge)
+	if recLarge.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 Request Entity Too Large for >1MB body, got %d", recLarge.Code)
+	}
+}
+
 

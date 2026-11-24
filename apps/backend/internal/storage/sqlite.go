@@ -67,8 +67,97 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying sql.DB instance.
+func (s *Storage) DB() *sql.DB {
+	return s.db
+}
+
+// GetMigrationVersion returns the latest applied schema migration version.
+func (s *Storage) GetMigrationVersion(ctx context.Context) (int, error) {
+	var maxVer sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&maxVer)
+	if err != nil {
+		return 0, err
+	}
+	if !maxVer.Valid {
+		return 0, nil
+	}
+	return int(maxVer.Int64), nil
+}
+
+func addColumnIfNotExists(db *sql.DB, table, column, colDef string) error {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err == nil {
+			if strings.EqualFold(name, column) {
+				return nil // already exists
+			}
+		}
+	}
+	_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colDef))
+	return err
+}
+
+func ensureColumns(db *sql.DB) error {
+	cols := []struct{ table, col, def string }{
+		{"nodes", "is_mobile_optimized", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "country_code", "TEXT NOT NULL DEFAULT ''"},
+		{"nodes", "provider_url", "TEXT NOT NULL DEFAULT ''"},
+		{"nodes", "is_backup", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "has_hysteria", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "has_mieru", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "has_vless", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "auto_failover_enabled", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "failover_priority", "TEXT NOT NULL DEFAULT '[]'"},
+		{"users", "is_pro", "INTEGER NOT NULL DEFAULT 0"},
+		{"users", "billing_snoozed_until", "DATETIME DEFAULT NULL"},
+		{"telegram_chats", "user_id", "INTEGER DEFAULT NULL"},
+		{"client_configs", "public_key", "TEXT NOT NULL DEFAULT ''"},
+		{"client_configs", "allocated_ip", "TEXT NOT NULL DEFAULT ''"},
+		{"client_configs", "protocol", "TEXT NOT NULL DEFAULT 'awg'"},
+		{"client_configs", "total_rx_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"client_configs", "total_tx_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"client_configs", "last_handshake_epoch", "INTEGER NOT NULL DEFAULT 0"},
+		{"client_configs", "last_seen_at", "DATETIME DEFAULT NULL"},
+	}
+	for _, c := range cols {
+		if err := addColumnIfNotExists(db, c.table, c.col, c.def); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", c.table, c.col, err)
+		}
+	}
+	return nil
+}
+
 func (s *Storage) migrate() error {
-	schema := `
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version INTEGER PRIMARY KEY,
+			description TEXT NOT NULL,
+			applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`); err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
+	}
+
+	migrations := []struct {
+		version     int
+		description string
+		apply       func(db *sql.DB) error
+	}{
+		{
+			version:     1,
+			description: "base_tables",
+			apply: func(db *sql.DB) error {
+				schema := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT UNIQUE NOT NULL,
@@ -83,7 +172,7 @@ func (s *Storage) migrate() error {
 	CREATE TABLE IF NOT EXISTS nodes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
-		type TEXT NOT NULL, -- 'cascade' or 'direct'
+		type TEXT NOT NULL,
 		country_code TEXT NOT NULL DEFAULT '',
 		provider_url TEXT NOT NULL DEFAULT '',
 		api_url TEXT NOT NULL,
@@ -118,7 +207,7 @@ func (s *Storage) migrate() error {
 	);
 
 	CREATE TABLE IF NOT EXISTS peer_traffic_daily (
-		date TEXT NOT NULL, -- 'YYYY-MM-DD'
+		date TEXT NOT NULL,
 		client_config_id INTEGER NOT NULL,
 		rx_bytes INTEGER NOT NULL DEFAULT 0,
 		tx_bytes INTEGER NOT NULL DEFAULT 0,
@@ -127,7 +216,7 @@ func (s *Storage) migrate() error {
 	);
 
 	CREATE TABLE IF NOT EXISTS node_traffic_daily (
-		date TEXT NOT NULL, -- 'YYYY-MM-DD'
+		date TEXT NOT NULL,
 		node_id INTEGER NOT NULL,
 		rx_bytes INTEGER NOT NULL DEFAULT 0,
 		tx_bytes INTEGER NOT NULL DEFAULT 0,
@@ -203,45 +292,34 @@ func (s *Storage) migrate() error {
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
 	`
-	if _, err := s.db.Exec(schema); err != nil {
-		return err
-	}
-	// Migrate existing nodes & users tables if new columns are missing
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN is_mobile_optimized INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN country_code TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN provider_url TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN is_backup INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_hysteria INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_mieru INTEGER NOT NULL DEFAULT 0;`)
-	if _, err := s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_vless INTEGER NOT NULL DEFAULT 0;`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-		return err
-	}
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN auto_failover_enabled INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN failover_priority TEXT NOT NULL DEFAULT '[]';`)
-	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN is_pro INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN billing_snoozed_until DATETIME DEFAULT NULL;`)
-	_, _ = s.db.Exec(`ALTER TABLE telegram_chats ADD COLUMN user_id INTEGER DEFAULT NULL;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN public_key TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN allocated_ip TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN protocol TEXT NOT NULL DEFAULT 'awg';`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN total_rx_bytes INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN total_tx_bytes INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN last_handshake_epoch INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN last_seen_at DATETIME DEFAULT NULL;`)
-
-	indexes := `
- CREATE TRIGGER IF NOT EXISTS validate_vless_owner BEFORE INSERT ON client_configs
- WHEN NEW.protocol='vless' AND NOT EXISTS (
-   SELECT 1 FROM nodes JOIN users ON users.id=NEW.user_id
-   WHERE nodes.id=NEW.node_id AND nodes.is_active AND nodes.type='direct' AND nodes.has_vless
-     AND users.is_active AND (NOT nodes.is_backup OR users.is_pro OR users.role='admin')
- ) BEGIN SELECT RAISE(ABORT, 'VLESS enrollment unavailable'); END;
- CREATE TRIGGER IF NOT EXISTS guard_vless_user BEFORE DELETE ON users
- WHEN EXISTS (SELECT 1 FROM client_configs WHERE user_id=OLD.id AND protocol='vless')
- BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
- CREATE TRIGGER IF NOT EXISTS guard_vless_node BEFORE DELETE ON nodes
- WHEN EXISTS (SELECT 1 FROM client_configs WHERE node_id=OLD.id AND protocol='vless')
- BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
+				_, err := db.Exec(schema)
+				return err
+			},
+		},
+		{
+			version:     2,
+			description: "incremental_columns",
+			apply: func(db *sql.DB) error {
+				return ensureColumns(db)
+			},
+		},
+		{
+			version:     3,
+			description: "triggers_and_indexes",
+			apply: func(db *sql.DB) error {
+				indexes := `
+	CREATE TRIGGER IF NOT EXISTS validate_vless_owner BEFORE INSERT ON client_configs
+	WHEN NEW.protocol='vless' AND NOT EXISTS (
+		SELECT 1 FROM nodes JOIN users ON users.id=NEW.user_id
+		WHERE nodes.id=NEW.node_id AND nodes.is_active AND nodes.type='direct' AND nodes.has_vless
+		  AND users.is_active AND (NOT nodes.is_backup OR users.is_pro OR users.role='admin')
+	) BEGIN SELECT RAISE(ABORT, 'VLESS enrollment unavailable'); END;
+	CREATE TRIGGER IF NOT EXISTS guard_vless_user BEFORE DELETE ON users
+	WHEN EXISTS (SELECT 1 FROM client_configs WHERE user_id=OLD.id AND protocol='vless')
+	BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
+	CREATE TRIGGER IF NOT EXISTS guard_vless_node BEFORE DELETE ON nodes
+	WHEN EXISTS (SELECT 1 FROM client_configs WHERE node_id=OLD.id AND protocol='vless')
+	BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
 
 	CREATE INDEX IF NOT EXISTS idx_client_configs_pubkey ON client_configs(public_key);
 	CREATE INDEX IF NOT EXISTS idx_client_configs_node_id ON client_configs(node_id);
@@ -258,9 +336,36 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_pwd_reset_user_id ON password_reset_requests(user_id);
 	CREATE INDEX IF NOT EXISTS idx_pwd_reset_status ON password_reset_requests(status);
 	`
-	if _, err := s.db.Exec(indexes); err != nil {
+				_, err := db.Exec(indexes)
+				return err
+			},
+		},
+	}
+
+	for _, m := range migrations {
+		var exists int
+		err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, m.version).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("check migration %d: %w", m.version, err)
+		}
+		if exists > 0 {
+			continue
+		}
+
+		if err := m.apply(s.db); err != nil {
+			return fmt.Errorf("apply migration %d (%s): %w", m.version, m.description, err)
+		}
+
+		if _, err := s.db.Exec(`INSERT INTO schema_migrations (version, description) VALUES (?, ?)`, m.version, m.description); err != nil {
+			return fmt.Errorf("record migration %d: %w", m.version, err)
+		}
+	}
+
+	// Always ensure column integrity for legacy compatibility
+	if err := ensureColumns(s.db); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -391,6 +496,8 @@ func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 	}
 	defer rows.Close()
 
+	monthTrafficMap, _ := s.GetUsersMonthTrafficMap(ctx, time.Now().UTC().Format("2006-01"))
+
 	list := []models.UserPublic{}
 	for rows.Next() {
 		var u models.UserPublic
@@ -403,6 +510,12 @@ func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 		u.IsActive = isActive == 1
 		u.IsPro = isPro == 1
 		u.HasPendingPasswordReset = hasPendingReset == 1
+		if tb, ok := monthTrafficMap[u.ID]; ok {
+			u.MonthTrafficBytes = tb
+		} else {
+			u.MonthTrafficBytes = 0
+		}
+		u.MonthTrafficFormatted = formatBytes(u.MonthTrafficBytes)
 		list = append(list, u)
 	}
 	return list, nil
@@ -985,6 +1098,61 @@ func (s *Storage) GetNodeMonthTrafficMap(ctx context.Context, yearMonth string) 
 	return res, nil
 }
 
+func (s *Storage) GetUserMonthTraffic(ctx context.Context, userID int64, yearMonth string) (*models.UserMonthTraffic, error) {
+	if yearMonth == "" {
+		yearMonth = time.Now().UTC().Format("2006-01")
+	}
+
+	var rx, tx int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(p.rx_bytes), 0), COALESCE(SUM(p.tx_bytes), 0)
+		FROM peer_traffic_daily p
+		JOIN client_configs c ON c.id = p.client_config_id
+		WHERE c.user_id = ? AND p.date LIKE ?
+	`, userID, yearMonth+"%").Scan(&rx, &tx)
+	if err != nil {
+		return nil, err
+	}
+
+	total := rx + tx
+	return &models.UserMonthTraffic{
+		Month:       yearMonth,
+		RxBytes:     rx,
+		TxBytes:     tx,
+		TotalBytes:  total,
+		Formatted:   formatBytes(total),
+		RxFormatted: formatBytes(rx),
+		TxFormatted: formatBytes(tx),
+	}, nil
+}
+
+func (s *Storage) GetUsersMonthTrafficMap(ctx context.Context, yearMonth string) (map[int64]int64, error) {
+	if yearMonth == "" {
+		yearMonth = time.Now().UTC().Format("2006-01")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.user_id, COALESCE(SUM(p.rx_bytes + p.tx_bytes), 0)
+		FROM peer_traffic_daily p
+		JOIN client_configs c ON c.id = p.client_config_id
+		WHERE p.date LIKE ?
+		GROUP BY c.user_id
+	`, yearMonth+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make(map[int64]int64)
+	for rows.Next() {
+		var uid, total int64
+		if err := rows.Scan(&uid, &total); err == nil {
+			res[uid] = total
+		}
+	}
+	return res, nil
+}
+
 func (s *Storage) GetClientConfigByID(ctx context.Context, id int64) (*models.ClientConfig, error) {
 	var c models.ClientConfig
 	var totalRx, totalTx, handshakeEpoch int64
@@ -1013,7 +1181,7 @@ func (s *Storage) GetClientConfigByID(ctx context.Context, id int64) (*models.Cl
 	if mBytes, ok := monthMap[c.ID]; ok {
 		c.MonthTrafficBytes = mBytes
 	} else {
-		c.MonthTrafficBytes = c.TotalTrafficBytes
+		c.MonthTrafficBytes = 0
 	}
 	c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 
@@ -1056,7 +1224,7 @@ func (s *Storage) ListClientConfigsByUser(ctx context.Context, userID int64) ([]
 		if mBytes, ok := monthMap[c.ID]; ok {
 			c.MonthTrafficBytes = mBytes
 		} else {
-			c.MonthTrafficBytes = c.TotalTrafficBytes
+			c.MonthTrafficBytes = 0
 		}
 		c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 
@@ -1100,7 +1268,7 @@ func (s *Storage) ListAllClientConfigs(ctx context.Context) ([]models.ClientConf
 		if mBytes, ok := monthMap[c.ID]; ok {
 			c.MonthTrafficBytes = mBytes
 		} else {
-			c.MonthTrafficBytes = c.TotalTrafficBytes
+			c.MonthTrafficBytes = 0
 		}
 		c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 
@@ -1145,7 +1313,7 @@ func (s *Storage) ListClientConfigsByNodeID(ctx context.Context, nodeID int64) (
 		if mBytes, ok := monthMap[c.ID]; ok {
 			c.MonthTrafficBytes = mBytes
 		} else {
-			c.MonthTrafficBytes = c.TotalTrafficBytes
+			c.MonthTrafficBytes = 0
 		}
 		c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 
@@ -1310,7 +1478,7 @@ func (s *Storage) ListAuditLogs(ctx context.Context, filter models.AuditLogFilte
 
 func (s *Storage) PurgeAuditLogsOlderThan(ctx context.Context, days int) (int64, error) {
 	if days <= 0 {
-		days = 90
+		days = 30
 	}
 
 	query := fmt.Sprintf("DELETE FROM audit_logs WHERE created_at < datetime('now', '-%d days')", days)
@@ -1319,6 +1487,81 @@ func (s *Storage) PurgeAuditLogsOlderThan(ctx context.Context, days int) (int64,
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// PurgeTelemetryOlderThan removes daily peer and node traffic records older than the specified days.
+func (s *Storage) PurgeTelemetryOlderThan(ctx context.Context, days int) (int64, error) {
+	if days <= 0 {
+		days = 90
+	}
+
+	peerRes, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM peer_traffic_daily WHERE date < date('now', '-%d days')", days))
+	if err != nil {
+		return 0, fmt.Errorf("failed to purge peer_traffic_daily: %w", err)
+	}
+	peerDeleted, _ := peerRes.RowsAffected()
+
+	nodeRes, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM node_traffic_daily WHERE date < date('now', '-%d days')", days))
+	if err != nil {
+		return peerDeleted, fmt.Errorf("failed to purge node_traffic_daily: %w", err)
+	}
+	nodeDeleted, _ := nodeRes.RowsAffected()
+
+	return peerDeleted + nodeDeleted, nil
+}
+
+// PurgeExpiredResetRequests removes completed or rejected password reset requests older than the specified days.
+func (s *Storage) PurgeExpiredResetRequests(ctx context.Context, days int) (int64, error) {
+	if days <= 0 {
+		days = 14
+	}
+
+	query := fmt.Sprintf("DELETE FROM password_reset_requests WHERE status != 'pending' AND created_at < datetime('now', '-%d days')", days)
+	res, err := s.db.ExecContext(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// PurgeExpiredTelegramTokens removes Telegram link tokens older than 7 days.
+func (s *Storage) PurgeExpiredTelegramTokens(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, "DELETE FROM telegram_link_tokens WHERE created_at < datetime('now', '-7 days')")
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// RunRetention performs a complete retention cycle for audit logs, telemetry, reset requests, and link tokens.
+func (s *Storage) RunRetention(ctx context.Context, auditDays, telemetryDays int) (models.RetentionStats, error) {
+	var stats models.RetentionStats
+
+	auditDeleted, err := s.PurgeAuditLogsOlderThan(ctx, auditDays)
+	if err != nil {
+		return stats, fmt.Errorf("audit logs purge error: %w", err)
+	}
+	stats.AuditLogsDeleted = auditDeleted
+
+	telemetryDeleted, err := s.PurgeTelemetryOlderThan(ctx, telemetryDays)
+	if err != nil {
+		return stats, fmt.Errorf("telemetry purge error: %w", err)
+	}
+	stats.TelemetryDeleted = telemetryDeleted
+
+	resetDeleted, err := s.PurgeExpiredResetRequests(ctx, 14)
+	if err != nil {
+		return stats, fmt.Errorf("reset requests purge error: %w", err)
+	}
+	stats.ResetRequestsDeleted = resetDeleted
+
+	tokensDeleted, err := s.PurgeExpiredTelegramTokens(ctx)
+	if err != nil {
+		return stats, fmt.Errorf("telegram tokens purge error: %w", err)
+	}
+	stats.ExpiredTokensDeleted = tokensDeleted
+
+	return stats, nil
 }
 
 // Billing Methods

@@ -2,12 +2,13 @@ package slave
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/netprobe"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 )
 
 // Config holds configuration for the Slave API server.
@@ -169,6 +171,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleGetCascadeEgress)))
 	if os.Getenv("CASCADE_EGRESS_ENABLED") != "false" {
 		s.mux.Handle("POST /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleSwitchCascadeEgress)))
+		s.mux.Handle("POST /api/v1/cascade/egress/restart", s.authMiddleware(http.HandlerFunc(s.handleRestartCascadeEgress)))
 	}
 }
 
@@ -182,7 +185,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if apiKey == "" || apiKey != s.cfg.APIKey {
+		if apiKey == "" || subtle.ConstantTimeCompare([]byte(apiKey), []byte(s.cfg.APIKey)) != 1 {
 			s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized: invalid or missing API key"})
 			return
 		}
@@ -234,11 +237,20 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		HysteriaAvailable: hyAvail,
 		MieruAvailable:    mAvail,
 		VlessAvailable:    s.vless.Available(r.Context()),
-		Version:           "v1.8.0",
+		Version:           "v1.9.0",
 	})
 }
 
 func (s *Server) handleHysteriaAuth(w http.ResponseWriter, r *http.Request) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if host != "127.0.0.1" && host != "::1" && host != "localhost" {
+		s.writeJSON(w, http.StatusForbidden, map[string]string{"error": "Forbidden: local access only"})
+		return
+	}
+
 	if s.hysteria == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
@@ -526,6 +538,28 @@ func (s *Server) handleSwitchCascadeEgress(w http.ResponseWriter, r *http.Reques
 	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
 		Success: true,
 		Message: fmt.Sprintf("Cascade egress successfully switched to %s", req.Interface),
+	})
+}
+
+func (s *Server) handleRestartCascadeEgress(w http.ResponseWriter, r *http.Request) {
+	var req models.SwitchEgressRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if req.Interface == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface is required (e.g. 'awg1' or 'awg3')"})
+		return
+	}
+
+	if err := s.runner.RestartEgress(r.Context(), req.Interface); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
+		Success: true,
+		Message: fmt.Sprintf("Cascade egress %s successfully restarted", req.Interface),
 	})
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -370,4 +371,25 @@ func (m *Manager) Rollback(ctx context.Context, snapshot Snapshot) {
 	}
 
 	_ = os.Remove(m.cfg.PendingPath)
+}
+
+// RestartInterface restarts the system service or interface for a frozen/stalled tunnel.
+func (m *Manager) RestartInterface(ctx context.Context, iface string) error {
+	if !regexp.MustCompile(`^awg[1-9][0-9]*$`).MatchString(iface) {
+		return fmt.Errorf("invalid egress interface %q", iface)
+	}
+
+	// 1. Try systemctl restart awg-quick@<iface>
+	out, err := m.exec.Run(ctx, "systemctl", "restart", fmt.Sprintf("awg-quick@%s", iface))
+	if err == nil {
+		return nil
+	}
+
+	// 2. Fallback to awg-quick down and up
+	_, _ = m.exec.Run(ctx, "awg-quick", "down", iface)
+	outUp, errUp := m.exec.Run(ctx, "awg-quick", "up", iface)
+	if errUp != nil {
+		return fmt.Errorf("restart %s failed (systemctl: %s, awg-quick: %s): %w", iface, strings.TrimSpace(out), strings.TrimSpace(outUp), errUp)
+	}
+	return nil
 }

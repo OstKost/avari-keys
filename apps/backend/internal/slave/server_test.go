@@ -236,6 +236,17 @@ func TestCascadeEgressEndpoints(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 error for invalid interface eth0, got %d", rec.Code)
 	}
+
+	// 5. Test restart egress
+	restartBody, _ := json.Marshal(models.SwitchEgressRequest{Interface: "awg1"})
+	req = httptest.NewRequest("POST", "/api/v1/cascade/egress/restart", bytes.NewReader(restartBody))
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on restart egress, got %d: %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestHysteriaClientAndAuth(t *testing.T) {
@@ -278,6 +289,7 @@ func TestHysteriaClientAndAuth(t *testing.T) {
 		"addr": "1.2.3.4:5678",
 	})
 	req = httptest.NewRequest("POST", "/api/v1/hysteria/auth", bytes.NewReader(authReq))
+	req.RemoteAddr = "127.0.0.1:1234"
 	rec = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -291,6 +303,7 @@ func TestHysteriaClientAndAuth(t *testing.T) {
 		"addr": "1.2.3.4:5678",
 	})
 	req = httptest.NewRequest("POST", "/api/v1/hysteria/auth", bytes.NewReader(badAuthReq))
+	req.RemoteAddr = "127.0.0.1:1234"
 	rec = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -370,5 +383,30 @@ func TestMieruClient(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK on delete client, got %d", rec.Code)
+	}
+}
+
+func TestHysteriaAuthLoopbackOnly(t *testing.T) {
+	srv, _ := setupTestSlave()
+
+	// 1. External remote IP should be rejected with 403 Forbidden
+	reqRemote := httptest.NewRequest("POST", "/api/v1/hysteria/auth", strings.NewReader(`{"addr":"1.2.3.4:5678"}`))
+	reqRemote.RemoteAddr = "198.51.100.1:44444"
+	recRemote := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(recRemote, reqRemote)
+
+	if recRemote.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for remote caller to hysteria auth, got %d", recRemote.Code)
+	}
+
+	// 2. Local loopback 127.0.0.1 should pass the IP check
+	reqLocal := httptest.NewRequest("POST", "/api/v1/hysteria/auth", strings.NewReader(`{"addr":"127.0.0.1:5678"}`))
+	reqLocal.RemoteAddr = "127.0.0.1:44444"
+	recLocal := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(recLocal, reqLocal)
+
+	// Since hysteria wasn't initialized in setupTestSlave, it will return 503 (not 403)
+	if recLocal.Code == http.StatusForbidden {
+		t.Fatalf("loopback request should not be blocked with 403 Forbidden")
 	}
 }

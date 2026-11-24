@@ -1,35 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Key, Server, Users, LogOut, Plus, AlertCircle, Sparkles, ShieldCheck, ShieldAlert, User as UserIcon, ScrollText, Radio, CreditCard, Settings, Newspaper, Send, Smartphone } from 'lucide-react';
 import { api, isMockMode, setMockMode } from './api/client';
 import { User, NodePublic, ClientConfigSummary, ClientConfigDetail, BillingStatus, NewsItem, TelegramProxyInfo, ProtocolType } from './types';
 import { AuthModal } from './components/AuthModal';
-import { KeyModal } from './components/KeyModal';
-import { CreateKeyModal } from './components/CreateKeyModal';
 import { ConfirmModal } from './components/ConfirmModal';
-import { TelegramProxyModal } from './components/TelegramProxyModal';
 import { useToast } from './context/ToastContext';
-import { AdminUsers } from './components/AdminUsers';
-import { AdminNodes } from './components/AdminNodes';
-import { AdminAllKeys } from './components/AdminAllKeys';
-import { AdminAuditLogs } from './components/AdminAuditLogs';
-import { AdminSettings } from './components/AdminSettings';
-import { NetworkDashboard } from './components/NetworkDashboard';
 import { Loader } from './components/Loader';
-import { UserProfile } from './components/UserProfile';
-import { BillingPage } from './components/BillingPage';
-import { BillingReminderModal } from './components/BillingReminderModal';
 import { TelegramBanner } from './components/TelegramBanner';
 import { NewsBanner } from './components/NewsBanner';
-import { NewsPage } from './components/NewsPage';
 import { ClientKeysView } from './components/ClientKeysView';
 import { Tooltip } from './components/Tooltip';
 import { FloatingMascot, MascotFaqModal, MASCOT_IMAGE_SRC } from './components/MascotAssistant';
 import { OnboardingTour } from './components/OnboardingTour';
-import { ServerDetailPage } from './components/ServerDetailPage';
-import { TelegramMiniApp } from './components/TelegramMiniApp';
-import { AdminOverview } from './components/AdminOverview';
 import { EgressPanicBar } from './components/EgressPanicBar';
 import { TabType, AppMode, ADMIN_TABS, isAdminTab, resolveRouteFromUrl, tabToPath, updateDocumentTitle } from './utils/route';
+
+// Lazy-loaded standalone views & modals to optimize initial bundle size & TMA loading
+const TelegramMiniApp = lazy(() => import('./components/TelegramMiniApp').then((m) => ({ default: m.TelegramMiniApp })));
+const KeyModal = lazy(() => import('./components/KeyModal').then((m) => ({ default: m.KeyModal })));
+const CreateKeyModal = lazy(() => import('./components/CreateKeyModal').then((m) => ({ default: m.CreateKeyModal })));
+const TelegramProxyModal = lazy(() => import('./components/TelegramProxyModal').then((m) => ({ default: m.TelegramProxyModal })));
+const BillingReminderModal = lazy(() => import('./components/BillingReminderModal').then((m) => ({ default: m.BillingReminderModal })));
+
+// Lazy-loaded tab views
+const NetworkDashboard = lazy(() => import('./components/NetworkDashboard').then((m) => ({ default: m.NetworkDashboard })));
+const NewsPage = lazy(() => import('./components/NewsPage').then((m) => ({ default: m.NewsPage })));
+const AdminOverview = lazy(() => import('./components/AdminOverview').then((m) => ({ default: m.AdminOverview })));
+const AdminNodes = lazy(() => import('./components/AdminNodes').then((m) => ({ default: m.AdminNodes })));
+const AdminUsers = lazy(() => import('./components/AdminUsers').then((m) => ({ default: m.AdminUsers })));
+const AdminAllKeys = lazy(() => import('./components/AdminAllKeys').then((m) => ({ default: m.AdminAllKeys })));
+const AdminAuditLogs = lazy(() => import('./components/AdminAuditLogs').then((m) => ({ default: m.AdminAuditLogs })));
+const AdminSettings = lazy(() => import('./components/AdminSettings').then((m) => ({ default: m.AdminSettings })));
+const ServerDetailPage = lazy(() => import('./components/ServerDetailPage').then((m) => ({ default: m.ServerDetailPage })));
+const BillingPage = lazy(() => import('./components/BillingPage').then((m) => ({ default: m.BillingPage })));
+const UserProfile = lazy(() => import('./components/UserProfile').then((m) => ({ default: m.UserProfile })));
 
 export default function App() {
   const { toast } = useToast();
@@ -370,7 +374,11 @@ export default function App() {
   };
 
   if (activeTab === 'miniapp') {
-    return <TelegramMiniApp onExitToWeb={() => navigateToTab('keys')} />;
+    return (
+      <Suspense fallback={<Loader size="fullscreen" text="Загрузка Avari Keys..." />}>
+        <TelegramMiniApp onExitToWeb={() => navigateToTab('keys')} />
+      </Suspense>
+    );
   }
 
   if (authLoading) {
@@ -818,6 +826,7 @@ export default function App() {
               ) : (
                 <ClientKeysView
                   keys={keys || []}
+                  user={currentUser}
                   onViewKey={handleViewKey}
                   onDeleteKey={setKeyToDelete}
                 />
@@ -825,83 +834,85 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === 'dashboard' && (
-            <NetworkDashboard
-              currentUser={currentUser}
-              onNavigateTab={(tab, nodeId) => navigateToTab(tab, false, nodeId)}
-            />
-          )}
-          {activeTab === 'news' && (
-            <NewsPage
-              currentUser={currentUser}
-              onNewsRead={() => setHasUnreadNews(false)}
-            />
-          )}
-          {activeTab === 'overview' && (
-            <AdminOverview onNavigateTab={(tab, nodeId) => navigateToTab(tab, false, nodeId)} />
-          )}
-          {activeTab === 'nodes' && (
-            selectedNodeId ? (
-              <ServerDetailPage
-                nodeId={selectedNodeId}
-                onBack={() => navigateToTab('nodes', false, null)}
-                onNodeUpdated={() => loadDashboardData(true)}
+          <Suspense fallback={<Loader size="section" text="Загрузка раздела..." />}>
+            {activeTab === 'dashboard' && (
+              <NetworkDashboard
+                currentUser={currentUser}
+                onNavigateTab={(tab, nodeId) => navigateToTab(tab, false, nodeId)}
               />
-            ) : (
-              <AdminNodes onSelectNode={(id) => navigateToTab('nodes', false, id)} />
-            )
-          )}
-          {activeTab === 'users' && <AdminUsers />}
-          {activeTab === 'all-keys' && <AdminAllKeys />}
-          {activeTab === 'logs' && <AdminAuditLogs />}
-          {activeTab === 'settings' && <AdminSettings />}
-          {activeTab === 'billing' && <BillingPage currentUser={currentUser} />}
-          {activeTab === 'profile' && <UserProfile user={currentUser} onUserUpdated={(u) => setCurrentUser(u)} />}
+            )}
+            {activeTab === 'news' && (
+              <NewsPage
+                currentUser={currentUser}
+                onNewsRead={() => setHasUnreadNews(false)}
+              />
+            )}
+            {activeTab === 'overview' && (
+              <AdminOverview onNavigateTab={(tab, nodeId) => navigateToTab(tab, false, nodeId)} />
+            )}
+            {activeTab === 'nodes' && (
+              selectedNodeId ? (
+                <ServerDetailPage
+                  nodeId={selectedNodeId}
+                  onBack={() => navigateToTab('nodes', false, null)}
+                  onNodeUpdated={() => loadDashboardData(true)}
+                />
+              ) : (
+                <AdminNodes onSelectNode={(id) => navigateToTab('nodes', false, id)} />
+              )
+            )}
+            {activeTab === 'users' && <AdminUsers />}
+            {activeTab === 'all-keys' && <AdminAllKeys />}
+            {activeTab === 'logs' && <AdminAuditLogs />}
+            {activeTab === 'settings' && <AdminSettings />}
+            {activeTab === 'billing' && <BillingPage currentUser={currentUser} />}
+            {activeTab === 'profile' && <UserProfile user={currentUser} onUserUpdated={(u) => setCurrentUser(u)} />}
+          </Suspense>
           </div>
         </div>
       </main>
 
-      {/* Modals */}
-      {viewingKey && <KeyModal keyData={viewingKey} onClose={() => setViewingKey(null)} />}
-      {showCreateModal && (
-        <CreateKeyModal
-          nodes={nodes}
-          currentUser={currentUser}
-          onClose={() => setShowCreateModal(false)}
-          onCreate={handleCreateKey}
-        />
-      )}
-      {showTelegramProxyModal && (
-        <TelegramProxyModal
-          proxies={telegramProxies}
-          onClose={() => setShowTelegramProxyModal(false)}
-        />
-      )}
-
-      {/* 30-Day Billing Reminder Modal */}
-      {billingStatus?.is_due && !dismissedReminder && (
-        <BillingReminderModal
-          daysRemaining={billingStatus.days_remaining}
-          recommendedAmount={billingStatus.recommended_amount}
-          keyCount={billingStatus.key_count}
-          onPay={async (note) => {
-            const updated = await api.payDues(0, note);
-            setBillingStatus(updated);
-            setDismissedReminder(true);
-            toast.success('Оплата взноса успешно зафиксирована!');
-          }}
-          onSnooze={async (days) => {
-            const updated = await api.snoozeReminder(days || 1);
-            setBillingStatus(updated);
-            setDismissedReminder(true);
-            toast.info(`Напоминание отложено на ${days || 1} дн. (до завтра)`);
-          }}
-          onOpenBillingTab={() => {
-            setDismissedReminder(true);
-            navigateToTab('billing');
-          }}
-        />
-      )}
+      {/* Modals with lazy suspense */}
+      <Suspense fallback={null}>
+        {viewingKey && <KeyModal keyData={viewingKey} onClose={() => setViewingKey(null)} />}
+        {showCreateModal && (
+          <CreateKeyModal
+            nodes={nodes}
+            currentUser={currentUser}
+            onClose={() => setShowCreateModal(false)}
+            onCreate={handleCreateKey}
+          />
+        )}
+        {showTelegramProxyModal && (
+          <TelegramProxyModal
+            proxies={telegramProxies}
+            onClose={() => setShowTelegramProxyModal(false)}
+          />
+        )}
+        {billingStatus?.is_due && !dismissedReminder && (
+          <BillingReminderModal
+            daysRemaining={billingStatus.days_remaining}
+            recommendedAmount={billingStatus.recommended_amount}
+            keyCount={billingStatus.key_count}
+            onPay={async (note) => {
+              const updated = await api.payDues(0, note);
+              setBillingStatus(updated);
+              setDismissedReminder(true);
+              toast.success('Оплата взноса успешно зафиксирована!');
+            }}
+            onSnooze={async (days) => {
+              const updated = await api.snoozeReminder(days || 1);
+              setBillingStatus(updated);
+              setDismissedReminder(true);
+              toast.info(`Напоминание отложено на ${days || 1} дн. (до завтра)`);
+            }}
+            onOpenBillingTab={() => {
+              setDismissedReminder(true);
+              navigateToTab('billing');
+            }}
+          />
+        )}
+      </Suspense>
 
       {/* Confirm Delete Key Modal */}
       <ConfirmModal

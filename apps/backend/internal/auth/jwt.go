@@ -2,8 +2,12 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -32,8 +36,16 @@ type UserClaims struct {
 
 // NewJWTManager creates a new JWTManager.
 func NewJWTManager(secretKey string, duration time.Duration) *JWTManager {
-	if secretKey == "" {
-		secretKey = "avari-keys-mvp-default-super-secret-key-change-in-prod"
+	if secretKey == "" || secretKey == "avari-keys-mvp-default-super-secret-key-change-in-prod" {
+		isProd := os.Getenv("APP_ENV") == "production" || os.Getenv("ENV") == "prod"
+		if isProd {
+			log.Fatalf("[FATAL] Production requires a secure JWT_SECRET environment variable to be set!")
+		}
+		if secretKey == "" {
+			buf := make([]byte, 32)
+			_, _ = rand.Read(buf)
+			secretKey = hex.EncodeToString(buf)
+		}
 	}
 	if duration == 0 {
 		duration = 72 * time.Hour

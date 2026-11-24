@@ -31,5 +31,6 @@ type AWGRunner interface {
 	CheckHealth(ctx context.Context) bool
 	SwitchEgress(ctx context.Context, devName string) error
 	GetEgressStatus(ctx context.Context) (*models.EgressStatusResponse, error)
+	RestartEgress(ctx context.Context, devName string) error
 }
 

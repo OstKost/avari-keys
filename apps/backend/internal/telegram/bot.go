@@ -525,14 +525,9 @@ func (b *Bot) handleIncomingMessage(ctx context.Context, chatID int64, from *TGU
 		if currentChat.IsAdmin {
 			isAuthorized = true
 		} else if currentChat.UserID != nil && b.storage != nil {
-			users, err := b.storage.ListUsers(ctx)
-			if err == nil {
-				for _, u := range users {
-					if u.ID == *currentChat.UserID && u.IsActive {
-						isAuthorized = true
-						break
-					}
-				}
+			u, err := b.storage.GetUserByID(ctx, *currentChat.UserID)
+			if err == nil && u != nil && u.IsActive {
+				isAuthorized = true
 			}
 		}
 	}
