@@ -245,7 +245,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		HysteriaAvailable: hyAvail,
 		MieruAvailable:    mAvail,
 		VlessAvailable:    s.vless.Available(r.Context()),
-		Version:           "v1.10.1",
+		Version:           "v1.10.2",
 	})
 }
 
