@@ -171,6 +171,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleGetCascadeEgress)))
 	if os.Getenv("CASCADE_EGRESS_ENABLED") != "false" {
 		s.mux.Handle("POST /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleSwitchCascadeEgress)))
+		s.mux.Handle("POST /api/v1/cascade/egress/restart", s.authMiddleware(http.HandlerFunc(s.handleRestartCascadeEgress)))
 	}
 }
 
@@ -537,6 +538,28 @@ func (s *Server) handleSwitchCascadeEgress(w http.ResponseWriter, r *http.Reques
 	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
 		Success: true,
 		Message: fmt.Sprintf("Cascade egress successfully switched to %s", req.Interface),
+	})
+}
+
+func (s *Server) handleRestartCascadeEgress(w http.ResponseWriter, r *http.Request) {
+	var req models.SwitchEgressRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if req.Interface == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface is required (e.g. 'awg1' or 'awg3')"})
+		return
+	}
+
+	if err := s.runner.RestartEgress(r.Context(), req.Interface); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{
+		Success: true,
+		Message: fmt.Sprintf("Cascade egress %s successfully restarted", req.Interface),
 	})
 }
 

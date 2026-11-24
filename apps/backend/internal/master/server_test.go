@@ -640,6 +640,17 @@ func TestAdminCascadeEgressSwitchFlow(t *testing.T) {
 	if egressResp.ActiveInterface != "awg3" {
 		t.Fatalf("expected active interface 'awg3' after switch, got '%s'", egressResp.ActiveInterface)
 	}
+
+	// 5. Restart egress interface awg3
+	restartBody, _ := json.Marshal(models.SwitchEgressRequest{Interface: "awg3"})
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/egress/restart", bytes.NewReader(restartBody))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for restart egress, got %d: %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestAdminCascadeAutoFailoverSettingsFlow(t *testing.T) {
