@@ -17,6 +17,7 @@ import {
   Clock,
   User as UserIcon,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { User, NewsItem, NewsCategory, CreateNewsPayload, UpdateNewsPayload } from '../types';
 import { api } from '../api/client';
@@ -324,6 +325,25 @@ export const NewsPage: React.FC<NewsPageProps> = ({ currentUser, onNewsRead }) =
           )}
         </div>
       </div>
+
+      <section className="flex flex-col gap-4 rounded-2xl border border-[#D9B96E]/30 bg-[#0A1D26] p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 font-serif text-lg font-bold text-[#F2F0E8]">
+            <Pin aria-hidden="true" className="h-4 w-4 text-[#D9B96E]" />
+            Avari Gate — наш VPN-клиент
+          </h2>
+          <p className="mt-1 text-sm text-[#A8B4B7]">
+            На сайте клиента доступны версии для скачивания и инструкции по установке.
+          </p>
+        </div>
+        <a
+          href="https://ostkost.github.io/avari-gate/"
+          className="inline-flex shrink-0 items-center gap-2 self-start rounded-xl border border-[#D9B96E]/40 px-4 py-2 text-sm font-medium text-[#D9B96E] hover:bg-[#D9B96E]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D9B96E] sm:self-auto"
+        >
+          Скачать Avari Gate
+          <ExternalLink aria-hidden="true" className="h-4 w-4" />
+        </a>
+      </section>
 
       {/* News Feed */}
       {loading ? (

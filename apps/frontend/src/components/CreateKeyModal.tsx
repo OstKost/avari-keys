@@ -60,7 +60,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
     if (!node.has_hysteria && protocol === 'hysteria2') {
       setProtocol('awg');
     }
-    if (!node.has_mieru && protocol === 'mieru') {
+    if ((!node.has_mieru && protocol === 'mieru') || (!node.has_vless && protocol === 'vless')) {
       setProtocol('awg');
     }
   };
@@ -92,7 +92,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
     try {
       setLoading(true);
       setError(null);
-      await onCreate(selectedNodeId, cleanName, psk, protocol);
+      await onCreate(selectedNodeId, cleanName, protocol === "vless" ? false : psk, protocol);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Ошибка создания ключа');
@@ -433,11 +433,45 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                       : 'На данном сервере протокол не включен.'}
                   </p>
                 </button>
+                <button
+                  type="button"
+                  disabled={!selectedNode?.has_vless}
+                  onClick={() => {
+                    if (selectedNode?.has_vless) {
+                      setProtocol('vless');
+                    }
+                  }}
+                  className={`p-3 rounded-2xl border text-left transition-all ${
+                    !selectedNode?.has_vless
+                      ? 'opacity-40 bg-[#091820] border-[#1C3945]/50 cursor-not-allowed'
+                      : protocol === 'vless'
+                      ? 'border-emerald-500 bg-[#102833] shadow-md shadow-emerald-500/10 cursor-pointer'
+                      : 'border-[#1C3945] bg-[#0D222C] hover:border-[#1C3945]/80 hover:bg-[#0D222C]/80 cursor-pointer'
+                  }`}
+                  title={!selectedNode?.has_vless ? 'Сервер не поддерживает протокол VLESS+Reality' : undefined}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center space-x-2">
+                      <Eye className={`w-4 h-4 ${protocol === 'vless' ? 'text-emerald-400' : 'text-[#718187]'}`} />
+                      <span className="font-serif font-bold text-sm text-[#F2F0E8]">VLESS+Reality</span>
+                    </div>
+                    {!selectedNode?.has_vless && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#102833] text-[#718187]">
+                        Недоступно
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#A8B4B7] leading-tight">
+                    {selectedNode?.has_vless
+                      ? 'Скрытный TCP-протокол обхода блокировок.'
+                      : 'На данном сервере протокол не включен.'}
+                  </p>
+                </button>
               </div>
             </div>
 
             {/* PSK / Shadowrocket Option */}
-            <div
+            {protocol !== "vless" && <div
               onClick={() => setPsk(!psk)}
               className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
                 psk
@@ -488,7 +522,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                   Добавляет ключ <code className="text-[#D9B96E] font-mono text-xs px-1.5 py-0.5 bg-[#06141B] rounded">PresharedKey</code> (<code className="text-[#D9B96E] font-mono text-xs px-1.5 py-0.5 bg-[#06141B] rounded">--psk</code>). Обязательно для подключения клиентов Shadowrocket на iPhone, iPad и Mac.
                 </p>
               )}
-            </div>
+            </div>}
               </div>
             </details>
 
@@ -499,7 +533,7 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
             >
               {loading ? (
                 <span>
-                  {protocol === 'mieru'
+                  {protocol === 'vless' ? 'Создание профиля VLESS+Reality...' : protocol === 'mieru'
                     ? 'Создание профиля Mieru...'
                     : protocol === 'hysteria2'
                     ? 'Создание профиля Hysteria 2...'

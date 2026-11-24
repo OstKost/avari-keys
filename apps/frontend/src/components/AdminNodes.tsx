@@ -121,6 +121,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const [isBackup, setIsBackup] = useState(false);
   const [hasHysteria, setHasHysteria] = useState(false);
   const [hasMieru, setHasMieru] = useState(false);
+  const [hasVless, setHasVless] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Edit node modal state
@@ -135,6 +136,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const [editIsBackup, setEditIsBackup] = useState(false);
   const [editHasHysteria, setEditHasHysteria] = useState(false);
   const [editHasMieru, setEditHasMieru] = useState(false);
+  const [editHasVless, setEditHasVless] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
 
   // Action modals state
@@ -293,7 +295,8 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
         nodeProvider,
         nodeBackup,
         nodeHysteria,
-        nodeMieru
+        nodeMieru,
+        type === "direct" && hasVless
       );
       setName('');
       setCountryCode('NLD');
@@ -304,6 +307,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
       setIsBackup(false);
       setHasHysteria(false);
       setHasMieru(false);
+      setHasVless(false);
       setShowAddForm(false);
       toast.success(`Сервер «${nodeName}» успешно подключен`);
       if (res && res.id) {
@@ -329,6 +333,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
     setEditIsBackup(Boolean(node.is_backup));
     setEditHasHysteria(Boolean(node.has_hysteria));
     setEditHasMieru(Boolean(node.has_mieru));
+    setEditHasVless(Boolean(node.has_vless));
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
@@ -361,6 +366,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
               is_backup: updatedBackup,
               has_hysteria: updatedHysteria,
               has_mieru: updatedMieru,
+              has_vless: editType === "direct" && editHasVless,
             }
           : n
       )
@@ -378,6 +384,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
         isBackup: updatedBackup,
         hasHysteria: updatedHysteria,
         hasMieru: updatedMieru,
+        hasVless: editType === "direct" && editHasVless,
         countryCode: updatedCountry,
         providerUrl: updatedProvider,
       });
@@ -1067,6 +1074,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                       </span>
                     )}
 
+                    {node.has_vless && <span>VLESS+Reality</span>}
                     {node.has_mieru && (
                       <span
                         className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
@@ -1351,7 +1359,8 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                             <span>Hysteria 2</span>
                           </span>
                         )}
-                        {node.has_mieru && (
+                        {node.has_vless && <span>VLESS+Reality</span>}
+                    {node.has_mieru && (
                           <span className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-xs font-mono px-2 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                             <Eye className="w-3 h-3 text-emerald-300" />
                             <span>Mieru</span>
@@ -1763,6 +1772,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                   </div>
                 </div>
 
+                {type === "direct" && <label className="flex items-center gap-2"><input type="checkbox" checked={hasVless} onChange={event => setHasVless(event.target.checked)} />VLESS+Reality</label>}
                 <div
                   onClick={() => setHasMieru(!hasMieru)}
                   className={`p-3 rounded-xl border cursor-pointer transition ${
@@ -1984,6 +1994,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                   </div>
                 </div>
 
+                {editType === "direct" && <label className="flex items-center gap-2"><input type="checkbox" checked={editHasVless} onChange={event => setEditHasVless(event.target.checked)} />VLESS+Reality</label>}
                 <div
                   onClick={() => setEditHasMieru(!editHasMieru)}
                   className={`p-3 rounded-xl border cursor-pointer transition ${

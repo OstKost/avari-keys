@@ -19,6 +19,7 @@ export interface NodePublic {
   is_backup?: boolean;
   has_hysteria?: boolean;
   has_mieru?: boolean;
+  has_vless?: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -34,6 +35,7 @@ export interface AdminNode {
   is_backup: boolean;
   has_hysteria?: boolean;
   has_mieru?: boolean;
+  has_vless?: boolean;
   is_active: boolean;
   online: boolean;
   latency_ms?: number;
@@ -59,6 +61,7 @@ export interface NodeDetailResponse extends AdminNode {
     awg_available: boolean;
     hysteria_available?: boolean;
     mieru_available?: boolean;
+    vless_available?: boolean;
     version?: string;
   };
   stats?: {
@@ -73,7 +76,7 @@ export interface NodeDetailResponse extends AdminNode {
   client_keys?: ClientConfigSummary[];
 }
 
-export type ProtocolType = 'awg' | 'hysteria2' | 'mieru';
+export type ProtocolType = 'awg' | 'hysteria2' | 'mieru' | 'vless';
 
 export interface TelegramProxyInfo {
   id: string;

@@ -76,6 +76,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
   const [editIsBackup, setEditIsBackup] = useState(false);
   const [editHasHysteria, setEditHasHysteria] = useState(false);
   const [editHasMieru, setEditHasMieru] = useState(false);
+  const [editHasVless, setEditHasVless] = useState(false);
   const [editAutoFailoverEnabled, setEditAutoFailoverEnabled] = useState(false);
   const [savingFailover, setSavingFailover] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
@@ -286,6 +287,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
     setEditIsBackup(Boolean(node.is_backup));
     setEditHasHysteria(Boolean(node.has_hysteria));
     setEditHasMieru(Boolean(node.has_mieru));
+    setEditHasVless(Boolean(node.has_vless));
     setEditAutoFailoverEnabled(Boolean(node.auto_failover_enabled));
     setShowEditModal(true);
   };
@@ -305,6 +307,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
         isBackup: editIsBackup,
         hasHysteria: editHasHysteria,
         hasMieru: editHasMieru,
+        hasVless: editHasVless,
         countryCode: editCountryCode,
         providerUrl: editProviderUrl,
       });
@@ -467,6 +470,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                 </span>
               )}
 
+              {node.has_vless && <span>VLESS+Reality</span>}
               {node.has_mieru && (
                 <span className="inline-flex items-center space-x-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-xs font-mono px-2.5 py-1 rounded-full font-bold">
                   <Eye className="w-3.5 h-3.5 text-emerald-300" />
@@ -667,6 +671,12 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                   <span className="text-[#A8B4B7]">Mieru:</span>
                   <span className={`font-bold ${node.health?.mieru_available ? 'text-emerald-400' : node.has_mieru ? 'text-amber-400' : 'text-[#718187]'}`}>
                     {node.health?.mieru_available ? '● Активна' : node.has_mieru ? '● Не запущена' : 'Отключен'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center bg-[#06141B] px-2.5 py-1 rounded-lg border border-[#1C3945]/60">
+                  <span className="text-[#A8B4B7]">VLESS+Reality</span>
+                  <span className={`font-bold ${node.health?.vless_available ? 'text-emerald-400' : node.has_vless ? 'text-amber-400' : 'text-[#718187]'}`}>
+                    {node.health?.vless_available ? '● Активна' : node.has_vless ? '● Не запущена' : 'Отключен'}
                   </span>
                 </div>
               </div>
@@ -1521,6 +1531,15 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                   />
                   <span className="text-[#F2F0E8]">Поддерживать протокол Mieru</span>
                 </label>
+                {editType === "direct" && <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editHasVless}
+                    onChange={(e) => setEditHasVless(e.target.checked)}
+                    className="rounded text-[#D9B96E] bg-[#06141B] border-[#1C3945]"
+                  />
+                  <span className="text-[#F2F0E8]">Поддерживать протокол VLESS+Reality</span>
+                </label>}
 
                 {editType === 'cascade' && (
                   <label className="flex items-center space-x-2 cursor-pointer">
