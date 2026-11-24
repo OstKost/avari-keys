@@ -23,6 +23,10 @@
 #   JWT_SECRET      секрет JWT (для master, обязательно)
 #   MASTER_PORT     порт Master API (по умолчанию 8080)
 #   DB_PATH         путь к SQLite Master (по умолчанию /opt/avari-keys/data/avari-master.db)
+#
+# Опциональные (необязательные) расширения:
+#   INSTALL_CADDY=1  установить Caddy и сгенерировать Caddyfile (требует DOMAIN)
+#   DOMAIN           публичный домен ноды (только вместе с INSTALL_CADDY=1)
 # ==============================================================================
 set -euo pipefail
 
@@ -87,3 +91,52 @@ EOF
     exit 1
     ;;
 esac
+
+# ---- Опционально: AmneziaWG (только для slave) ----
+if [[ "$ROLE" == "slave" ]]; then
+  if [[ ! -x /root/awg/manage_amneziawg.sh ]]; then
+    echo ""
+    echo "⚠️  AmneziaWG не найден (/root/awg/manage_amneziawg.sh)."
+    echo "    Установите его вручную (сторонний upstream):"
+    echo "      bash <(curl -sSL https://raw.githubusercontent.com/bivlked/amneziawg-installer/main/amneziawg-install.sh)"
+    echo "    Для каскада дополнительно настройте туннель по их CASCADE.md."
+  fi
+fi
+
+# ---- Опционально: Caddy (веб-сервер, TLS) ----
+if [[ "${INSTALL_CADDY:-0}" == "1" ]]; then
+  : "${DOMAIN:?DOMAIN обязателен при INSTALL_CADDY=1}"
+  if ! command -v caddy >/dev/null 2>&1; then
+    apt-get update -y
+    apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -y
+    apt-get install -y caddy
+  fi
+
+  if [[ "$ROLE" == "master" ]]; then
+    cat > /etc/caddy/Caddyfile <<EOF
+${DOMAIN} {
+    handle /api/* {
+        reverse_proxy localhost:${MASTER_PORT:-8080}
+    }
+    handle {
+        root * /var/www/avari-keys/frontend
+        try_files {path} /index.html
+        file_server
+    }
+    encode gzip zstd
+}
+EOF
+  else
+    cat > /etc/caddy/Caddyfile <<EOF
+${DOMAIN} {
+    reverse_proxy localhost:${SLAVE_PORT:-8081}
+    encode gzip zstd
+}
+EOF
+  fi
+  systemctl enable --now caddy
+  echo "✅ Caddy настроен для ${DOMAIN}."
+fi
