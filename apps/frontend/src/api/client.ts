@@ -23,6 +23,10 @@ import {
   TelegramProxyInfo,
   ProtocolType,
   TelegramMiniAppAuthResponse,
+  TrafficPolicyMode,
+  TrafficPolicyView,
+  TrafficPolicyFanoutResponse,
+  TorrentBlocklistEntry,
 } from '../types';
 
 import { mockApi } from './mockClient';
@@ -671,6 +675,52 @@ const realApi = {
 
   async deleteNews(id: number): Promise<{ success: boolean; message: string }> {
     const res = await fetch(`${API_BASE}/admin/news/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  // Traffic Policy
+  async getTrafficPolicy(): Promise<TrafficPolicyView> {
+    const res = await fetch(`${API_BASE}/admin/traffic-policy`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await handleResponse<TrafficPolicyView>(res);
+    return {
+      ...data,
+      blocklist: Array.isArray(data?.blocklist) ? data.blocklist : [],
+    };
+  },
+
+  async updateTrafficPolicy(mode: TrafficPolicyMode): Promise<TrafficPolicyFanoutResponse> {
+    const res = await fetch(`${API_BASE}/admin/traffic-policy`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ mode }),
+    });
+    return handleResponse<TrafficPolicyFanoutResponse>(res);
+  },
+
+  async listTorrentBlocklist(): Promise<TorrentBlocklistEntry[]> {
+    const res = await fetch(`${API_BASE}/admin/torrent-blocklist`, {
+      headers: getAuthHeaders(),
+    });
+    const data = await handleResponse<TorrentBlocklistEntry[]>(res);
+    return Array.isArray(data) ? data : [];
+  },
+
+  async addTorrentBlocklist(domain: string): Promise<TorrentBlocklistEntry> {
+    const res = await fetch(`${API_BASE}/admin/torrent-blocklist`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ domain }),
+    });
+    return handleResponse<TorrentBlocklistEntry>(res);
+  },
+
+  async deleteTorrentBlocklist(id: number): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE}/admin/torrent-blocklist/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
