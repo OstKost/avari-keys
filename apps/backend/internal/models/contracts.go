@@ -180,3 +180,17 @@ type TorrentBlocklistRequest struct {
 type TorrentBlocklistApplyRequest struct {
 	Domains []string `json:"domains"`
 }
+
+// TrafficPolicyView is the admin view of the current policy + blocklist.
+type TrafficPolicyView struct {
+	Mode      TrafficPolicy           `json:"mode"`
+	Blocklist []TorrentBlocklistEntry `json:"blocklist"`
+}
+
+// TrafficPolicyFanoutResponse summarizes the result of fanning a policy out to nodes.
+type TrafficPolicyFanoutResponse struct {
+	Mode         TrafficPolicy `json:"mode"`
+	AppliedNodes int           `json:"applied_nodes"`
+	FailedNodes  int           `json:"failed_nodes"`
+	Errors       []string      `json:"errors,omitempty"`
+}

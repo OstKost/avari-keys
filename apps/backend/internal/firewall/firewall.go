@@ -56,6 +56,13 @@ func NewManager(exec CommandExecutor) *Manager {
 	}
 }
 
+// NewManagerWithResolver creates a Manager with a custom DNS resolver (used in tests).
+func NewManagerWithResolver(exec CommandExecutor, resolve func(ctx context.Context, network, host string) ([]net.IP, error)) *Manager {
+	m := NewManager(exec)
+	m.resolve = resolve
+	return m
+}
+
 // Apply applies (or clears) the filter rules for the given mode.
 func (m *Manager) Apply(ctx context.Context, mode models.TrafficPolicy) (models.TrafficPolicyResponse, error) {
 	if !mode.Valid() {
