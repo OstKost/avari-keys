@@ -4,7 +4,7 @@
 
 | 📥 Backlog | 📝 To Do | ⚙️ In Progress | 🔍 In Review / Testing | ✅ Done |
 |---|---|---|---|---|
-| | [TASK-077](./tasks/TASK-077-security-hardening.md), [TASK-078](./tasks/TASK-078-master-backend-decomposition.md), [TASK-079](./tasks/TASK-079-frontend-code-splitting.md), [TASK-080](./tasks/TASK-080-cascade-egress-stall-watchdog.md), [TASK-081](./tasks/TASK-081-structured-slog-and-audit-retention.md) | | [TASK-076](./tasks/TASK-076-mini-app-hosting.md) | [TASK-082](./tasks/TASK-082-monthly-traffic-accounting.md) |
+| | [TASK-078](./tasks/TASK-078-master-backend-decomposition.md), [TASK-079](./tasks/TASK-079-frontend-code-splitting.md), [TASK-080](./tasks/TASK-080-cascade-egress-stall-watchdog.md), [TASK-081](./tasks/TASK-081-structured-slog-and-audit-retention.md) | | [TASK-076](./tasks/TASK-076-mini-app-hosting.md) | [TASK-077](./tasks/TASK-077-security-hardening.md), [TASK-082](./tasks/TASK-082-monthly-traffic-accounting.md) |
 | | | | | [TASK-075](./tasks/TASK-075-vless-reality.md) |
 | | | | | [TASK-074](./tasks/TASK-074-cascade-egress-robust-multi-ip-probes-and-ui.md), [TASK-073](./tasks/TASK-073-mieru-protocol-integration-and-key-transliteration.md), [TASK-072](./tasks/TASK-072-ui-ux-polish.md), [TASK-071](./tasks/TASK-071-admin-mission-control-and-ux-overhaul.md), [TASK-070](./tasks/TASK-070-mobile-first-key-setup.md), [TASK-069](./tasks/TASK-069-tcp-udp-monitoring-split.md) |
 | | | | | [TASK-068](./tasks/TASK-068-cascade-egress-hardening-fast-retry-safety-gate-and-ui.md) |
@@ -44,6 +44,7 @@
 
 ## 📌 Список задач с кратким статусом
 
+- **[TASK-077](./tasks/TASK-077-security-hardening.md)**: ✅ Комплексное усиление безопасности: In-memory Rate Limiting (5 req/min login/register), CSP и защитные HTTP заголовки, MaxBytesReader (1MB), ConstantTimeCompare для Slave API Key, изоляция Hysteria loopback auth.
 - **[TASK-082](./tasks/TASK-082-monthly-traffic-accounting.md)**: ✅ Учет трафика по ключам и суммарного потребления пользователя за календарный месяц (контроль стабильности сети и Fair Use).
 - **[TASK-075](./tasks/TASK-075-vless-reality.md)**: ✅ VLESS+Reality для прямых нод: независимые ключи, QR и JSON.
 - **[TASK-074](./tasks/TASK-074-cascade-egress-robust-multi-ip-probes-and-ui.md)**: ✅ Надежный пул IP-проверок (4 провайдера: ipify, icanhazip, ipinfo, myip), DoH-резолвинг в обход DNS РФ, детектирование зависаний WireGuard и UI ручной проверки Egress.
