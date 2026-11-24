@@ -340,6 +340,16 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
     ? `${(totalTrafficFormatted / 1073741824).toFixed(2)} GB`
     : `${(totalTrafficFormatted / 1048576).toFixed(1)} MB`;
 
+  const userMonthTrafficFormatted =
+    currentUser?.month_traffic?.formatted ||
+    currentUser?.month_traffic_formatted ||
+    (() => {
+      const sum = keys.reduce((acc, k) => acc + (k.month_traffic_bytes || 0), 0);
+      return sum > 1073741824
+        ? `${(sum / 1073741824).toFixed(2)} GB`
+        : `${(sum / 1048576).toFixed(1)} MB`;
+    })();
+
   // -------------------------------------------------------------
   // RENDER: Loading State
   // -------------------------------------------------------------
@@ -543,16 +553,22 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                   Штатно
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/60">
-                  <span className="text-slate-500 block text-[10px]">Трафик суммарно</span>
-                  <span className="text-slate-200 font-semibold font-mono text-xs">
+                  <span className="text-slate-500 block text-[10px] truncate">За месяц</span>
+                  <span className="text-cyan-400 font-semibold font-mono text-xs truncate block">
+                    {userMonthTrafficFormatted}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/60">
+                  <span className="text-slate-500 block text-[10px] truncate">Всего</span>
+                  <span className="text-slate-200 font-semibold font-mono text-xs truncate block">
                     {formattedTraffic}
                   </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/60">
-                  <span className="text-slate-500 block text-[10px]">Кооперативный взнос</span>
-                  <span className="text-slate-200 font-semibold text-xs">
+                  <span className="text-slate-500 block text-[10px] truncate">Взнос</span>
+                  <span className="text-slate-200 font-semibold text-xs truncate block">
                     {billingStatus?.is_due ? 'Ожидается' : 'Оплачен'}
                   </span>
                 </div>

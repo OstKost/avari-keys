@@ -369,14 +369,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	s.writeJSON(w, http.StatusOK, models.LoginResponse{
 		Token: token,
-		User: models.UserPublic{
-			ID:        user.ID,
-			Username:  user.Username,
-			Role:      user.Role,
-			IsActive:  user.IsActive,
-			IsPro:     user.IsPro,
-			CreatedAt: user.CreatedAt,
-		},
+		User:  s.toUserPublic(r.Context(), user),
 	})
 }
 
@@ -480,18 +473,28 @@ func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Reques
 	s.logActivity(r, &user.ID, user.Username, models.CategoryAuth, "tg_miniapp_login", "Успешный вход через Telegram Mini App")
 
 	s.writeJSON(w, http.StatusOK, models.TelegramMiniAppAuthResponse{
-		Token: token,
-		User: models.UserPublic{
-			ID:        user.ID,
-			Username:  user.Username,
-			Role:      user.Role,
-			IsActive:  user.IsActive,
-			IsPro:     user.IsPro,
-			CreatedAt: user.CreatedAt,
-		},
+		Token:    token,
+		User:     s.toUserPublic(r.Context(), user),
 		IsAdmin:  user.Role == models.RoleAdmin,
 		IsLinked: true,
 	})
+}
+
+func (s *Server) toUserPublic(ctx context.Context, user *models.User) models.UserPublic {
+	uPublic := models.UserPublic{
+		ID:        user.ID,
+		Username:  user.Username,
+		Role:      user.Role,
+		IsActive:  user.IsActive,
+		IsPro:     user.IsPro,
+		CreatedAt: user.CreatedAt,
+	}
+	if mt, err := s.storage.GetUserMonthTraffic(ctx, user.ID, ""); err == nil && mt != nil {
+		uPublic.MonthTraffic = mt
+		uPublic.MonthTrafficBytes = mt.TotalBytes
+		uPublic.MonthTrafficFormatted = mt.Formatted
+	}
+	return uPublic
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -502,14 +505,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, models.UserPublic{
-		ID:        user.ID,
-		Username:  user.Username,
-		Role:      user.Role,
-		IsActive:  user.IsActive,
-		IsPro:     user.IsPro,
-		CreatedAt: user.CreatedAt,
-	})
+	s.writeJSON(w, http.StatusOK, s.toUserPublic(r.Context(), user))
 }
 
 func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
@@ -532,14 +528,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	s.writeJSON(w, http.StatusOK, models.LoginResponse{
 		Token: token,
-		User: models.UserPublic{
-			ID:        updatedUser.ID,
-			Username:  updatedUser.Username,
-			Role:      updatedUser.Role,
-			IsActive:  updatedUser.IsActive,
-			IsPro:     updatedUser.IsPro,
-			CreatedAt: updatedUser.CreatedAt,
-		},
+		User:  s.toUserPublic(r.Context(), updatedUser),
 	})
 }
 

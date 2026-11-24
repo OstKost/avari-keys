@@ -12,12 +12,13 @@ import {
   HardDrive,
   Calendar,
 } from 'lucide-react';
-import { ClientConfigSummary } from '../types';
+import { ClientConfigSummary, User } from '../types';
 import { Tooltip } from './Tooltip';
 import { formatNodeRouting } from '../utils/country';
 
 interface ClientKeysViewProps {
   keys: ClientConfigSummary[];
+  user?: User | null;
   onViewKey: (id: number) => void;
   onDeleteKey: (key: ClientConfigSummary) => void;
 }
@@ -26,6 +27,7 @@ const STORAGE_VIEW_KEY = 'avari_keys_view_mode';
 
 export const ClientKeysView: React.FC<ClientKeysViewProps> = ({
   keys,
+  user,
   onViewKey,
   onDeleteKey,
 }) => {
@@ -77,6 +79,93 @@ export const ClientKeysView: React.FC<ClientKeysViewProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Monthly Traffic Summary Widget */}
+      {(() => {
+        const monthTraffic = user?.month_traffic;
+        const totalMonthBytes =
+          monthTraffic?.total_bytes ??
+          (user?.month_traffic_bytes ??
+            keys.reduce((acc, k) => acc + (k.month_traffic_bytes || 0), 0));
+
+        let formattedTotal = monthTraffic?.formatted || user?.month_traffic_formatted;
+        if (!formattedTotal) {
+          if (totalMonthBytes > 1073741824) {
+            formattedTotal = `${(totalMonthBytes / 1073741824).toFixed(1)} GB`;
+          } else if (totalMonthBytes > 1048576) {
+            formattedTotal = `${(totalMonthBytes / 1048576).toFixed(1)} MB`;
+          } else {
+            formattedTotal = `${totalMonthBytes} B`;
+          }
+        }
+
+        const rxFormatted = monthTraffic?.rx_formatted;
+        const txFormatted = monthTraffic?.tx_formatted;
+        const isHighTraffic = totalMonthBytes > 100 * 1024 * 1024 * 1024;
+
+        const currentMonthName = new Intl.DateTimeFormat('ru-RU', {
+          month: 'long',
+          year: 'numeric',
+        }).format(new Date());
+        const capitalizedMonth =
+          currentMonthName.charAt(0).toUpperCase() + currentMonthName.slice(1);
+
+        return (
+          <div className="bg-gradient-to-r from-[#0A1D26] via-[#102833] to-[#0A1D26] border border-[#1C3945] rounded-2xl p-4 sm:p-5 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#D9B96E]/5 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+              <div className="flex items-start space-x-3.5">
+                <div className="p-2.5 rounded-xl bg-[#06141B] border border-[#D9B96E]/30 text-[#D9B96E] shrink-0 mt-0.5">
+                  <Activity className="w-5 h-5 text-[#D9B96E]" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-mono text-[#A8B4B7] uppercase tracking-wider">
+                      Трафик за календарный месяц
+                    </span>
+                    <span className="text-[11px] font-mono text-[#D9B96E] bg-[#D9B96E]/10 px-2.5 py-0.5 rounded-full border border-[#D9B96E]/20 font-semibold">
+                      {capitalizedMonth}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline space-x-2.5 mt-1">
+                    <span className="font-serif text-2xl sm:text-3xl font-bold text-[#F2F0E8] tracking-tight">
+                      {formattedTotal}
+                    </span>
+                    {rxFormatted && txFormatted && (
+                      <span className="text-xs font-mono text-[#718187]">
+                        (↓ {rxFormatted} / ↑ {txFormatted})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center sm:self-center bg-[#06141B]/80 border border-[#1C3945] px-3.5 py-2 rounded-xl text-xs font-mono">
+                <span
+                  className={`w-2 h-2 rounded-full mr-2 shrink-0 ${
+                    isHighTraffic
+                      ? 'bg-amber-400 animate-ping'
+                      : 'bg-emerald-400 animate-pulse'
+                  }`}
+                />
+                <span
+                  className={
+                    isHighTraffic
+                      ? 'text-amber-300 font-semibold'
+                      : 'text-emerald-400 font-semibold'
+                  }
+                >
+                  {isHighTraffic ? 'Повышенный расход' : 'Стабильное подключение'}
+                </span>
+                <span className="text-[#718187] ml-2 hidden md:inline">
+                  • {keys.length} {keys.length === 1 ? 'ключ' : 'ключей'}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* View Switcher Header Bar */}
       <div className="flex items-center justify-between pb-2 border-b border-[#1C3945]/60">
         <div className="flex items-center space-x-2 text-xs font-mono text-[#A8B4B7]">

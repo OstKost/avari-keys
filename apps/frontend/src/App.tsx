@@ -818,6 +818,7 @@ export default function App() {
               ) : (
                 <ClientKeysView
                   keys={keys || []}
+                  user={currentUser}
                   onViewKey={handleViewKey}
                   onDeleteKey={setKeyToDelete}
                 />

@@ -1983,3 +1983,131 @@ func TestTelegramMiniAppAuthFlow(t *testing.T) {
 	}
 }
 
+func TestMeEndpointMonthTrafficAndAdminUserTraffic(t *testing.T) {
+	srv, _, store, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := srv.Handler()
+	ctx := context.Background()
+
+	// 1. Admin logs in
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin login, got %d", rec.Code)
+	}
+	var adminLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminLoginResp)
+	adminToken := adminLoginResp.Token
+
+	// 2. Register & activate regular user "traffic_tester"
+	regBody, _ := json.Marshal(models.RegisterRequest{
+		Username: "traffic_tester",
+		Password: "Password123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(regBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for register, got %d", rec.Code)
+	}
+
+	user, err := store.GetUserByUsername(ctx, "traffic_tester")
+	if err != nil {
+		t.Fatalf("failed to find traffic_tester: %v", err)
+	}
+	_ = store.SetUserActive(ctx, user.ID, true)
+
+	// User logs in
+	userLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "traffic_tester",
+		Password: "Password123!",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(userLoginBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for user login, got %d", rec.Code)
+	}
+	var userLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&userLoginResp)
+	userToken := userLoginResp.Token
+
+	// 3. Add a direct node and key
+	node, err := store.CreateNode(ctx, "Direct DE", "direct", "DEU", "https://de.test", "https://de.test:8081", "key123", false, false, false, false, false)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+	key, err := store.CreateClientConfig(ctx, user.ID, node.ID, "phone-traffic", "iPhone", "pubkey123", "10.0.0.5", "awg")
+	if err != nil {
+		t.Fatalf("failed to create key: %v", err)
+	}
+
+	// Record peer telemetry
+	if err := store.RecordPeerTelemetry(ctx, key.ID, 18000000, 7000000, 1700000000, true); err != nil {
+		t.Fatalf("failed to record peer telemetry: %v", err)
+	}
+
+	// 4. Test GET /api/v1/auth/me returns user month traffic
+	req = httptest.NewRequest("GET", "/api/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/v1/auth/me, got %d", rec.Code)
+	}
+	var me models.UserPublic
+	if err := json.NewDecoder(rec.Body).Decode(&me); err != nil {
+		t.Fatalf("failed to decode /me response: %v", err)
+	}
+
+	if me.MonthTraffic == nil {
+		t.Fatalf("expected MonthTraffic to be populated in /me response")
+	}
+	if me.MonthTraffic.TotalBytes != 25000000 {
+		t.Fatalf("expected MonthTraffic.TotalBytes to be 25000000, got %d", me.MonthTraffic.TotalBytes)
+	}
+	if me.MonthTraffic.RxBytes != 18000000 || me.MonthTraffic.TxBytes != 7000000 {
+		t.Fatalf("expected Rx 18000000 Tx 7000000, got Rx %d Tx %d", me.MonthTraffic.RxBytes, me.MonthTraffic.TxBytes)
+	}
+	if me.MonthTrafficBytes != 25000000 {
+		t.Fatalf("expected MonthTrafficBytes 25000000, got %d", me.MonthTrafficBytes)
+	}
+
+	// 5. Test GET /api/v1/admin/users returns month traffic for user
+	req = httptest.NewRequest("GET", "/api/v1/admin/users", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/v1/admin/users, got %d", rec.Code)
+	}
+	var users []models.UserPublic
+	if err := json.NewDecoder(rec.Body).Decode(&users); err != nil {
+		t.Fatalf("failed to decode users: %v", err)
+	}
+
+	foundUser := false
+	for _, u := range users {
+		if u.ID == user.ID {
+			foundUser = true
+			if u.MonthTrafficBytes != 25000000 {
+				t.Fatalf("expected user month traffic in admin list to be 25000000, got %d", u.MonthTrafficBytes)
+			}
+			if u.MonthTrafficFormatted == "" {
+				t.Fatalf("expected formatted month traffic to not be empty")
+			}
+		}
+	}
+	if !foundUser {
+		t.Fatalf("expected to find traffic_tester in admin users list")
+	}
+}
+

@@ -1,5 +1,15 @@
 export type UserRole = 'admin' | 'user';
 
+export interface UserMonthTraffic {
+  month: string;
+  rx_bytes: number;
+  tx_bytes: number;
+  total_bytes: number;
+  formatted: string;
+  rx_formatted: string;
+  tx_formatted: string;
+}
+
 export interface User {
   id: number;
   username: string;
@@ -7,6 +17,9 @@ export interface User {
   is_active: boolean;
   is_pro: boolean;
   has_pending_password_reset?: boolean;
+  month_traffic?: UserMonthTraffic;
+  month_traffic_bytes?: number;
+  month_traffic_formatted?: string;
   created_at: string;
 }
 
