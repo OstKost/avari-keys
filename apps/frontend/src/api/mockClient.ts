@@ -247,6 +247,7 @@ let mockNodes: AdminNode[] = [
     is_backup: false,
     has_hysteria: true,
     has_mieru: true,
+    has_vless: true,
     is_active: true,
     online: true,
     latency_ms: 38,
@@ -741,6 +742,7 @@ export const mockApi = {
       is_backup: n.is_backup,
       has_hysteria: n.has_hysteria,
       has_mieru: n.has_mieru,
+      has_vless: n.has_vless,
       is_active: n.is_active,
       created_at: n.created_at,
     }));
@@ -790,7 +792,7 @@ export const mockApi = {
     const node = mockNodes.find((n) => n.id === nodeId);
     const nodeName = node ? node.name : 'Unknown Node';
     const nodeType = node ? node.type : 'direct';
-    const id = mockKeys.length + 1;
+    const id = Math.max(0, ...mockKeys.map(key => key.id)) + 1;
     const translitDevice = transliterate(deviceName);
     const cleanDevice = sanitizeDeviceName(deviceName);
     const clientName = `u${mockCurrentUser.id}_${cleanDevice}`;
@@ -827,6 +829,12 @@ tls:
 bandwidth:
   up: 50 mbps
   down: 200 mbps`;
+    } else if (protocol === 'vless') {
+      if (!node?.has_vless || node.type !== 'direct' || !node.online || !node.is_active || !mockCurrentUser.is_active || (node.is_backup && !mockCurrentUser.is_pro && mockCurrentUser.role !== "admin")) throw new Error('VLESS недоступен');
+      const uuid = crypto.randomUUID();
+      const profile = { protocol_type: 'vless', server: 'direct.example.net', server_port: 443, uuid, flow: 'xtls-rprx-vision', fingerprint: 'chrome', sni: 'example.net', reality_short_id: '12345678', reality_public_key: 'jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0' };
+      config = JSON.stringify(profile, null, 2);
+      vpnUri = 'vless://' + uuid + '@direct.example.net:443?security=reality&type=tcp&encryption=none&flow=xtls-rprx-vision&fp=chrome&sni=example.net&sid=12345678&pbk=' + profile.reality_public_key + '#' + clientName;
     } else if (protocol === 'mieru') {
       const port = 28443;
       const server = '157.228.142.20';
@@ -915,6 +923,7 @@ bandwidth:
   },
 
   async deleteUser(id: number): Promise<{ success: boolean }> {
+    if (mockKeys.some(key => key.protocol === "vless" && key.user_id === id)) throw new Error("Сначала отзовите VLESS-ключи");
     mockUsers = mockUsers.filter((u) => u.id !== id);
     return { success: true };
   },
@@ -1044,7 +1053,8 @@ bandwidth:
         awg_available: node.online,
         hysteria_available: Boolean(node.has_hysteria),
         mieru_available: Boolean(node.has_mieru),
-        version: '1.6.0',
+        vless_available: Boolean(node.online && node.has_vless),
+        version: '1.8.0',
       },
       stats: {
         active_peers: matchedKeys.length,
@@ -1086,7 +1096,8 @@ bandwidth:
     providerUrl?: string,
     isBackup?: boolean,
     hasHysteria?: boolean,
-    hasMieru?: boolean
+    hasMieru?: boolean,
+    hasVless?: boolean
   ): Promise<AdminNode> {
     const newNode: AdminNode = {
       id: mockNodes.length + 1,
@@ -1099,6 +1110,7 @@ bandwidth:
       is_backup: Boolean(isBackup),
       has_hysteria: Boolean(hasHysteria),
       has_mieru: Boolean(hasMieru),
+      has_vless: type === "direct" && Boolean(hasVless),
       is_active: true,
       online: true,
       latency_ms: Math.floor(20 + Math.random() * 20),
@@ -1119,6 +1131,7 @@ bandwidth:
       isBackup?: boolean;
       hasHysteria?: boolean;
       hasMieru?: boolean;
+      hasVless?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
@@ -1139,6 +1152,7 @@ bandwidth:
     if (data.hasHysteria !== undefined) {
       node.has_hysteria = Boolean(data.hasHysteria);
     }
+    node.has_vless = node.type === "direct" && (data.hasVless ?? node.has_vless ?? false);
     if (data.hasMieru !== undefined) {
       node.has_mieru = Boolean(data.hasMieru);
     }
@@ -1146,6 +1160,7 @@ bandwidth:
   },
 
   async deleteAdminNode(id: number): Promise<{ success: boolean }> {
+    if (mockKeys.some(key => key.protocol === "vless" && key.node_id === id)) throw new Error("Сначала отзовите VLESS-ключи");
     mockNodes = mockNodes.filter((n) => n.id !== id);
     return { success: true };
   },

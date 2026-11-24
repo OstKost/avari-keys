@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 	"log"
 	"net/http"
 	"os"
@@ -32,6 +34,7 @@ type Server struct {
 	cfg      Config
 	runner   runner.AWGRunner
 	hysteria *hysteria.Store
+	vless    *vless.Store
 	mieru    *mieru.Store
 	mux      *http.ServeMux
 }
@@ -125,6 +128,9 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 		hysteria: hyStore,
 		mieru:    mStore,
 		mux:      http.NewServeMux(),
+	}
+	if os.Getenv("VLESS_ENABLED") == "1" && os.Getenv("VLESS_SERVER") != "" {
+		s.vless = vless.New(os.Getenv("VLESS_SERVER"))
 	}
 	s.routes()
 	return s
@@ -227,7 +233,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		AWGAvailable:      healthy,
 		HysteriaAvailable: hyAvail,
 		MieruAvailable:    mAvail,
-		Version:           "v1.6.0",
+		VlessAvailable:    s.vless.Available(r.Context()),
+		Version:           "v1.8.0",
 	})
 }
 
@@ -271,6 +278,10 @@ func (s *Server) handleCreateClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Protocol == "vless" {
+		s.handleVless(w, r, req.Name)
+		return
+	}
 	if req.Protocol == "hysteria2" {
 		if s.hysteria == nil {
 			s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Hysteria service not available on this node"})
@@ -326,6 +337,14 @@ func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
 			clients = append(clients, mList...)
 		}
 	}
+	if s.vless != nil {
+		items, err := s.vless.List()
+		if err != nil {
+			s.writeJSON(w, 503, map[string]string{"error": "VLESS unavailable"})
+			return
+		}
+		clients = append(clients, items...)
+	}
 	s.writeJSON(w, http.StatusOK, clients)
 }
 
@@ -338,6 +357,10 @@ func (s *Server) handleGetClient(w http.ResponseWriter, r *http.Request) {
 
 	proto := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
 
+	if proto == "vless" {
+		s.handleVless(w, r, name)
+		return
+	}
 	// If explicitly hysteria2, or if hysteria store contains this user, prioritize Hysteria
 	if proto == "hysteria2" && s.hysteria != nil {
 		if hRes, hErr := s.hysteria.GetUser(r.Context(), name); hErr == nil {
@@ -393,6 +416,10 @@ func (s *Server) handleDeleteClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Query().Get("protocol") == "vless" {
+		s.handleVless(w, r, name)
+		return
+	}
 	if s.hysteria != nil {
 		_ = s.hysteria.RemoveUser(r.Context(), name)
 	}
@@ -506,4 +533,31 @@ func (s *Server) writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (s *Server) handleVless(w http.ResponseWriter, r *http.Request, name string) {
+	if s.vless == nil {
+		s.writeJSON(w, 503, map[string]string{"error": "VLESS disabled"})
+		return
+	}
+	res, err := s.vless.Manage(r.Context(), r.Method, name)
+	if err != nil {
+		status := 503
+		if errors.Is(err, os.ErrNotExist) {
+			status = 404
+		}
+		s.writeJSON(w, status, map[string]string{"error": "VLESS operation failed"})
+		return
+	}
+	w.Header().Set("X-Avari-Protocol", "vless")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == "DELETE" {
+		s.writeJSON(w, 200, models.GenericSuccessResponse{Success: true})
+		return
+	}
+	status := 200
+	if r.Method == "POST" {
+		status = 201
+	}
+	s.writeJSON(w, status, res)
 }

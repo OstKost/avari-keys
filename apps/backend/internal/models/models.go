@@ -45,6 +45,7 @@ type Node struct {
 	IsBackup            bool      `json:"is_backup"`
 	HasHysteria         bool      `json:"has_hysteria"`
 	HasMieru            bool      `json:"has_mieru"`
+	HasVless            bool      `json:"has_vless"`
 	AutoFailoverEnabled bool      `json:"auto_failover_enabled"`
 	FailoverPriority    []string  `json:"failover_priority"`
 	IsActive            bool      `json:"is_active"`
@@ -61,6 +62,7 @@ type NodePublic struct {
 	IsBackup          bool      `json:"is_backup"`
 	HasHysteria       bool      `json:"has_hysteria"`
 	HasMieru          bool      `json:"has_mieru"`
+	HasVless          bool      `json:"has_vless"`
 	IsActive          bool      `json:"is_active"`
 	CreatedAt         time.Time `json:"created_at"`
 }
@@ -176,6 +178,7 @@ type AddNodeRequest struct {
 	IsBackup            bool     `json:"is_backup"`
 	HasHysteria         bool     `json:"has_hysteria"`
 	HasMieru            bool     `json:"has_mieru"`
+	HasVless            bool     `json:"has_vless"`
 	AutoFailoverEnabled bool     `json:"auto_failover_enabled"`
 	FailoverPriority    []string `json:"failover_priority"`
 }
@@ -191,6 +194,7 @@ type UpdateNodeRequest struct {
 	IsBackup            bool     `json:"is_backup"`
 	HasHysteria         bool     `json:"has_hysteria"`
 	HasMieru            bool     `json:"has_mieru"`
+	HasVless            *bool    `json:"has_vless"`
 	AutoFailoverEnabled *bool    `json:"auto_failover_enabled,omitempty"`
 	FailoverPriority    []string `json:"failover_priority,omitempty"`
 }

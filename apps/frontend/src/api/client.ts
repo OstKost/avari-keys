@@ -303,10 +303,11 @@ const realApi = {
     providerUrl?: string,
     isBackup?: boolean,
     hasHysteria?: boolean,
-    hasMieru?: boolean
+    hasMieru?: boolean,
+    hasVless?: boolean
   ): Promise<AdminNode> {
     if (isMockMode()) {
-      return mockApi.addAdminNode(name, type, apiUrl, apiKey, isMobileOptimized, countryCode, providerUrl, isBackup, hasHysteria, hasMieru);
+      return mockApi.addAdminNode(name, type, apiUrl, apiKey, isMobileOptimized, countryCode, providerUrl, isBackup, hasHysteria, hasMieru, hasVless);
     }
     const res = await fetch(`${API_BASE}/admin/nodes`, {
       method: 'POST',
@@ -320,6 +321,7 @@ const realApi = {
         is_backup: isBackup || false,
         has_hysteria: hasHysteria || false,
         has_mieru: hasMieru || false,
+        has_vless: hasVless || false,
         country_code: countryCode || '',
         provider_url: providerUrl || '',
       }),
@@ -338,6 +340,7 @@ const realApi = {
       isBackup?: boolean;
       hasHysteria?: boolean;
       hasMieru?: boolean;
+      hasVless?: boolean;
       countryCode?: string;
       providerUrl?: string;
     }
@@ -357,6 +360,7 @@ const realApi = {
         is_backup: data.isBackup || false,
         has_hysteria: data.hasHysteria || false,
         has_mieru: data.hasMieru || false,
+        has_vless: data.hasVless,
         country_code: data.countryCode || '',
         provider_url: data.providerUrl || '',
       }),

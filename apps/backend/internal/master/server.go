@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 	"log"
 	"net"
 	"net/http"
@@ -263,7 +264,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, models.HealthResponse{
 		Status:  "ok",
 		Service: "avari-master",
-		Version: "v1.6.0",
+		Version: "v1.8.0",
 	})
 }
 
@@ -636,7 +637,24 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	cleanDevice := SanitizeDeviceNameForClient(req.DeviceName)
 	clientName := fmt.Sprintf("u%d_%s", claims.UserID, cleanDevice)
 	proto := strings.ToLower(strings.TrimSpace(req.Protocol))
-	if proto == "hysteria2" {
+	if proto == "vless" {
+		req.PSK = false
+		if !user.IsActive || !node.HasVless || node.Type != "direct" {
+			s.writeJSON(w, 403, map[string]string{"error": "VLESS недоступен"})
+			return
+		}
+		health, err := client.NewSlaveClient(node.APIURL, node.APIKey).CheckHealth(r.Context())
+		if err != nil || !health.VlessAvailable {
+			s.writeJSON(w, 503, map[string]string{"error": "VLESS недоступен на ноде"})
+			return
+		}
+		ref, err := vless.NewUUID()
+		if err != nil {
+			s.writeJSON(w, 500, map[string]string{"error": "key identifier unavailable"})
+			return
+		}
+		clientName = "vless_" + ref
+	} else if proto == "hysteria2" {
 		if !node.HasHysteria {
 			s.writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "Выбранный сервер не поддерживает протокол Hysteria 2",
@@ -662,6 +680,14 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if proto == "vless" {
+		if slaveResp.Protocol != "vless" || !strings.HasPrefix(slaveResp.VPNURI, "vless://") {
+			s.writeJSON(w, 502, map[string]string{"error": "Invalid VLESS response"})
+			return
+		}
+		slaveResp.PublicKey = ""
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	// Extract allocated IP from config
 	allocIP := ""
 	for _, l := range strings.Split(slaveResp.Config, "\n") {
@@ -681,11 +707,19 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	// Save record in DB with PublicKey, AllocatedIP, and Protocol (using transliterated device name)
 	keyRecord, err := s.storage.CreateClientConfig(r.Context(), claims.UserID, node.ID, clientName, translitDevice, slaveResp.PublicKey, allocIP, proto)
 	if err != nil {
+		if proto == "vless" {
+			if revokeErr := slaveCli.DeleteClient(context.WithoutCancel(r.Context()), clientName, "vless"); revokeErr != nil {
+				log.Printf("VLESS cleanup required on node %d for reference %s", node.ID, clientName)
+			}
+		}
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
 	pskDetails := ""
+	if proto == "vless" {
+		pskDetails = " [VLESS+Reality]"
+	}
 	if req.PSK {
 		pskDetails = " [PSK / Shadowrocket]"
 	}
@@ -696,7 +730,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryKeys, "key_create", fmt.Sprintf("Создан VPN-ключ «%s» (%s)%s на сервере «%s»", translitDevice, clientName, pskDetails, node.Name))
 
-	if proto != "hysteria2" && proto != "mieru" {
+	if proto == "awg" {
 		cleanConfig := runner.SanitizeAWGConfig(slaveResp.Config)
 		if cleanConfig != "" {
 			slaveResp.Config = cleanConfig
@@ -756,7 +790,14 @@ func (s *Server) handleGetKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if keyRecord.Protocol != "hysteria2" && keyRecord.Protocol != "mieru" {
+	if keyRecord.Protocol == "vless" {
+		if slaveResp.Protocol != "vless" || !strings.HasPrefix(slaveResp.VPNURI, "vless://") {
+			s.writeJSON(w, 502, map[string]string{"error": "Invalid VLESS response"})
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	if keyRecord.Protocol == "" || keyRecord.Protocol == "awg" {
 		cleanKeyConfig := runner.SanitizeAWGConfig(slaveResp.Config)
 		if cleanKeyConfig != "" {
 			slaveResp.Config = cleanKeyConfig
@@ -806,9 +847,13 @@ func (s *Server) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
 	node, err := s.storage.GetNodeByID(r.Context(), keyRecord.NodeID)
 	if err == nil {
 		slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
-		_ = slaveCli.DeleteClient(r.Context(), keyRecord.ClientName)
+		err = slaveCli.DeleteClient(r.Context(), keyRecord.ClientName, keyRecord.Protocol)
 	}
 
+	if err != nil && keyRecord.Protocol == "vless" {
+		s.writeJSON(w, 502, map[string]string{"error": "VLESS revoke failed"})
+		return
+	}
 	if err := s.storage.DeleteClientConfig(r.Context(), id); err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1029,6 +1074,17 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		targetUsername = targetUser.Username
 	}
 
+	keys, err := s.storage.ListClientConfigsByUser(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, 500, map[string]string{"error": "key lookup failed"})
+		return
+	}
+	for _, key := range keys {
+		if key.Protocol == "vless" {
+			s.writeJSON(w, 409, map[string]string{"error": "Сначала отзовите VLESS-ключи"})
+			return
+		}
+	}
 	if err := s.storage.DeleteUser(r.Context(), id); err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1283,7 +1339,7 @@ func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria, req.HasMieru)
+	node, err := s.storage.CreateNode(r.Context(), req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria, req.HasMieru, req.HasVless)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1347,7 +1403,11 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 		req.Type = "direct"
 	}
 
-	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria, req.HasMieru)
+	capabilities := []bool{req.HasMieru}
+	if req.HasVless != nil {
+		capabilities = append(capabilities, *req.HasVless)
+	}
+	node, err := s.storage.UpdateNode(r.Context(), id, req.Name, req.Type, req.CountryCode, req.ProviderURL, req.APIURL, req.APIKey, req.IsMobileOptimized, req.IsBackup, req.HasHysteria, capabilities...)
 	if err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1452,6 +1512,17 @@ func (s *Server) handleAdminDeleteNode(w http.ResponseWriter, r *http.Request) {
 		nodeName = node.Name
 	}
 
+	keys, err := s.storage.ListClientConfigsByNodeID(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, 500, map[string]string{"error": "key lookup failed"})
+		return
+	}
+	for _, key := range keys {
+		if key.Protocol == "vless" {
+			s.writeJSON(w, 409, map[string]string{"error": "Сначала отзовите VLESS-ключи"})
+			return
+		}
+	}
 	if err := s.storage.DeleteNode(r.Context(), id); err != nil {
 		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

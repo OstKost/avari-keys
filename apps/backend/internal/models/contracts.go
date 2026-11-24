@@ -9,6 +9,7 @@ type HealthResponse struct {
 	AWGAvailable      bool   `json:"awg_available"`
 	HysteriaAvailable bool   `json:"hysteria_available,omitempty"`
 	MieruAvailable    bool   `json:"mieru_available,omitempty"`
+	VlessAvailable    bool   `json:"vless_available,omitempty"`
 	Version           string `json:"version,omitempty"`
 }
 
@@ -93,8 +94,8 @@ type SwitchEgressRequest struct {
 
 // TargetProbeResult represents the check outcome for an individual probed service.
 type TargetProbeResult struct {
-	Name   string `json:"name"`             // "ip", "telegram", "chatgpt", "grok", "meta"
-	Target string `json:"target"`           // "api.ipify.org", "api.telegram.org", etc.
+	Name   string `json:"name"`   // "ip", "telegram", "chatgpt", "grok", "meta"
+	Target string `json:"target"` // "api.ipify.org", "api.telegram.org", etc.
 	OK     bool   `json:"ok"`
 	Status int    `json:"status,omitempty"` // HTTP status code (e.g. 200, 302, 403)
 	Error  string `json:"error,omitempty"`
