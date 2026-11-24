@@ -106,6 +106,20 @@ func main() {
 
 	firewallManager := firewall.NewManager(&egress.OSCommandExecutor{})
 
+	statePath := os.Getenv("FIREWALL_STATE_PATH")
+	if statePath == "" {
+		statePath = "/etc/avari-keys/firewall-state.json"
+	}
+	firewallManager.SetStatePath(statePath)
+	if restored, err := firewallManager.RestoreState(context.Background()); err != nil {
+		slog.Warn("failed to restore torrent firewall state", "error", err)
+	} else if restored {
+		slog.Info("restored torrent firewall state", "path", statePath)
+	}
+
+	// Periodic re-resolve of blocklist domains.
+	go firewallManager.StartResolver(context.Background(), 15*time.Minute)
+
 	cfg := slave.Config{
 		APIKey:   apiKey,
 		Port:     port,

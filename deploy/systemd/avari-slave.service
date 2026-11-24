@@ -11,6 +11,8 @@ Environment="SLAVE_PORT=8081"
 # Environment="SLAVE_API_KEY=your_slave_secret_token_here"
 Environment="AWG_SCRIPT_PATH=/root/awg/manage_amneziawg.sh"
 Environment="AWG_CONFIGS_DIR=/root/awg"
+Environment="FIREWALL_STATE_PATH=/etc/avari-keys/firewall-state.json"
+ExecStartPre=/bin/mkdir -p /etc/avari-keys
 ExecStart=/usr/local/bin/avari-slave
 Restart=always
 RestartSec=5s

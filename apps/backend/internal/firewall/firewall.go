@@ -2,9 +2,11 @@ package firewall
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -44,6 +46,7 @@ type Manager struct {
 	mode        models.TrafficPolicy
 	domains     []string
 	lastApplied time.Time
+	statePath   string
 }
 
 // NewManager creates a Manager backed by the given command executor.
@@ -63,6 +66,13 @@ func NewManagerWithResolver(exec CommandExecutor, resolve func(ctx context.Conte
 	return m
 }
 
+// SetStatePath enables local state persistence so rules survive slave restarts/reboots.
+func (m *Manager) SetStatePath(path string) {
+	m.mu.Lock()
+	m.statePath = path
+	m.mu.Unlock()
+}
+
 // Apply applies (or clears) the filter rules for the given mode.
 func (m *Manager) Apply(ctx context.Context, mode models.TrafficPolicy) (models.TrafficPolicyResponse, error) {
 	if !mode.Valid() {
@@ -78,6 +88,7 @@ func (m *Manager) Apply(ctx context.Context, mode models.TrafficPolicy) (models.
 			return models.TrafficPolicyResponse{}, err
 		}
 		m.mode = models.PolicyOff
+		m.saveState()
 		return models.TrafficPolicyResponse{Mode: mode, Applied: true, Message: "filter cleared"}, nil
 
 	case models.PolicySoft:
@@ -86,6 +97,7 @@ func (m *Manager) Apply(ctx context.Context, mode models.TrafficPolicy) (models.
 			return models.TrafficPolicyResponse{}, err
 		}
 		m.lastApplied = time.Now()
+		m.saveState()
 		return models.TrafficPolicyResponse{Mode: mode, Applied: true, Message: "soft filter applied"}, nil
 
 	case models.PolicyStrict:
@@ -101,13 +113,16 @@ func (m *Manager) ApplyBlocklist(ctx context.Context, domains []string) error {
 	m.mu.Lock()
 	m.domains = normalizeDomains(domains)
 	active := m.mode == models.PolicySoft
-	m.mu.Unlock()
-
 	if active {
-		m.mu.Lock()
 		defer m.mu.Unlock()
-		return m.applySoft(ctx)
+		if err := m.applySoft(ctx); err != nil {
+			return err
+		}
+		m.saveState()
+		return nil
 	}
+	m.saveState()
+	m.mu.Unlock()
 	return nil
 }
 
@@ -271,6 +286,67 @@ func (m *Manager) resolveIPs(ctx context.Context, domains []string) ([]string, e
 	}
 	sort.Strings(ips)
 	return ips, nil
+}
+
+// State is the persisted local firewall state (mode + domains + timestamp).
+type State struct {
+	Mode        models.TrafficPolicy `json:"mode"`
+	Domains     []string             `json:"domains"`
+	LastApplied string               `json:"last_applied,omitempty"`
+}
+
+// saveState persists the current state to the configured path. Caller must hold m.mu.
+func (m *Manager) saveState() {
+	if m.statePath == "" {
+		return
+	}
+	st := State{
+		Mode:    m.mode,
+		Domains: append([]string(nil), m.domains...),
+	}
+	if !m.lastApplied.IsZero() {
+		st.LastApplied = m.lastApplied.UTC().Format(time.RFC3339)
+	}
+	data, err := json.Marshal(st)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(m.statePath, data, 0o600)
+}
+
+// RestoreState reads and re-applies a previously saved state. Returns false when none exists.
+func (m *Manager) RestoreState(ctx context.Context) (bool, error) {
+	if m.statePath == "" {
+		return false, nil
+	}
+	data, err := os.ReadFile(m.statePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	var st State
+	if err := json.Unmarshal(data, &st); err != nil {
+		return false, err
+	}
+	if !st.Mode.Valid() {
+		return false, fmt.Errorf("invalid persisted traffic policy %q", st.Mode)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.mode = st.Mode
+	m.domains = normalizeDomains(st.Domains)
+	if st.Mode == models.PolicyOff {
+		return true, nil
+	}
+	if err := m.applySoft(ctx); err != nil {
+		return true, err
+	}
+	m.lastApplied = time.Now()
+	return true, nil
 }
 
 // normalizeDomains lowercases, trims, dedups and drops empty entries.

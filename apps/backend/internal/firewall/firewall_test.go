@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -189,5 +190,37 @@ func TestApplyBlocklistWhenOffOnlyStores(t *testing.T) {
 	}
 	if st := m.Status(); len(st.BlockedDomains) != 1 {
 		t.Fatalf("expected domain stored, got %v", st.BlockedDomains)
+	}
+}
+
+func TestSaveAndRestoreState(t *testing.T) {
+	fakeResolve := func(ctx context.Context, network, host string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("1.2.3.4")}, nil
+	}
+
+	m := NewManagerWithResolver(&mockExecutor{}, fakeResolve)
+	statePath := filepath.Join(t.TempDir(), "firewall-state.json")
+	m.SetStatePath(statePath)
+
+	if _, err := m.Apply(context.Background(), models.PolicySoft); err != nil {
+		t.Fatalf("apply soft: %v", err)
+	}
+	if err := m.ApplyBlocklist(context.Background(), []string{"tracker.example.com"}); err != nil {
+		t.Fatalf("apply blocklist: %v", err)
+	}
+
+	// A fresh manager restores from the persisted state.
+	m2 := NewManagerWithResolver(&mockExecutor{}, fakeResolve)
+	m2.SetStatePath(statePath)
+	restored, err := m2.RestoreState(context.Background())
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if !restored {
+		t.Fatalf("expected restored=true")
+	}
+	st := m2.Status()
+	if st.Mode != models.PolicySoft || len(st.BlockedDomains) != 1 {
+		t.Fatalf("unexpected restored status: %+v", st)
 	}
 }
