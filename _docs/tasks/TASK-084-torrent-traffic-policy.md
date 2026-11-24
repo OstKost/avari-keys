@@ -111,11 +111,11 @@ type TorrentBlocklistApplyRequest struct {
 
 ## Проверка
 
-- [ ] Аддитивная миграция БД, совместимость со старыми Slave (новые эндпоинты — опциональны).
-- [ ] `soft` применяет правила на Linux-ноде и корректно снимает при `off` (идемпотентность).
-- [ ] Резолв доменов → ipset, переживание рестарта slave (локальный state-файл), повторная рассылка Master при изменении.
-- [ ] `strict` возвращает 501 и не трогает правила.
-- [ ] Контракты API, права доступа (admin-only), audit-log.
-- [ ] Мок-паритет `mockClient.ts`, `npm run dev:mock` работает.
-- [ ] `go test -v -race ./...`, `go vet ./...`, Zero-CGO сборки master+slave (linux amd64/arm64), `npm run build`.
+- [x] Аддитивная миграция БД, совместимость со старыми Slave (новые эндпоинты — опциональны).
+- [x] `soft` применяет правила и корректно снимает при `off` (идемпотентность, юнит-тесты с mock executor).
+- [x] Резолв доменов → ipset, переживание рестарта slave (локальный state-файл + RestoreState), повторная рассылка Master при изменении.
+- [x] `strict` возвращает 501 на Slave и 400 на Master, не трогает правила.
+- [x] Контракты API, права доступа (admin-only), audit-log.
+- [x] Мок-паритет `mockClient.ts`, `npm run dev:mock` работает.
+- [x] `go test -v -race ./...`, `go vet ./...`, Zero-CGO сборки master+slave (linux amd64/arm64), `npm run build`.
 - [ ] Ручная проверка на тестовой каскадной ноде: торрент не проходит при `soft`, проходит при `off`.
