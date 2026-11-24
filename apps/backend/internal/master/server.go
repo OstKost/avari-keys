@@ -3,8 +3,8 @@ package master
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 	"log"
 	"net"
 	"net/http"
@@ -23,6 +23,7 @@ import (
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/storage"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/telegram"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 )
 
 const dashboardCacheTTL = 3 * time.Minute
@@ -48,13 +49,16 @@ type Config struct {
 
 // Server is the Master Backend API server.
 type Server struct {
-	cfg           Config
-	storage       *storage.Storage
-	jwtMgr        *auth.JWTManager
-	mux           *http.ServeMux
-	telegramBot   *telegram.Bot
-	healthChecker *monitor.HealthChecker
-	dashCache     dashboardCache
+	cfg            Config
+	storage        *storage.Storage
+	jwtMgr         *auth.JWTManager
+	mux            *http.ServeMux
+	telegramBot    *telegram.Bot
+	healthChecker  *monitor.HealthChecker
+	dashCache      dashboardCache
+	authLimiter    *IPRateLimiter
+	resetLimiter   *IPRateLimiter
+	miniAppLimiter *IPRateLimiter
 }
 
 // NewServer creates a new Master server instance.
@@ -65,10 +69,13 @@ func NewServer(cfg Config, s *storage.Storage) *Server {
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, 0)
 
 	srv := &Server{
-		cfg:     cfg,
-		storage: s,
-		jwtMgr:  jwtMgr,
-		mux:     http.NewServeMux(),
+		cfg:            cfg,
+		storage:        s,
+		jwtMgr:         jwtMgr,
+		mux:            http.NewServeMux(),
+		authLimiter:    NewIPRateLimiter(5, time.Minute),
+		resetLimiter:   NewIPRateLimiter(3, time.Minute),
+		miniAppLimiter: NewIPRateLimiter(15, time.Minute),
 	}
 
 	// Load stored Telegram settings if available
@@ -159,11 +166,71 @@ func (s *Server) StopBackgroundWorkers() {
 	if s.telegramBot != nil && s.telegramBot.IsEnabled() {
 		s.telegramBot.Stop()
 	}
+	if s.authLimiter != nil {
+		s.authLimiter.Stop()
+	}
+	if s.resetLimiter != nil {
+		s.resetLimiter.Stop()
+	}
+	if s.miniAppLimiter != nil {
+		s.miniAppLimiter.Stop()
+	}
 }
 
 // Handler returns the HTTP handler with global middleware.
 func (s *Server) Handler() http.Handler {
-	return s.corsMiddleware(s.jwtMgr.AuthMiddleware(s.mux))
+	return s.securityHeadersMiddleware(s.corsMiddleware(s.maxBytesMiddleware(1<<20, s.jwtMgr.AuthMiddleware(s.mux))))
+}
+
+func (s *Server) securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline'; frame-ancestors 'self' https://web.telegram.org;")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) maxBytesMiddleware(maxBytes int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) rateLimitMiddleware(limiter *IPRateLimiter, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if limiter != nil {
+			ip := GetClientIP(r)
+			allowed, retryAfter := limiter.Allow(ip)
+			if !allowed {
+				w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())+1))
+				s.writeJSON(w, http.StatusTooManyRequests, map[string]string{
+					"error": "Слишком много запросов. Пожалуйста, повторите попытку через минуту.",
+				})
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			s.writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{
+				"error": "Размер тела запроса превышает допустимый лимит (1 МБ)",
+			})
+			return false
+		}
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return false
+	}
+	return true
 }
 
 // GetTelegramBot returns the internal Telegram Bot instance.
@@ -189,10 +256,10 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 func (s *Server) routes() {
 	// Public Routes
 	s.mux.HandleFunc("GET /health", s.handleHealth)
-	s.mux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
-	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
-	s.mux.HandleFunc("POST /api/v1/auth/reset-password", s.handleResetPasswordRequest)
-	s.mux.HandleFunc("POST /api/v1/auth/telegram-miniapp", s.handleTelegramMiniAppAuth)
+	s.mux.HandleFunc("POST /api/v1/auth/register", s.rateLimitMiddleware(s.authLimiter, s.handleRegister))
+	s.mux.HandleFunc("POST /api/v1/auth/login", s.rateLimitMiddleware(s.authLimiter, s.handleLogin))
+	s.mux.HandleFunc("POST /api/v1/auth/reset-password", s.rateLimitMiddleware(s.resetLimiter, s.handleResetPasswordRequest))
+	s.mux.HandleFunc("POST /api/v1/auth/telegram-miniapp", s.rateLimitMiddleware(s.miniAppLimiter, s.handleTelegramMiniAppAuth))
 
 	// User Authenticated Routes
 	s.mux.HandleFunc("GET /api/v1/auth/me", auth.RequireAuth(s.handleMe))
@@ -270,8 +337,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req models.RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -303,8 +369,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleResetPasswordRequest(w http.ResponseWriter, r *http.Request) {
 	var req models.ResetPasswordRequestDTO
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -339,8 +404,7 @@ func (s *Server) handleResetPasswordRequest(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -375,8 +439,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Request) {
 	var req models.TelegramMiniAppAuthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -511,8 +574,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 	var req models.UpdateProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -592,8 +654,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 
 	var req models.CreateKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -928,8 +989,7 @@ func (s *Server) handleAdminSetUserRole(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req models.SetRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -962,8 +1022,7 @@ func (s *Server) handleAdminSetUserPro(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req models.SetUserProRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1198,8 +1257,7 @@ func (s *Server) handleAdminRestoreNode(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req models.RestoreNodeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 	if req.BackupData == "" {
@@ -1277,8 +1335,7 @@ func (s *Server) handleAdminSwitchNodeEgress(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req models.SwitchEgressRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Interface == "" {
@@ -1307,8 +1364,7 @@ func (s *Server) handleAdminSwitchNodeEgress(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleAdminAddNode(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 	var req models.AddNodeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1371,8 +1427,7 @@ func (s *Server) handleAdminUpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req models.UpdateNodeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1455,8 +1510,7 @@ func (s *Server) handleAdminUpdateNodeFailover(w http.ResponseWriter, r *http.Re
 	}
 
 	var req models.NodeFailoverSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1865,8 +1919,7 @@ func (s *Server) handleGetBillingRequisites(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleAdminUpdateBillingRequisites(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 	var req models.BillingRequisites
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1939,8 +1992,7 @@ func (s *Server) handleAdminGetTelegramSettings(w http.ResponseWriter, r *http.R
 func (s *Server) handleAdminUpdateTelegramSettings(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 	var req models.TelegramSettings
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -2008,8 +2060,7 @@ func (s *Server) handleAdminToggleTelegramSubscriber(w http.ResponseWriter, r *h
 	}
 
 	var req models.TelegramSubscriberToggleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -2127,8 +2178,7 @@ func (s *Server) handleListNews(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminCreateNews(w http.ResponseWriter, r *http.Request) {
 	claims, _ := auth.GetUserFromContext(r.Context())
 	var req models.CreateNewsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Некорректный формат данных"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -2186,8 +2236,7 @@ func (s *Server) handleAdminUpdateNews(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req models.UpdateNewsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Некорректный формат данных"})
+	if !s.decodeJSON(w, r, &req) {
 		return
 	}
 

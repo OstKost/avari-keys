@@ -2111,3 +2111,76 @@ func TestMeEndpointMonthTrafficAndAdminUserTraffic(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersAndRateLimiting(t *testing.T) {
+	srv, _, _, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+	handler := srv.Handler()
+
+	// 1. Verify Security Headers
+	req := httptest.NewRequest("GET", "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("expected X-Content-Type-Options: nosniff, got %q", rec.Header().Get("X-Content-Type-Options"))
+	}
+	if rec.Header().Get("X-XSS-Protection") != "1; mode=block" {
+		t.Errorf("expected X-XSS-Protection: 1; mode=block, got %q", rec.Header().Get("X-XSS-Protection"))
+	}
+	if rec.Header().Get("Referrer-Policy") != "strict-origin-when-cross-origin" {
+		t.Errorf("expected Referrer-Policy: strict-origin-when-cross-origin, got %q", rec.Header().Get("Referrer-Policy"))
+	}
+	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "default-src 'self'") {
+		t.Errorf("expected CSP default-src 'self', got %q", rec.Header().Get("Content-Security-Policy"))
+	}
+
+	// 2. Test Rate Limiting on /api/v1/auth/login (limit is 5 req/min)
+	loginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "ratelimit_user",
+		Password: "wrongpassword",
+	})
+	clientIP := "203.0.113.42:54321"
+
+	for i := 1; i <= 5; i++ {
+		req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(loginBody))
+		req.RemoteAddr = clientIP
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("request #%d unexpectedly rate limited (429)", i)
+		}
+	}
+
+	// 6th request from same IP should be blocked with 429
+	req6 := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(loginBody))
+	req6.RemoteAddr = clientIP
+	rec6 := httptest.NewRecorder()
+	handler.ServeHTTP(rec6, req6)
+	if rec6.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 6th request to be 429 Too Many Requests, got %d", rec6.Code)
+	}
+	if rec6.Header().Get("Retry-After") == "" {
+		t.Errorf("expected Retry-After header on 429 response")
+	}
+
+	// Request from another IP should still succeed
+	reqOther := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(loginBody))
+	reqOther.RemoteAddr = "203.0.113.99:12345"
+	recOther := httptest.NewRecorder()
+	handler.ServeHTTP(recOther, reqOther)
+	if recOther.Code == http.StatusTooManyRequests {
+		t.Fatalf("request from different IP should not be rate limited")
+	}
+
+	// 3. Test MaxBytes Limit (> 1MB should be rejected)
+	largeJSON := `{"username":"` + strings.Repeat("a", 1024*1024+100) + `"}`
+	reqLarge := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(largeJSON))
+	reqLarge.RemoteAddr = "203.0.113.150:1111"
+	recLarge := httptest.NewRecorder()
+	handler.ServeHTTP(recLarge, reqLarge)
+	if recLarge.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 Request Entity Too Large for >1MB body, got %d", recLarge.Code)
+	}
+}
+
+
