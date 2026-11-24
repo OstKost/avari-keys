@@ -14,6 +14,7 @@ import (
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/auth"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/monitor"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/retention"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/storage"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/telegram"
 )
@@ -29,28 +30,31 @@ type dashboardCache struct {
 
 // Config holds Master server configuration.
 type Config struct {
-	Port                string
-	JWTSecret           string
-	TelegramBotToken    string
-	TelegramBotUsername string
-	TelegramAdminChatID string
-	TelegramAdminSecret string
-	HealthCheckInterval time.Duration
-	HealthCheckTimeout  time.Duration
+	Port                   string
+	JWTSecret              string
+	TelegramBotToken       string
+	TelegramBotUsername    string
+	TelegramAdminChatID    string
+	TelegramAdminSecret    string
+	HealthCheckInterval    time.Duration
+	HealthCheckTimeout     time.Duration
+	AuditRetentionDays     int
+	TelemetryRetentionDays int
 }
 
 // Server is the Master Backend API server.
 type Server struct {
-	cfg            Config
-	storage        *storage.Storage
-	jwtMgr         *auth.JWTManager
-	mux            *http.ServeMux
-	telegramBot    *telegram.Bot
-	healthChecker  *monitor.HealthChecker
-	dashCache      dashboardCache
-	authLimiter    *IPRateLimiter
-	resetLimiter   *IPRateLimiter
-	miniAppLimiter *IPRateLimiter
+	cfg             Config
+	storage         *storage.Storage
+	jwtMgr          *auth.JWTManager
+	mux             *http.ServeMux
+	telegramBot     *telegram.Bot
+	healthChecker   *monitor.HealthChecker
+	retentionWorker *retention.Worker
+	dashCache       dashboardCache
+	authLimiter     *IPRateLimiter
+	resetLimiter    *IPRateLimiter
+	miniAppLimiter  *IPRateLimiter
 }
 
 // NewServer creates a new Master server instance.
@@ -136,11 +140,19 @@ func NewServer(cfg Config, s *storage.Storage) *Server {
 	}
 	srv.healthChecker = monitor.NewHealthChecker(hcCfg)
 
+	retentionCfg := retention.Config{
+		AuditDays:     cfg.AuditRetentionDays,
+		TelemetryDays: cfg.TelemetryRetentionDays,
+		Interval:      24 * time.Hour,
+		InitialDelay:  10 * time.Second,
+	}
+	srv.retentionWorker = retention.NewWorker(s, retentionCfg)
+
 	srv.routes()
 	return srv
 }
 
-// StartBackgroundWorkers launches Telegram bot polling and HealthChecker.
+// StartBackgroundWorkers launches Telegram bot polling, HealthChecker, and Retention Worker.
 func (s *Server) StartBackgroundWorkers(ctx context.Context) {
 	if s.telegramBot != nil && s.telegramBot.IsEnabled() {
 		s.telegramBot.Start(ctx)
@@ -148,10 +160,16 @@ func (s *Server) StartBackgroundWorkers(ctx context.Context) {
 	if s.healthChecker != nil {
 		s.healthChecker.Start(ctx)
 	}
+	if s.retentionWorker != nil {
+		s.retentionWorker.Start(ctx)
+	}
 }
 
 // StopBackgroundWorkers gracefully stops background workers.
 func (s *Server) StopBackgroundWorkers() {
+	if s.retentionWorker != nil {
+		s.retentionWorker.Stop()
+	}
 	if s.healthChecker != nil {
 		s.healthChecker.Stop()
 	}

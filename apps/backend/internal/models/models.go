@@ -516,3 +516,11 @@ type NetworkProbe struct {
 	StatusDetail
 	Checks []ProbeCheck `json:"checks"`
 }
+
+// RetentionStats holds the counts of purged records during retention cleanup.
+type RetentionStats struct {
+	AuditLogsDeleted     int64 `json:"audit_logs_deleted"`
+	TelemetryDeleted     int64 `json:"telemetry_deleted"`
+	ResetRequestsDeleted int64 `json:"reset_requests_deleted"`
+	ExpiredTokensDeleted int64 `json:"expired_tokens_deleted"`
+}
