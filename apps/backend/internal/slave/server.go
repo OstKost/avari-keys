@@ -2,12 +2,13 @@ package slave
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/netprobe"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/vless"
 )
 
 // Config holds configuration for the Slave API server.
@@ -182,7 +184,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if apiKey == "" || apiKey != s.cfg.APIKey {
+		if apiKey == "" || subtle.ConstantTimeCompare([]byte(apiKey), []byte(s.cfg.APIKey)) != 1 {
 			s.writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized: invalid or missing API key"})
 			return
 		}
@@ -239,6 +241,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHysteriaAuth(w http.ResponseWriter, r *http.Request) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if host != "127.0.0.1" && host != "::1" && host != "localhost" {
+		s.writeJSON(w, http.StatusForbidden, map[string]string{"error": "Forbidden: local access only"})
+		return
+	}
+
 	if s.hysteria == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
