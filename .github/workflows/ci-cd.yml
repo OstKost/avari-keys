@@ -429,18 +429,18 @@ jobs:
       - name: 🏗️ Build static binaries (amd64 + arm64)
         working-directory: apps/backend
         run: |
-          mkdir -p ../../dist/linux-amd64 ../../dist/linux-arm64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../../dist/linux-amd64/avari-master ./cmd/master
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../../dist/linux-amd64/avari-slave ./cmd/slave
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../../dist/linux-arm64/avari-master ./cmd/master
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../../dist/linux-arm64/avari-slave ./cmd/slave
+          mkdir -p ../../dist/release
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../../dist/release/avari-master-amd64 ./cmd/master
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../../dist/release/avari-slave-amd64 ./cmd/slave
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../../dist/release/avari-master-arm64 ./cmd/master
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../../dist/release/avari-slave-arm64 ./cmd/slave
 
       - name: 📤 Publish release with binaries
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/linux-amd64/avari-master
-            dist/linux-amd64/avari-slave
-            dist/linux-arm64/avari-master
-            dist/linux-arm64/avari-slave
+            dist/release/avari-master-amd64
+            dist/release/avari-slave-amd64
+            dist/release/avari-master-arm64
+            dist/release/avari-slave-arm64
           generate_release_notes: true
