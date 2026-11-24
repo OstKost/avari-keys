@@ -164,7 +164,7 @@ let mockLogs: AuditLog[] = [
     username: 'alice',
     action: 'auth_login',
     category: 'auth',
-    ip_address: '178.62.204.15',
+    ip_address: '192.0.2.40',
     details: 'Успешная авторизация в системе',
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
   },
@@ -174,7 +174,7 @@ let mockLogs: AuditLog[] = [
     username: 'alice',
     action: 'key_create',
     category: 'keys',
-    ip_address: '178.62.204.15',
+    ip_address: '192.0.2.40',
     details: 'Создан VPN-ключ «iPhone 15» (u2_iphone15) на сервере «Каскад M0 -> S1»',
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
   },
@@ -184,7 +184,7 @@ let mockLogs: AuditLog[] = [
     username: 'alice',
     action: 'key_view',
     category: 'keys',
-    ip_address: '178.62.204.15',
+    ip_address: '192.0.2.40',
     details: 'Просмотр конфигурации / QR-кода ключа «iPhone 15» (u2_iphone15)',
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 3 + 1000 * 30).toISOString(),
   },
@@ -194,7 +194,7 @@ let mockLogs: AuditLog[] = [
     username: 'bob_new',
     action: 'auth_register',
     category: 'auth',
-    ip_address: '94.25.180.44',
+    ip_address: '192.0.2.50',
     details: 'Регистрация нового аккаунта (ожидает подтверждения администратора)',
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
   },
@@ -204,7 +204,7 @@ let mockLogs: AuditLog[] = [
     username: 'bob_new',
     action: 'auth_login_blocked',
     category: 'auth',
-    ip_address: '94.25.180.44',
+    ip_address: '192.0.2.50',
     details: 'Попытка входа в неактивированный аккаунт',
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 11).toISOString(),
   },
@@ -885,7 +885,7 @@ bandwidth:
       vpnUri = 'vless://' + uuid + '@direct.example.net:443?security=reality&type=tcp&encryption=none&flow=xtls-rprx-vision&fp=chrome&sni=example.net&sid=12345678&pbk=' + profile.reality_public_key + '#' + clientName;
     } else if (protocol === 'mieru') {
       const port = 28443;
-      const server = '157.228.142.20';
+      const server = '192.0.2.20';
       const pass = 'demo_mieru_pass_' + Math.random().toString(36).substring(2, 10);
       config = JSON.stringify(
         {
@@ -1249,7 +1249,7 @@ bandwidth:
           interface: 'awg1',
           node: 'S1',
           label: 'S1 — Нидерланды',
-          endpoint: '185.213.240.136',
+          endpoint: '192.0.2.10',
           available: true,
           passed_checks: 5,
           total_checks: 5,
@@ -1267,7 +1267,7 @@ bandwidth:
           interface: 'awg2',
           node: 'S2',
           label: 'S2 — Финляндия',
-          endpoint: '157.228.142.20',
+          endpoint: '192.0.2.20',
           available: true,
           passed_checks: 5,
           total_checks: 5,
@@ -1285,7 +1285,7 @@ bandwidth:
           interface: 'awg3',
           node: 'S4',
           label: 'S4 — Швеция',
-          endpoint: '194.87.1.3',
+          endpoint: '192.0.2.3',
           available: false,
           reason: 'Сессия WireGuard зависла: последнее рукопожатие 420 сек назад (0 B получено)',
           passed_checks: 0,
