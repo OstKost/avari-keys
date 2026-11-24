@@ -255,6 +255,27 @@ export interface EgressStatusResponse {
   details?: string;
 }
 
+export type TrafficPolicyMode = 'off' | 'soft' | 'strict';
+
+export interface TorrentBlocklistEntry {
+  id: number;
+  domain: string;
+  added_by: string;
+  created_at: string;
+}
+
+export interface TrafficPolicyView {
+  mode: TrafficPolicyMode;
+  blocklist: TorrentBlocklistEntry[];
+}
+
+export interface TrafficPolicyFanoutResponse {
+  mode: TrafficPolicyMode;
+  applied_nodes: number;
+  failed_nodes: number;
+  errors?: string[];
+}
+
 export interface BillingRecord {
   id: number;
   user_id: number;

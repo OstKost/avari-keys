@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/firewall"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/master"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
@@ -47,8 +48,9 @@ func setupTestEnvironment(t *testing.T) (*master.Server, *httptest.Server, *stor
 	slaveToken := "slave-secret-123"
 	mockRunner := runner.NewMockRunner(true)
 	slaveSrv := slave.NewServer(slave.Config{
-		APIKey: slaveToken,
-		Port:   "8081",
+		APIKey:   slaveToken,
+		Port:     "8081",
+		Firewall: firewall.NewManagerWithResolver(firewallTestExec{}, firewallTestResolve),
 	}, mockRunner)
 	slaveHttpSrv := httptest.NewServer(slaveSrv.Handler())
 

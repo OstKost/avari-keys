@@ -21,6 +21,7 @@ import { TelegramSettings, TelegramChat, BillingRequisites } from '../types';
 import { useToast } from '../context/ToastContext';
 import { Loader } from './Loader';
 import { Tooltip } from './Tooltip';
+import { TrafficPolicySettings } from './TrafficPolicySettings';
 
 export function AdminSettings() {
   const { toast } = useToast();
@@ -537,6 +538,7 @@ export function AdminSettings() {
           </div>
         </div>
       </div>
+      <TrafficPolicySettings />
     </div>
   );
 }

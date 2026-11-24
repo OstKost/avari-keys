@@ -382,3 +382,86 @@ func (c *SlaveClient) NetworkProbes(ctx context.Context) ([]models.NetworkProbe,
 	}
 	return result, nil
 }
+
+// ApplyFirewall requests the Slave to apply (or clear) the torrent traffic filter mode.
+func (c *SlaveClient) ApplyFirewall(ctx context.Context, mode models.TrafficPolicy) error {
+	body, err := json.Marshal(models.TrafficPolicyRequest{Mode: mode})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/firewall", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("slave apply firewall failed with status %d: %s", resp.StatusCode, errResp["error"])
+	}
+	return nil
+}
+
+// ApplyFirewallBlocklist pushes the torrent domain blocklist to the Slave.
+func (c *SlaveClient) ApplyFirewallBlocklist(ctx context.Context, domains []string) error {
+	body, err := json.Marshal(models.TorrentBlocklistApplyRequest{Domains: domains})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/firewall/blocklist", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("slave apply firewall blocklist failed with status %d: %s", resp.StatusCode, errResp["error"])
+	}
+	return nil
+}
+
+// GetFirewallStatus fetches the local firewall state from the Slave.
+func (c *SlaveClient) GetFirewallStatus(ctx context.Context) (*models.FirewallStatusResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/firewall", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("slave get firewall status failed with status %d: %s", resp.StatusCode, errResp["error"])
+	}
+
+	var res models.FirewallStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}

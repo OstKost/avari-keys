@@ -340,6 +340,41 @@ func (s *Storage) migrate() error {
 				return err
 			},
 		},
+	{
+		version:     4,
+		description: "torrent_blocklist",
+		apply: func(db *sql.DB) error {
+			schema := `
+CREATE TABLE IF NOT EXISTS torrent_blocklist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain TEXT UNIQUE NOT NULL,
+    added_by TEXT NOT NULL DEFAULT 'system',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`
+			if _, err := db.Exec(schema); err != nil {
+				return err
+			}
+
+			// Seed default public trackers and DHT bootstrap nodes (editable later).
+			defaults := []string{
+				"openbittorrent.com",
+				"tracker.opentrackr.org",
+				"thetracker.org",
+				"tracker.leechers-paradise.org",
+				"router.bittorrent.com",
+				"router.utorrent.com",
+				"dht.transmissionbt.com",
+				"dht.libtorrent.org",
+			}
+			for _, d := range defaults {
+				if _, err := db.Exec(`INSERT OR IGNORE INTO torrent_blocklist (domain, added_by) VALUES (?, 'system')`, d); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 	}
 
 	for _, m := range migrations {
@@ -2291,5 +2326,107 @@ func (s *Storage) EnsureDefaultAnnouncements(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+// ---- Torrent Traffic Policy ----
+
+const appSettingTorrentPolicy = "torrent_policy"
+
+// GetTrafficPolicy returns the global torrent filtering mode (defaults to "off").
+func (s *Storage) GetTrafficPolicy(ctx context.Context) (models.TrafficPolicy, error) {
+	var val string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = ?`, appSettingTorrentPolicy).Scan(&val)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.PolicyOff, nil
+		}
+		return models.PolicyOff, err
+	}
+	mode := models.TrafficPolicy(val)
+	if !mode.Valid() {
+		return models.PolicyOff, fmt.Errorf("unknown traffic policy %q", val)
+	}
+	return mode, nil
+}
+
+// SetTrafficPolicy persists the global torrent filtering mode.
+func (s *Storage) SetTrafficPolicy(ctx context.Context, mode models.TrafficPolicy) error {
+	if !mode.Valid() {
+		return fmt.Errorf("unknown traffic policy %q", mode)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO app_settings (key, value, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+	`, appSettingTorrentPolicy, string(mode))
+	return err
+}
+
+// ListTorrentBlocklist returns all torrent tracker/DHT domains in the blocklist.
+func (s *Storage) ListTorrentBlocklist(ctx context.Context) ([]models.TorrentBlocklistEntry, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, domain, added_by, created_at
+		FROM torrent_blocklist
+		ORDER BY domain ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := []models.TorrentBlocklistEntry{}
+	for rows.Next() {
+		var e models.TorrentBlocklistEntry
+		if err := rows.Scan(&e.ID, &e.Domain, &e.AddedBy, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+// AddTorrentBlocklistDomain adds a domain to the blocklist (idempotent).
+func (s *Storage) AddTorrentBlocklistDomain(ctx context.Context, domain, addedBy string) (*models.TorrentBlocklistEntry, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return nil, fmt.Errorf("domain is required")
+	}
+	if addedBy == "" {
+		addedBy = "admin"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO torrent_blocklist (domain, added_by, created_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(domain) DO UPDATE SET added_by = excluded.added_by
+	`, domain, addedBy)
+	if err != nil {
+		return nil, err
+	}
+
+	var e models.TorrentBlocklistEntry
+	err = s.db.QueryRowContext(ctx, `
+		SELECT id, domain, added_by, created_at
+		FROM torrent_blocklist
+		WHERE domain = ?
+	`, domain).Scan(&e.ID, &e.Domain, &e.AddedBy, &e.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// DeleteTorrentBlocklistDomain removes a domain from the blocklist by ID.
+func (s *Storage) DeleteTorrentBlocklistDomain(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM torrent_blocklist WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
 	return nil
 }

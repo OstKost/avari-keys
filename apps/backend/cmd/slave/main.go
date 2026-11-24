@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/egress"
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/firewall"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/logger"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/runner"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/slave"
@@ -103,9 +104,26 @@ func main() {
 		awgRunner = runner.NewRealRunner(scriptPath, configsDir)
 	}
 
+	firewallManager := firewall.NewManager(&egress.OSCommandExecutor{})
+
+	statePath := os.Getenv("FIREWALL_STATE_PATH")
+	if statePath == "" {
+		statePath = "/etc/avari-keys/firewall-state.json"
+	}
+	firewallManager.SetStatePath(statePath)
+	if restored, err := firewallManager.RestoreState(context.Background()); err != nil {
+		slog.Warn("failed to restore torrent firewall state", "error", err)
+	} else if restored {
+		slog.Info("restored torrent firewall state", "path", statePath)
+	}
+
+	// Periodic re-resolve of blocklist domains.
+	go firewallManager.StartResolver(context.Background(), 15*time.Minute)
+
 	cfg := slave.Config{
-		APIKey: apiKey,
-		Port:   port,
+		APIKey:   apiKey,
+		Port:     port,
+		Firewall: firewallManager,
 	}
 
 	srv := slave.NewServer(cfg, awgRunner)

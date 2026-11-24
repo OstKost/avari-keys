@@ -310,6 +310,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/admin/logs", auth.RequireAdmin(s.handleAdminListAuditLogs))
 	s.mux.HandleFunc("POST /api/v1/admin/logs/cleanup", auth.RequireAdmin(s.handleAdminCleanupAuditLogs))
 
+	// Torrent Traffic Policy Routes
+	s.mux.HandleFunc("GET /api/v1/admin/traffic-policy", auth.RequireAdmin(s.handleAdminGetTrafficPolicy))
+	s.mux.HandleFunc("PUT /api/v1/admin/traffic-policy", auth.RequireAdmin(s.handleAdminUpdateTrafficPolicy))
+	s.mux.HandleFunc("GET /api/v1/admin/torrent-blocklist", auth.RequireAdmin(s.handleAdminListTorrentBlocklist))
+	s.mux.HandleFunc("POST /api/v1/admin/torrent-blocklist", auth.RequireAdmin(s.handleAdminAddTorrentBlocklist))
+	s.mux.HandleFunc("DELETE /api/v1/admin/torrent-blocklist/{id}", auth.RequireAdmin(s.handleAdminDeleteTorrentBlocklist))
+
 	// Billing Routes
 	s.mux.HandleFunc("GET /api/v1/billing/status", auth.RequireAuth(s.handleGetBillingStatus))
 	s.mux.HandleFunc("GET /api/v1/billing/requisites", auth.RequireAuth(s.handleGetBillingRequisites))

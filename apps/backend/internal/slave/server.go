@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/firewall"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/hysteria"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/mieru"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/models"
@@ -28,6 +29,7 @@ type Config struct {
 	Port          string
 	HysteriaStore *hysteria.Store
 	MieruStore    *mieru.Store
+	Firewall      *firewall.Manager
 }
 
 // Server is the HTTP server for Slave API.
@@ -38,6 +40,7 @@ type Server struct {
 	hysteria *hysteria.Store
 	vless    *vless.Store
 	mieru    *mieru.Store
+	firewall *firewall.Manager
 	mux      *http.ServeMux
 }
 
@@ -129,6 +132,7 @@ func NewServer(cfg Config, r runner.AWGRunner) *Server {
 		runner:   r,
 		hysteria: hyStore,
 		mieru:    mStore,
+		firewall: cfg.Firewall,
 		mux:      http.NewServeMux(),
 	}
 	if os.Getenv("VLESS_ENABLED") == "1" && os.Getenv("VLESS_SERVER") != "" {
@@ -173,6 +177,10 @@ func (s *Server) routes() {
 		s.mux.Handle("POST /api/v1/cascade/egress", s.authMiddleware(http.HandlerFunc(s.handleSwitchCascadeEgress)))
 		s.mux.Handle("POST /api/v1/cascade/egress/restart", s.authMiddleware(http.HandlerFunc(s.handleRestartCascadeEgress)))
 	}
+
+	s.mux.Handle("POST /api/v1/firewall", s.authMiddleware(http.HandlerFunc(s.handleApplyFirewall)))
+	s.mux.Handle("GET /api/v1/firewall", s.authMiddleware(http.HandlerFunc(s.handleGetFirewall)))
+	s.mux.Handle("POST /api/v1/firewall/blocklist", s.authMiddleware(http.HandlerFunc(s.handleApplyFirewallBlocklist)))
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -561,6 +569,53 @@ func (s *Server) handleRestartCascadeEgress(w http.ResponseWriter, r *http.Reque
 		Success: true,
 		Message: fmt.Sprintf("Cascade egress %s successfully restarted", req.Interface),
 	})
+}
+
+func (s *Server) handleApplyFirewall(w http.ResponseWriter, r *http.Request) {
+	if s.firewall == nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "firewall not configured"})
+		return
+	}
+	var req models.TrafficPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	res, err := s.firewall.Apply(r.Context(), req.Mode)
+	if err != nil {
+		if errors.Is(err, firewall.ErrStrictNotImplemented) {
+			s.writeJSON(w, http.StatusNotImplemented, res)
+			return
+		}
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleGetFirewall(w http.ResponseWriter, r *http.Request) {
+	if s.firewall == nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "firewall not configured"})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, s.firewall.Status())
+}
+
+func (s *Server) handleApplyFirewallBlocklist(w http.ResponseWriter, r *http.Request) {
+	if s.firewall == nil {
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "firewall not configured"})
+		return
+	}
+	var req models.TorrentBlocklistApplyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if err := s.firewall.ApplyBlocklist(r.Context(), req.Domains); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{Success: true, Message: "blocklist applied"})
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data any) {
