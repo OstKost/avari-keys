@@ -100,6 +100,9 @@ jobs:
             apps/frontend/dist/
             scripts/avari-egress.py
             scripts/install_egress.sh
+            deploy/systemd/avari-master.service
+            deploy/systemd/avari-slave.service
+            deploy/systemd/avari-vless.service
 
   # ==========================================
   # 2. Деплой Frontend SPA (Автоматически на push в main/master или по запросу)
@@ -219,7 +222,8 @@ jobs:
           echo "==> Deploying avari-master to ${TARGET_HOST}..."
           $SSH_CMD "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data"
           $SCP_CMD deploy-artifacts/dist/linux-amd64/avari-master ${SSH_USER}@${TARGET_HOST}:${DEPLOY_TMP}/avari-master
-          $SSH_CMD "install -m 755 ${DEPLOY_TMP}/avari-master /usr/local/bin/avari-master && rm -rf ${DEPLOY_TMP}"
+          $SCP_CMD deploy-artifacts/deploy/systemd/avari-master.service ${SSH_USER}@${TARGET_HOST}:${DEPLOY_TMP}/avari-master.service
+          $SSH_CMD "install -m 755 ${DEPLOY_TMP}/avari-master /usr/local/bin/avari-master && install -m 644 ${DEPLOY_TMP}/avari-master.service /etc/systemd/system/avari-master.service && rm -rf ${DEPLOY_TMP}"
 
           # Keep addresses outside the checkout and build artifacts.
           python3 -c '
@@ -334,6 +338,10 @@ jobs:
             # Upload and install the new avari-slave binary first so any CLI helper or daemon uses the updated binary
             scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave || return 1
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave" || return 1
+
+            # Install the canonical systemd unit on first deploy (never overwrite a node-local override)
+            scp ${SCP_OPTS} deploy-artifacts/deploy/systemd/avari-slave.service ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave.service || return 1
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "[ -f /etc/systemd/system/avari-slave.service ] || install -m 644 ${DEPLOY_TMP}/avari-slave.service /etc/systemd/system/avari-slave.service" || return 1
 
             # If deploying to the cascade gateway (M0 / S0), also install egress configs and routing scripts
             if [ "$TARGET" = "$CASCADE_GATEWAY_HOST" ]; then
