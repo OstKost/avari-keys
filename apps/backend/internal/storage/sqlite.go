@@ -72,8 +72,92 @@ func (s *Storage) DB() *sql.DB {
 	return s.db
 }
 
+// GetMigrationVersion returns the latest applied schema migration version.
+func (s *Storage) GetMigrationVersion(ctx context.Context) (int, error) {
+	var maxVer sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&maxVer)
+	if err != nil {
+		return 0, err
+	}
+	if !maxVer.Valid {
+		return 0, nil
+	}
+	return int(maxVer.Int64), nil
+}
+
+func addColumnIfNotExists(db *sql.DB, table, column, colDef string) error {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err == nil {
+			if strings.EqualFold(name, column) {
+				return nil // already exists
+			}
+		}
+	}
+	_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colDef))
+	return err
+}
+
+func ensureColumns(db *sql.DB) error {
+	cols := []struct{ table, col, def string }{
+		{"nodes", "is_mobile_optimized", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "country_code", "TEXT NOT NULL DEFAULT ''"},
+		{"nodes", "provider_url", "TEXT NOT NULL DEFAULT ''"},
+		{"nodes", "is_backup", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "has_hysteria", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "has_mieru", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "has_vless", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "auto_failover_enabled", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "failover_priority", "TEXT NOT NULL DEFAULT '[]'"},
+		{"users", "is_pro", "INTEGER NOT NULL DEFAULT 0"},
+		{"users", "billing_snoozed_until", "DATETIME DEFAULT NULL"},
+		{"telegram_chats", "user_id", "INTEGER DEFAULT NULL"},
+		{"client_configs", "public_key", "TEXT NOT NULL DEFAULT ''"},
+		{"client_configs", "allocated_ip", "TEXT NOT NULL DEFAULT ''"},
+		{"client_configs", "protocol", "TEXT NOT NULL DEFAULT 'awg'"},
+		{"client_configs", "total_rx_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"client_configs", "total_tx_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"client_configs", "last_handshake_epoch", "INTEGER NOT NULL DEFAULT 0"},
+		{"client_configs", "last_seen_at", "DATETIME DEFAULT NULL"},
+	}
+	for _, c := range cols {
+		if err := addColumnIfNotExists(db, c.table, c.col, c.def); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", c.table, c.col, err)
+		}
+	}
+	return nil
+}
+
 func (s *Storage) migrate() error {
-	schema := `
+	if _, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version INTEGER PRIMARY KEY,
+			description TEXT NOT NULL,
+			applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`); err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
+	}
+
+	migrations := []struct {
+		version     int
+		description string
+		apply       func(db *sql.DB) error
+	}{
+		{
+			version:     1,
+			description: "base_tables",
+			apply: func(db *sql.DB) error {
+				schema := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT UNIQUE NOT NULL,
@@ -88,7 +172,7 @@ func (s *Storage) migrate() error {
 	CREATE TABLE IF NOT EXISTS nodes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
-		type TEXT NOT NULL, -- 'cascade' or 'direct'
+		type TEXT NOT NULL,
 		country_code TEXT NOT NULL DEFAULT '',
 		provider_url TEXT NOT NULL DEFAULT '',
 		api_url TEXT NOT NULL,
@@ -123,7 +207,7 @@ func (s *Storage) migrate() error {
 	);
 
 	CREATE TABLE IF NOT EXISTS peer_traffic_daily (
-		date TEXT NOT NULL, -- 'YYYY-MM-DD'
+		date TEXT NOT NULL,
 		client_config_id INTEGER NOT NULL,
 		rx_bytes INTEGER NOT NULL DEFAULT 0,
 		tx_bytes INTEGER NOT NULL DEFAULT 0,
@@ -132,7 +216,7 @@ func (s *Storage) migrate() error {
 	);
 
 	CREATE TABLE IF NOT EXISTS node_traffic_daily (
-		date TEXT NOT NULL, -- 'YYYY-MM-DD'
+		date TEXT NOT NULL,
 		node_id INTEGER NOT NULL,
 		rx_bytes INTEGER NOT NULL DEFAULT 0,
 		tx_bytes INTEGER NOT NULL DEFAULT 0,
@@ -208,45 +292,34 @@ func (s *Storage) migrate() error {
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
 	`
-	if _, err := s.db.Exec(schema); err != nil {
-		return err
-	}
-	// Migrate existing nodes & users tables if new columns are missing
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN is_mobile_optimized INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN country_code TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN provider_url TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN is_backup INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_hysteria INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_mieru INTEGER NOT NULL DEFAULT 0;`)
-	if _, err := s.db.Exec(`ALTER TABLE nodes ADD COLUMN has_vless INTEGER NOT NULL DEFAULT 0;`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-		return err
-	}
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN auto_failover_enabled INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN failover_priority TEXT NOT NULL DEFAULT '[]';`)
-	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN is_pro INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE users ADD COLUMN billing_snoozed_until DATETIME DEFAULT NULL;`)
-	_, _ = s.db.Exec(`ALTER TABLE telegram_chats ADD COLUMN user_id INTEGER DEFAULT NULL;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN public_key TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN allocated_ip TEXT NOT NULL DEFAULT '';`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN protocol TEXT NOT NULL DEFAULT 'awg';`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN total_rx_bytes INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN total_tx_bytes INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN last_handshake_epoch INTEGER NOT NULL DEFAULT 0;`)
-	_, _ = s.db.Exec(`ALTER TABLE client_configs ADD COLUMN last_seen_at DATETIME DEFAULT NULL;`)
-
-	indexes := `
- CREATE TRIGGER IF NOT EXISTS validate_vless_owner BEFORE INSERT ON client_configs
- WHEN NEW.protocol='vless' AND NOT EXISTS (
-   SELECT 1 FROM nodes JOIN users ON users.id=NEW.user_id
-   WHERE nodes.id=NEW.node_id AND nodes.is_active AND nodes.type='direct' AND nodes.has_vless
-     AND users.is_active AND (NOT nodes.is_backup OR users.is_pro OR users.role='admin')
- ) BEGIN SELECT RAISE(ABORT, 'VLESS enrollment unavailable'); END;
- CREATE TRIGGER IF NOT EXISTS guard_vless_user BEFORE DELETE ON users
- WHEN EXISTS (SELECT 1 FROM client_configs WHERE user_id=OLD.id AND protocol='vless')
- BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
- CREATE TRIGGER IF NOT EXISTS guard_vless_node BEFORE DELETE ON nodes
- WHEN EXISTS (SELECT 1 FROM client_configs WHERE node_id=OLD.id AND protocol='vless')
- BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
+				_, err := db.Exec(schema)
+				return err
+			},
+		},
+		{
+			version:     2,
+			description: "incremental_columns",
+			apply: func(db *sql.DB) error {
+				return ensureColumns(db)
+			},
+		},
+		{
+			version:     3,
+			description: "triggers_and_indexes",
+			apply: func(db *sql.DB) error {
+				indexes := `
+	CREATE TRIGGER IF NOT EXISTS validate_vless_owner BEFORE INSERT ON client_configs
+	WHEN NEW.protocol='vless' AND NOT EXISTS (
+		SELECT 1 FROM nodes JOIN users ON users.id=NEW.user_id
+		WHERE nodes.id=NEW.node_id AND nodes.is_active AND nodes.type='direct' AND nodes.has_vless
+		  AND users.is_active AND (NOT nodes.is_backup OR users.is_pro OR users.role='admin')
+	) BEGIN SELECT RAISE(ABORT, 'VLESS enrollment unavailable'); END;
+	CREATE TRIGGER IF NOT EXISTS guard_vless_user BEFORE DELETE ON users
+	WHEN EXISTS (SELECT 1 FROM client_configs WHERE user_id=OLD.id AND protocol='vless')
+	BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
+	CREATE TRIGGER IF NOT EXISTS guard_vless_node BEFORE DELETE ON nodes
+	WHEN EXISTS (SELECT 1 FROM client_configs WHERE node_id=OLD.id AND protocol='vless')
+	BEGIN SELECT RAISE(ABORT, 'revoke VLESS keys first'); END;
 
 	CREATE INDEX IF NOT EXISTS idx_client_configs_pubkey ON client_configs(public_key);
 	CREATE INDEX IF NOT EXISTS idx_client_configs_node_id ON client_configs(node_id);
@@ -263,9 +336,36 @@ func (s *Storage) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_pwd_reset_user_id ON password_reset_requests(user_id);
 	CREATE INDEX IF NOT EXISTS idx_pwd_reset_status ON password_reset_requests(status);
 	`
-	if _, err := s.db.Exec(indexes); err != nil {
+				_, err := db.Exec(indexes)
+				return err
+			},
+		},
+	}
+
+	for _, m := range migrations {
+		var exists int
+		err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, m.version).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("check migration %d: %w", m.version, err)
+		}
+		if exists > 0 {
+			continue
+		}
+
+		if err := m.apply(s.db); err != nil {
+			return fmt.Errorf("apply migration %d (%s): %w", m.version, m.description, err)
+		}
+
+		if _, err := s.db.Exec(`INSERT INTO schema_migrations (version, description) VALUES (?, ?)`, m.version, m.description); err != nil {
+			return fmt.Errorf("record migration %d: %w", m.version, err)
+		}
+	}
+
+	// Always ensure column integrity for legacy compatibility
+	if err := ensureColumns(s.db); err != nil {
 		return err
 	}
+
 	return nil
 }
 
