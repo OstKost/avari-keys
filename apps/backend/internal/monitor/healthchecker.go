@@ -38,8 +38,8 @@ type HealthChecker struct {
 	prevNodeRaw     map[int64]rawCounters  // nodeID -> raw counters
 	cachedDashboard *models.DashboardStatsResponse
 
-	failoverFailures map[int64]int       // nodeID -> consecutive egress failure count
-	failoverCooldown map[int64]time.Time // nodeID -> cooldown expiration
+	failoverFailures map[int64]int        // nodeID -> consecutive egress failure count
+	failoverCooldown map[int64]time.Time  // nodeID -> cooldown expiration
 	frozenAlerts     map[string]time.Time // "nodeID:iface" -> last frozen alert time
 
 	mu       sync.RWMutex
@@ -174,6 +174,9 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 	configByPubKey := make(map[string]models.ClientConfig)
 	configByName := make(map[string]models.ClientConfig)
 	for _, cfg := range allConfigs {
+		if cfg.Protocol == "vless" {
+			continue
+		}
 		if cfg.PublicKey != "" {
 			configByPubKey[fmt.Sprintf("%d:%s", cfg.NodeID, cfg.PublicKey)] = cfg
 		}
@@ -438,7 +441,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 		if !isOnline {
 			status.State = "red"
 			status.Reason = "API ноды недоступен; работа сервера не подтверждена"
-		} else if res.health != nil && (!res.health.AWGAvailable || (n.HasHysteria && !res.health.HysteriaAvailable) || (n.HasMieru && !res.health.MieruAvailable)) {
+		} else if res.health != nil && (!res.health.AWGAvailable || (n.HasHysteria && !res.health.HysteriaAvailable) || (n.HasMieru && !res.health.MieruAvailable) || (n.HasVless && !res.health.VlessAvailable)) {
 			status.State = "yellow"
 			status.Reason = "API отвечает, но настроенная VPN-служба недоступна"
 		}

@@ -138,8 +138,16 @@ func (c *SlaveClient) GetClient(ctx context.Context, clientName string, protocol
 }
 
 // DeleteClient requests the Slave to delete a client config.
-func (c *SlaveClient) DeleteClient(ctx context.Context, clientName string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/api/v1/clients/%s", c.baseURL, clientName), nil)
+func (c *SlaveClient) DeleteClient(ctx context.Context, clientName string, protocol ...string) error {
+	suffix := ""
+	if len(protocol) > 0 && protocol[0] == "vless" {
+		health, err := c.CheckHealth(ctx)
+		if err != nil || !health.VlessAvailable {
+			return fmt.Errorf("VLESS unavailable")
+		}
+		suffix = "?protocol=vless"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/api/v1/clients/%s", c.baseURL, clientName)+suffix, nil)
 	if err != nil {
 		return err
 	}
@@ -151,6 +159,9 @@ func (c *SlaveClient) DeleteClient(ctx context.Context, clientName string) error
 	}
 	defer resp.Body.Close()
 
+	if suffix != "" && (resp.StatusCode != http.StatusOK || resp.Header.Get("X-Avari-Protocol") != "vless") {
+		return fmt.Errorf("VLESS revocation not confirmed")
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		var errResp map[string]string
 		_ = json.NewDecoder(resp.Body).Decode(&errResp)

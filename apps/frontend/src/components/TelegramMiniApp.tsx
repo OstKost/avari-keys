@@ -248,7 +248,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
 
   const handleDownloadConf = (key: ClientConfigDetail) => {
     triggerHaptic('light');
-    const isMieruKey = key.protocol === 'mieru';
+    const isMieruKey = key.protocol === 'mieru' || key.protocol === 'vless';
     const isHysteriaKey = key.protocol === 'hysteria2';
     const ext = isMieruKey ? 'json' : isHysteriaKey ? 'yaml' : 'conf';
     const mime = isMieruKey ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8';
@@ -629,14 +629,14 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                   </div>
                   <span
                     className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                      activeKey.protocol === 'mieru'
+                      (activeKey.protocol === 'mieru' || activeKey.protocol === 'vless')
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                         : activeKey.protocol === 'hysteria2'
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                         : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                     }`}
                   >
-                    {activeKey.protocol === 'mieru' ? 'Mieru' : activeKey.protocol === 'hysteria2' ? 'Hysteria 2' : 'AmneziaWG'}
+                    {activeKey.protocol === 'vless' ? 'VLESS+Reality' : activeKey.protocol === 'mieru' ? 'Mieru' : activeKey.protocol === 'hysteria2' ? 'Hysteria 2' : 'AmneziaWG'}
                   </span>
                 </div>
 
@@ -658,7 +658,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                     </div>
                   )}
                   <span className="text-[11px] text-slate-600 mt-1 font-medium">
-                    {activeKey.protocol === 'mieru'
+                    {(activeKey.protocol === 'mieru' || activeKey.protocol === 'vless')
                       ? 'Сканируйте в Hiddify / NekoBox'
                       : activeKey.protocol === 'hysteria2'
                       ? 'Сканируйте в v2rayNG / NekoBox'
@@ -682,7 +682,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>
-                        {keyDetail.protocol === 'mieru'
+                        {keyDetail.protocol === 'mieru' || keyDetail.protocol === 'vless'
                           ? 'Скачать .json'
                           : keyDetail.protocol === 'hysteria2'
                           ? 'Скачать .yaml'
@@ -1237,7 +1237,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                 <label className="text-slate-400 block mb-1">Сервер / Локация</label>
                 <select
                   value={selectedNodeId || ''}
-                  onChange={(e) => setSelectedNodeId(Number(e.target.value))}
+                  onChange={(e) => {setSelectedNodeId(Number(e.target.value)); setSelectedProtocol("awg");}}
                   className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-cyan-500"
                 >
                   {availableNodes.map((n) => (
@@ -1284,6 +1284,17 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                     }`}
                   >
                     Mieru
+                  </button>
+                <button
+                    type="button" disabled={!availableNodes.some(node => node.id === selectedNodeId && node.has_vless && node.type === "direct")}
+                    onClick={() => setSelectedProtocol('vless')}
+                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
+                      selectedProtocol === 'vless'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    VLESS+Reality
                   </button>
                 </div>
               </div>
