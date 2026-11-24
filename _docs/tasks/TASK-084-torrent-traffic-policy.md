@@ -119,3 +119,7 @@ type TorrentBlocklistApplyRequest struct {
 - [x] Мок-паритет `mockClient.ts`, `npm run dev:mock` работает.
 - [x] `go test -v -race ./...`, `go vet ./...`, Zero-CGO сборки master+slave (linux amd64/arm64), `npm run build`.
 - [ ] Ручная проверка на тестовой каскадной ноде: торрент не проходит при `soft`, проходит при `off`.
+
+## Результаты проверки
+
+Инструкция для оператора находится в [TRAFFIC-POLICY.md](../TRAFFIC-POLICY.md).
