@@ -67,6 +67,11 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying sql.DB instance.
+func (s *Storage) DB() *sql.DB {
+	return s.db
+}
+
 func (s *Storage) migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS users (
@@ -391,6 +396,8 @@ func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 	}
 	defer rows.Close()
 
+	monthTrafficMap, _ := s.GetUsersMonthTrafficMap(ctx, time.Now().UTC().Format("2006-01"))
+
 	list := []models.UserPublic{}
 	for rows.Next() {
 		var u models.UserPublic
@@ -403,6 +410,12 @@ func (s *Storage) ListUsers(ctx context.Context) ([]models.UserPublic, error) {
 		u.IsActive = isActive == 1
 		u.IsPro = isPro == 1
 		u.HasPendingPasswordReset = hasPendingReset == 1
+		if tb, ok := monthTrafficMap[u.ID]; ok {
+			u.MonthTrafficBytes = tb
+		} else {
+			u.MonthTrafficBytes = 0
+		}
+		u.MonthTrafficFormatted = formatBytes(u.MonthTrafficBytes)
 		list = append(list, u)
 	}
 	return list, nil
@@ -985,6 +998,61 @@ func (s *Storage) GetNodeMonthTrafficMap(ctx context.Context, yearMonth string) 
 	return res, nil
 }
 
+func (s *Storage) GetUserMonthTraffic(ctx context.Context, userID int64, yearMonth string) (*models.UserMonthTraffic, error) {
+	if yearMonth == "" {
+		yearMonth = time.Now().UTC().Format("2006-01")
+	}
+
+	var rx, tx int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(p.rx_bytes), 0), COALESCE(SUM(p.tx_bytes), 0)
+		FROM peer_traffic_daily p
+		JOIN client_configs c ON c.id = p.client_config_id
+		WHERE c.user_id = ? AND p.date LIKE ?
+	`, userID, yearMonth+"%").Scan(&rx, &tx)
+	if err != nil {
+		return nil, err
+	}
+
+	total := rx + tx
+	return &models.UserMonthTraffic{
+		Month:       yearMonth,
+		RxBytes:     rx,
+		TxBytes:     tx,
+		TotalBytes:  total,
+		Formatted:   formatBytes(total),
+		RxFormatted: formatBytes(rx),
+		TxFormatted: formatBytes(tx),
+	}, nil
+}
+
+func (s *Storage) GetUsersMonthTrafficMap(ctx context.Context, yearMonth string) (map[int64]int64, error) {
+	if yearMonth == "" {
+		yearMonth = time.Now().UTC().Format("2006-01")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.user_id, COALESCE(SUM(p.rx_bytes + p.tx_bytes), 0)
+		FROM peer_traffic_daily p
+		JOIN client_configs c ON c.id = p.client_config_id
+		WHERE p.date LIKE ?
+		GROUP BY c.user_id
+	`, yearMonth+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make(map[int64]int64)
+	for rows.Next() {
+		var uid, total int64
+		if err := rows.Scan(&uid, &total); err == nil {
+			res[uid] = total
+		}
+	}
+	return res, nil
+}
+
 func (s *Storage) GetClientConfigByID(ctx context.Context, id int64) (*models.ClientConfig, error) {
 	var c models.ClientConfig
 	var totalRx, totalTx, handshakeEpoch int64
@@ -1013,7 +1081,7 @@ func (s *Storage) GetClientConfigByID(ctx context.Context, id int64) (*models.Cl
 	if mBytes, ok := monthMap[c.ID]; ok {
 		c.MonthTrafficBytes = mBytes
 	} else {
-		c.MonthTrafficBytes = c.TotalTrafficBytes
+		c.MonthTrafficBytes = 0
 	}
 	c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 
@@ -1056,7 +1124,7 @@ func (s *Storage) ListClientConfigsByUser(ctx context.Context, userID int64) ([]
 		if mBytes, ok := monthMap[c.ID]; ok {
 			c.MonthTrafficBytes = mBytes
 		} else {
-			c.MonthTrafficBytes = c.TotalTrafficBytes
+			c.MonthTrafficBytes = 0
 		}
 		c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 
@@ -1100,7 +1168,7 @@ func (s *Storage) ListAllClientConfigs(ctx context.Context) ([]models.ClientConf
 		if mBytes, ok := monthMap[c.ID]; ok {
 			c.MonthTrafficBytes = mBytes
 		} else {
-			c.MonthTrafficBytes = c.TotalTrafficBytes
+			c.MonthTrafficBytes = 0
 		}
 		c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 
@@ -1145,7 +1213,7 @@ func (s *Storage) ListClientConfigsByNodeID(ctx context.Context, nodeID int64) (
 		if mBytes, ok := monthMap[c.ID]; ok {
 			c.MonthTrafficBytes = mBytes
 		} else {
-			c.MonthTrafficBytes = c.TotalTrafficBytes
+			c.MonthTrafficBytes = 0
 		}
 		c.MonthTrafficFormatted = formatBytes(c.MonthTrafficBytes)
 

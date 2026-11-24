@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Key,
   Shield,
+  Activity,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { User, ClientConfigSummary } from '../types';
@@ -188,11 +189,18 @@ function UserDetailDrawer({
           )}
 
           {/* User Details Grid */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="p-3.5 rounded-2xl bg-[#0A1D26] border border-[#1C3945]/60">
               <div className="text-[11px] font-mono text-[#718187] uppercase tracking-wider">Регистрация</div>
               <div className="text-sm font-mono text-[#F2F0E8] mt-1">
                 {new Date(user.created_at).toLocaleDateString()}
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#0A1D26] border border-[#1C3945]/60">
+              <div className="text-[11px] font-mono text-[#718187] uppercase tracking-wider">Трафик за месяц</div>
+              <div className="text-sm font-mono text-[#F2F0E8] font-bold mt-1">
+                {user.month_traffic_formatted || '0 B'}
               </div>
             </div>
 
@@ -343,6 +351,7 @@ export function AdminUsers() {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<UserFilterTab>('all');
+  const [sortByTraffic, setSortByTraffic] = useState(false);
 
   // Selected User for Drawer
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -558,8 +567,15 @@ export function AdminUsers() {
       );
     }
 
+    // Sort by traffic if enabled
+    if (sortByTraffic) {
+      list = [...list].sort(
+        (a, b) => (b.month_traffic_bytes || 0) - (a.month_traffic_bytes || 0)
+      );
+    }
+
     return list;
-  }, [users, activeTab, searchQuery]);
+  }, [users, activeTab, searchQuery, sortByTraffic]);
 
   if (loading && users.length === 0) {
     return <Loader size="section" text="Загрузка списка пользователей..." />;
@@ -660,6 +676,19 @@ export function AdminUsers() {
           >
             Неактивные ({inactiveCount})
           </button>
+
+          <button
+            onClick={() => setSortByTraffic((prev) => !prev)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-semibold whitespace-nowrap transition flex items-center space-x-1 border ${
+              sortByTraffic
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                : 'bg-[#0A1D26] text-[#A8B4B7] hover:text-[#F2F0E8] border-[#1C3945]'
+            }`}
+            title="Сортировка по объему потребления трафика за календарный месяц"
+          >
+            <Activity className="w-3.5 h-3.5 text-[#D9B96E]" />
+            <span>Топ трафика {sortByTraffic ? '↓' : ''}</span>
+          </button>
         </div>
 
         {/* Search Input */}
@@ -693,6 +722,16 @@ export function AdminUsers() {
               <th className="px-5 py-3.5">Роль</th>
               <th className="px-5 py-3.5">Тариф</th>
               <th className="px-5 py-3.5">Статус</th>
+              <th
+                className="px-5 py-3.5 cursor-pointer hover:text-[#D9B96E] transition select-none"
+                onClick={() => setSortByTraffic((prev) => !prev)}
+                title="Нажмите для сортировки по расходу за месяц"
+              >
+                <div className="flex items-center space-x-1">
+                  <span>Трафик/мес</span>
+                  {sortByTraffic && <span className="text-[#D9B96E]">↓</span>}
+                </div>
+              </th>
               <th className="px-5 py-3.5">Регистрация</th>
               <th className="px-5 py-3.5 text-right">Действия</th>
             </tr>
@@ -700,7 +739,7 @@ export function AdminUsers() {
           <tbody className="divide-y divide-[#1C3945]/70 bg-[#0A1D26]/40 font-sans">
             {filteredUsers.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-5 py-10 text-center text-xs text-[#718187] font-mono">
+                <td colSpan={8} className="px-5 py-10 text-center text-xs text-[#718187] font-mono">
                   Пользователи не найдены
                 </td>
               </tr>
@@ -760,6 +799,29 @@ export function AdminUsers() {
                           <span>Сброс пароля</span>
                         </span>
                       )}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5 font-mono text-xs">
+                    <div className="flex items-center space-x-1.5">
+                      <span
+                        className={`font-semibold ${
+                          u.month_traffic_bytes &&
+                          u.month_traffic_bytes > 100 * 1024 * 1024 * 1024
+                            ? 'text-amber-400'
+                            : 'text-[#F2F0E8]'
+                        }`}
+                      >
+                        {u.month_traffic_formatted || '0 B'}
+                      </span>
+                      {u.month_traffic_bytes &&
+                        u.month_traffic_bytes > 100 * 1024 * 1024 * 1024 && (
+                          <span
+                            className="px-1.5 py-0.2 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30 font-bold"
+                            title="Повышенный расход трафика"
+                          >
+                            Heavy
+                          </span>
+                        )}
                     </div>
                   </td>
                   <td className="px-5 py-3.5 text-xs text-[#A8B4B7] font-mono">

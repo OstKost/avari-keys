@@ -21,15 +21,29 @@ type User struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// UserMonthTraffic represents user's aggregate traffic for a calendar month.
+type UserMonthTraffic struct {
+	Month       string `json:"month"`
+	RxBytes     int64  `json:"rx_bytes"`
+	TxBytes     int64  `json:"tx_bytes"`
+	TotalBytes  int64  `json:"total_bytes"`
+	Formatted   string `json:"formatted"`
+	RxFormatted string `json:"rx_formatted"`
+	TxFormatted string `json:"tx_formatted"`
+}
+
 // UserPublic represents user data safe for API responses.
 type UserPublic struct {
-	ID                      int64     `json:"id"`
-	Username                string    `json:"username"`
-	Role                    Role      `json:"role"`
-	IsActive                bool      `json:"is_active"`
-	IsPro                   bool      `json:"is_pro"`
-	HasPendingPasswordReset bool      `json:"has_pending_password_reset,omitempty"`
-	CreatedAt               time.Time `json:"created_at"`
+	ID                      int64             `json:"id"`
+	Username                string            `json:"username"`
+	Role                    Role              `json:"role"`
+	IsActive                bool              `json:"is_active"`
+	IsPro                   bool              `json:"is_pro"`
+	HasPendingPasswordReset bool              `json:"has_pending_password_reset,omitempty"`
+	MonthTraffic            *UserMonthTraffic `json:"month_traffic,omitempty"`
+	MonthTrafficBytes       int64             `json:"month_traffic_bytes,omitempty"`
+	MonthTrafficFormatted   string            `json:"month_traffic_formatted,omitempty"`
+	CreatedAt               time.Time         `json:"created_at"`
 }
 
 // Node represents a managed Slave API node (Cascade or Direct).
