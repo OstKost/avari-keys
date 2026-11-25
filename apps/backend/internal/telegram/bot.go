@@ -1541,12 +1541,7 @@ func (b *Bot) NotifyCascadeEgressFrozen(node models.Node, target models.EgressTa
 		label = target.Interface
 	}
 
-	recommendation := target.Recommendation
-	if recommendation == "" {
-		recommendation = fmt.Sprintf("systemctl restart awg-quick@%s", target.Interface)
-	}
-
-	ageStr := "более 3 мин"
+	ageStr := ">3 мин"
 	if target.HandshakeAgeSec > 0 {
 		ageStr = fmt.Sprintf("%d мин", target.HandshakeAgeSec/60)
 	}
@@ -1558,16 +1553,13 @@ func (b *Bot) NotifyCascadeEgressFrozen(node models.Node, target models.EgressTa
 
 	msg := fmt.Sprintf(
 		"❄️ <b>[Avari] Зависла сессия шлюза [%s]</b>\n"+
-			"Каскад: <b>%s</b> (#%d) → Выход: <b>%s</b> (<code>%s</code>)\n"+
-			"Хэндшейк: %s назад (0 B получено)\n"+
-			"💡 <code>%s</code>",
+			"Каскад: <b>%s</b> (#%d) → <b>%s</b> (<code>%s</code>) · Нет хэндшейка (%s)",
 		tag,
 		node.Name,
 		node.ID,
 		label,
 		target.Interface,
 		ageStr,
-		recommendation,
 	)
 	_ = b.BroadcastAlert(msg)
 }
@@ -1600,8 +1592,7 @@ func (b *Bot) NotifyCascadeEgressRecovered(node models.Node, target models.Egres
 
 	msg := fmt.Sprintf(
 		"✅ <b>[Avari] Сессия шлюза восстановилась [%s]</b>\n"+
-			"Каскад: <b>%s</b> (#%d) → Выход: <b>%s</b> (<code>%s</code>)\n"+
-			"Связь в норме, рукопожатие обновлено.",
+			"Каскад: <b>%s</b> (#%d) → <b>%s</b> (<code>%s</code>) · Связь восстановлена",
 		tag,
 		node.Name,
 		node.ID,
