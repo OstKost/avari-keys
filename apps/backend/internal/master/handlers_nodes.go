@@ -1,6 +1,7 @@
 package master
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -535,4 +536,82 @@ func (s *Server) handleAdminDeleteNode(w http.ResponseWriter, r *http.Request) {
 	s.invalidateDashboardCache()
 
 	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{Success: true, Message: "Node deleted"})
+}
+
+func (s *Server) handleAdminBlockNode(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	var req models.BlockNodeRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		reason = "Прямой доступ к узлу заблокирован из РФ"
+	}
+
+	if err := s.healthChecker.BlockNode(r.Context(), id, reason); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	node, _ := s.storage.GetNodeByID(r.Context(), id)
+	nodeName := fmt.Sprintf("#%d", id)
+	if node != nil {
+		nodeName = node.Name
+	}
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_block", fmt.Sprintf("Сервер «%s» (ID #%d) помечен как заблокированный: %s", nodeName, id, reason))
+
+	s.invalidateDashboardCache()
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{Success: true, Message: "Узел помечен как заблокированный"})
+}
+
+func (s *Server) handleAdminUnblockNode(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	if err := s.healthChecker.UnblockNode(r.Context(), id, 0); err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	node, _ := s.storage.GetNodeByID(r.Context(), id)
+	nodeName := fmt.Sprintf("#%d", id)
+	if node != nil {
+		nodeName = node.Name
+	}
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_unblock", fmt.Sprintf("С сервера «%s» (ID #%d) снят статус заблокированного", nodeName, id))
+
+	s.invalidateDashboardCache()
+	s.writeJSON(w, http.StatusOK, models.GenericSuccessResponse{Success: true, Message: "Блокировка с узла снята"})
+}
+
+func (s *Server) handleAdminCheckNodeUnblock(w http.ResponseWriter, r *http.Request) {
+	claims, _ := auth.GetUserFromContext(r.Context())
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid node ID"})
+		return
+	}
+
+	resp, err := s.healthChecker.CheckNodeUnblockNow(r.Context(), id)
+	if err != nil {
+		s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	s.logActivity(r, &claims.UserID, claims.Username, models.CategoryAdmin, "admin_node_check_unblock", fmt.Sprintf("Проверка доступности заблокированного сервера #%d: снята=%v", id, resp.Unblocked))
+
+	s.invalidateDashboardCache()
+	s.writeJSON(w, http.StatusOK, resp)
 }

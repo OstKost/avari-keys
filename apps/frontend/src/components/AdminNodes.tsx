@@ -29,6 +29,7 @@ import {
   ChevronDown,
   ChevronUp,
   Eye,
+  ShieldAlert,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { AdminNode, EgressStatusResponse, TelegramStatusResponse } from '../types';
@@ -49,18 +50,21 @@ function NodeHealthBadge({ label, status }: { label: string; status?: AdminNode[
     green: 'text-emerald-400 bg-emerald-950/70 border border-emerald-700/40',
     yellow: 'text-amber-300 bg-amber-950/70 border border-amber-700/40',
     red: 'text-rose-400 bg-rose-950/70 border border-rose-700/40',
+    blocked: 'text-amber-300 bg-rose-950/80 border border-rose-500/50',
     unknown: 'text-slate-400 bg-slate-900/70 border border-slate-700/40',
   };
   const dotColors = {
     green: 'bg-emerald-400',
     yellow: 'bg-amber-400 animate-pulse',
     red: 'bg-rose-400 animate-pulse',
+    blocked: 'bg-rose-400',
     unknown: 'bg-slate-400',
   };
   const labels = {
     green: 'В порядке',
     yellow: 'Замечания',
     red: 'Недоступен',
+    blocked: 'Заблокирован',
     unknown: 'Нет данных',
   };
   const checked =
@@ -101,7 +105,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'issues' | 'cascade' | 'direct' | 'pro'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'issues' | 'blocked' | 'cascade' | 'direct' | 'pro'>('all');
 
   // Telegram status state
   const [telegramStatus, setTelegramStatus] = useState<TelegramStatusResponse | null>(null);
@@ -537,10 +541,11 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
         n.network_status?.state === 'yellow' ||
         n.network_status?.state === 'red'
     ).length;
+    const blocked = nodes.filter((n) => n.is_blocked || n.server_status?.state === 'blocked').length;
     const cascades = nodes.filter((n) => n.type === 'cascade').length;
     const directs = nodes.filter((n) => n.type === 'direct').length;
     const pro = nodes.filter((n) => n.is_backup).length;
-    return { total, online, issues, cascades, directs, pro };
+    return { total, online, issues, blocked, cascades, directs, pro };
   }, [nodes]);
 
   // Filtered and searched nodes list
@@ -557,6 +562,8 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
           node.network_status?.state === 'yellow' ||
           node.network_status?.state === 'red';
         if (!isProblem) return false;
+      } else if (statusFilter === 'blocked') {
+        if (!node.is_blocked && node.server_status?.state !== 'blocked') return false;
       } else if (statusFilter === 'cascade') {
         if (node.type !== 'cascade') return false;
       } else if (statusFilter === 'direct') {
@@ -639,7 +646,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
       </div>
 
       {/* Metrics Overview Ribbon */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${metrics.blocked > 0 ? 'lg:grid-cols-7' : 'lg:grid-cols-6'} gap-3`}>
         {/* Metric 1: Total */}
         <button
           onClick={() => setStatusFilter('all')}
@@ -698,6 +705,27 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
             {metrics.issues === 0 ? 'Все в норме' : 'Требуют внимания'}
           </div>
         </button>
+
+        {/* Metric 3b: Blocked (Conditional) */}
+        {metrics.blocked > 0 && (
+          <button
+            onClick={() => setStatusFilter('blocked')}
+            className={`p-3.5 rounded-2xl border text-left transition-all duration-200 cursor-pointer ${
+              statusFilter === 'blocked'
+                ? 'bg-[#1a0f14] border-rose-500 shadow-md shadow-rose-500/20'
+                : 'bg-[#0D222C]/80 border-rose-900/50 hover:border-rose-500/60 hover:bg-[#1a0f14]/50'
+            }`}
+          >
+            <div className="flex items-center justify-between text-xs font-mono text-rose-300 uppercase tracking-wider">
+              <span>Заблокирован</span>
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+            </div>
+            <div className="text-xl sm:text-2xl font-bold font-mono text-rose-400 mt-1">
+              {metrics.blocked}
+            </div>
+            <div className="text-[11px] text-[#A8B4B7] font-mono mt-0.5">Ограничен IP</div>
+          </button>
+        )}
 
         {/* Metric 4: Cascades */}
         <button
@@ -898,6 +926,18 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                 Сбои ({metrics.issues})
               </button>
             )}
+            {metrics.blocked > 0 && (
+              <button
+                onClick={() => setStatusFilter('blocked')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono uppercase tracking-wider transition cursor-pointer ${
+                  statusFilter === 'blocked'
+                    ? 'bg-[#1a0f14] text-amber-300 font-bold border border-rose-500/60'
+                    : 'text-rose-400/90 hover:text-amber-300'
+                }`}
+              >
+                Заблокированы ({metrics.blocked})
+              </button>
+            )}
           </div>
 
           {/* View Mode Toggle: Grid vs Table */}
@@ -956,7 +996,9 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                 {/* Status Accent Bar at top edge */}
                 <div
                   className={`absolute top-0 left-0 right-0 h-1 ${
-                    !node.online
+                    node.is_blocked || node.server_status?.state === 'blocked'
+                      ? 'bg-rose-500'
+                      : !node.online
                       ? 'bg-rose-500'
                       : node.server_status?.state === 'yellow' || node.network_status?.state === 'yellow'
                       ? 'bg-amber-400'
@@ -1073,6 +1115,17 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
 
                   {/* Feature & Protocol Badges */}
                   <div className="flex items-center flex-wrap gap-1.5">
+                    {node.is_blocked && (
+                      <Tooltip content="Прямой доступ к IP заблокирован из РФ. Опрос снятия каждые 15 минут.">
+                        <span
+                          className="inline-flex items-center space-x-1 bg-rose-950/80 text-amber-300 border border-rose-500/50 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
+                        >
+                          <ShieldAlert className="w-3 h-3 text-rose-400" />
+                          <span>Заблокирован</span>
+                        </span>
+                      </Tooltip>
+                    )}
+
                     <span
                       className="inline-flex items-center space-x-1 bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/30 text-[11px] font-mono px-2 py-0.5 rounded-full font-bold shadow-sm whitespace-nowrap shrink-0"
                       title="Поддерживается протокол AmneziaWG (AWG)"
@@ -1122,6 +1175,18 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                       </span>
                     )}
                   </div>
+
+                  {node.is_blocked && (
+                    <div className="p-2.5 rounded-xl bg-rose-950/30 border border-rose-500/30 text-xs font-sans text-rose-200 flex items-start space-x-2">
+                      <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold text-rose-300">Прямой доступ заблокирован из РФ</span>
+                        <div className="text-[11px] text-[#A8B4B7] mt-0.5">
+                          {node.blocked_reason || 'Опрос снятия блокировки каждые 15 минут.'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Health Badges Mini-Grid */}
                   <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1337,6 +1402,11 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                             <span className="truncate max-w-[150px]" title={node.api_url}>
                               {node.api_url.replace(/^https?:\/\//, '')}
                             </span>
+                            {node.is_blocked && (
+                              <span className="text-[10px] font-mono font-bold text-amber-300 bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-500/50">
+                                🚫 Заблокирован
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

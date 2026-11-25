@@ -582,6 +582,78 @@ func TestAdminNodeDetailAndDiagnoseFlow(t *testing.T) {
 	}
 }
 
+func TestAdminNodeBlockUnblockAndCheckFlow(t *testing.T) {
+	masterSrv, _, _, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	handler := masterSrv.Handler()
+
+	// 1. Admin login
+	adminLoginBody, _ := json.Marshal(models.LoginRequest{
+		Username: "Forve",
+		Password: "AdminPass123!",
+	})
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(adminLoginBody))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var adminLoginResp models.LoginResponse
+	_ = json.NewDecoder(rec.Body).Decode(&adminLoginResp)
+	adminToken := adminLoginResp.Token
+
+	// 2. POST /api/v1/admin/nodes/1/block
+	blockBody, _ := json.Marshal(models.BlockNodeRequest{
+		Reason: "Прямой доступ к узлу заблокирован из РФ",
+	})
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/block", bytes.NewReader(blockBody))
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for block node, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	// Verify node is marked blocked in GET /api/v1/admin/nodes/1
+	req = httptest.NewRequest("GET", "/api/v1/admin/nodes/1", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var detail models.NodeDetailResponse
+	_ = json.NewDecoder(rec.Body).Decode(&detail)
+	if !detail.IsBlocked || detail.ServerStatus.State != "blocked" {
+		t.Fatalf("expected node to be blocked, got: %+v", detail)
+	}
+
+	// 3. POST /api/v1/admin/nodes/1/check-unblock
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/check-unblock", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for check-unblock, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var checkResp models.CheckUnblockResponse
+	_ = json.NewDecoder(rec.Body).Decode(&checkResp)
+	// Since mock slave in setupTestEnvironment is running, check-unblock should succeed and unblock it!
+	if !checkResp.Unblocked {
+		t.Fatalf("expected check-unblock to succeed with running mock slave, got: %+v", checkResp)
+	}
+
+	// 4. POST /api/v1/admin/nodes/1/unblock (idempotent manual unblock)
+	req = httptest.NewRequest("POST", "/api/v1/admin/nodes/1/unblock", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for unblock node, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAdminCascadeEgressSwitchFlow(t *testing.T) {
 	srv, _, _, cleanup := setupTestEnvironment(t)
 	defer cleanup()

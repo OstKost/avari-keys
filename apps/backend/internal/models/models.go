@@ -48,22 +48,26 @@ type UserPublic struct {
 
 // Node represents a managed Slave API node (Cascade or Direct).
 type Node struct {
-	ID                  int64     `json:"id"`
-	Name                string    `json:"name"`
-	Type                string    `json:"type"`         // "cascade" or "direct"
-	CountryCode         string    `json:"country_code"` // e.g. "NLD", "DEU", "USA"
-	ProviderURL         string    `json:"provider_url"` // e.g. "https://aeza.net"
-	APIURL              string    `json:"api_url"`
-	APIKey              string    `json:"-"` // Hidden in public responses
-	IsMobileOptimized   bool      `json:"is_mobile_optimized"`
-	IsBackup            bool      `json:"is_backup"`
-	HasHysteria         bool      `json:"has_hysteria"`
-	HasMieru            bool      `json:"has_mieru"`
-	HasVless            bool      `json:"has_vless"`
-	AutoFailoverEnabled bool      `json:"auto_failover_enabled"`
-	FailoverPriority    []string  `json:"failover_priority"`
-	IsActive            bool      `json:"is_active"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                  int64      `json:"id"`
+	Name                string     `json:"name"`
+	Type                string     `json:"type"`         // "cascade" or "direct"
+	CountryCode         string     `json:"country_code"` // e.g. "NLD", "DEU", "USA"
+	ProviderURL         string     `json:"provider_url"` // e.g. "https://aeza.net"
+	APIURL              string     `json:"api_url"`
+	APIKey              string     `json:"-"` // Hidden in public responses
+	IsMobileOptimized   bool       `json:"is_mobile_optimized"`
+	IsBackup            bool       `json:"is_backup"`
+	HasHysteria         bool       `json:"has_hysteria"`
+	HasMieru            bool       `json:"has_mieru"`
+	HasVless            bool       `json:"has_vless"`
+	AutoFailoverEnabled bool       `json:"auto_failover_enabled"`
+	FailoverPriority    []string   `json:"failover_priority"`
+	IsActive            bool       `json:"is_active"`
+	IsBlocked           bool       `json:"is_blocked"`
+	BlockedReason       string     `json:"blocked_reason,omitempty"`
+	BlockedAt           *time.Time `json:"blocked_at,omitempty"`
+	UnblockCheckAt      *time.Time `json:"unblock_check_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 // NodePublic represents safe node info for regular users.
@@ -78,6 +82,8 @@ type NodePublic struct {
 	HasMieru          bool      `json:"has_mieru"`
 	HasVless          bool      `json:"has_vless"`
 	IsActive          bool      `json:"is_active"`
+	IsBlocked         bool      `json:"is_blocked"`
+	BlockedReason     string    `json:"blocked_reason,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
@@ -222,6 +228,16 @@ type RestoreNodeRequest struct {
 	BackupData string `json:"backup_data"`
 }
 
+type BlockNodeRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type CheckUnblockResponse struct {
+	Unblocked bool   `json:"unblocked"`
+	Message   string `json:"message"`
+	LatencyMs int64  `json:"latency_ms,omitempty"`
+}
+
 type UpdateProfileRequest struct {
 	Username string `json:"username,omitempty"`
 	Password string `json:"password,omitempty"`
@@ -356,6 +372,7 @@ type NodeDashboardInfo struct {
 	Type                  string `json:"type"`
 	CountryCode           string `json:"country_code"`
 	IsBackup              bool   `json:"is_backup"`
+	IsBlocked             bool   `json:"is_blocked"`
 	Online                bool   `json:"online"`
 	LatencyMs             int64  `json:"latency_ms"`
 	PeerCount             int    `json:"peer_count"`

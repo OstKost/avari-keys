@@ -381,6 +381,14 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
                   </div>
 
                   <div className="flex items-center space-x-2 shrink-0">
+                    {n.is_blocked && (
+                      <Tooltip content="Прямой доступ к IP заблокирован из РФ. Опрос снятия каждые 15 минут.">
+                        <span className="text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-950/80 text-amber-300 border border-rose-500/50 whitespace-nowrap shrink-0">
+                          Заблокирован
+                        </span>
+                      </Tooltip>
+                    )}
+
                     <span
                       className={`text-xs sm:text-sm font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 ${
                         n.type === 'cascade'
@@ -426,23 +434,31 @@ export function NetworkDashboard({ currentUser, onNavigateTab }: NetworkDashboar
                   )}
                   <div className="flex justify-between items-center gap-2">
                     <span className="text-[#718187] whitespace-nowrap">Статус:</span>
-                    <Tooltip content={n.online ? 'Узел в сети (Online)' : 'Внимание: узел недоступен (Offline)'}>
-                      <div className="flex items-center cursor-help">
-                        <span className="relative flex h-3.5 w-3.5 items-center justify-center">
-                          {n.online ? (
-                            <>
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40 duration-1000" />
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 animate-beacon-green" />
-                            </>
-                          ) : (
-                            <>
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-90" />
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 animate-beacon-red" />
-                            </>
-                          )}
+                    {n.is_blocked ? (
+                      <Tooltip content="Прямой доступ из РФ ограничен сетевыми провайдерами. Опрос снятия каждые 15 мин.">
+                        <span className="text-xs font-mono font-bold text-amber-300 bg-rose-950/70 border border-rose-500/40 px-2 py-0.5 rounded-md cursor-help">
+                          Заблокирован
                         </span>
-                      </div>
-                    </Tooltip>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip content={n.online ? 'Узел в сети (Online)' : 'Внимание: узел недоступен (Offline)'}>
+                        <div className="flex items-center cursor-help">
+                          <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                            {n.online ? (
+                              <>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40 duration-1000" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 animate-beacon-green" />
+                              </>
+                            ) : (
+                              <>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-90" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 animate-beacon-red" />
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      </Tooltip>
+                    )}
                   </div>
 
                   <div className="flex justify-between items-center gap-2">

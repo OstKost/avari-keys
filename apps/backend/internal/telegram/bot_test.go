@@ -123,10 +123,14 @@ func TestTelegramBotSendMessageAndAlerts(t *testing.T) {
 	}
 	bot.NotifyCascadeEgressRecovered(node, targetBackup, false)
 
+	// 6. Test Node Blocked and Unblocked Notifications
+	bot.NotifyNodeBlocked(node, "прямой доступ заблокирован")
+	bot.NotifyNodeUnblocked(node, 28)
+
 	mu.Lock()
 	defer mu.Unlock()
-	if len(sentMessages) < 5 {
-		t.Fatalf("expected at least 5 messages, got %d", len(sentMessages))
+	if len(sentMessages) < 7 {
+		t.Fatalf("expected at least 7 messages, got %d", len(sentMessages))
 	}
 
 	frozenMsg := fmt.Sprintf("%v", sentMessages[3]["text"])
@@ -137,6 +141,16 @@ func TestTelegramBotSendMessageAndAlerts(t *testing.T) {
 	recoveredMsg := fmt.Sprintf("%v", sentMessages[4]["text"])
 	if !strings.Contains(recoveredMsg, "[РЕЗЕРВ]") || !strings.Contains(recoveredMsg, "Сессия шлюза восстановилась") || !strings.Contains(recoveredMsg, "awg3") {
 		t.Fatalf("unexpected recovered alert text: %s", recoveredMsg)
+	}
+
+	blockedMsg := fmt.Sprintf("%v", sentMessages[5]["text"])
+	if !strings.Contains(blockedMsg, "Сервер заблокирован") || !strings.Contains(blockedMsg, "NL Cascade") {
+		t.Fatalf("unexpected blocked alert text: %s", blockedMsg)
+	}
+
+	unblockedMsg := fmt.Sprintf("%v", sentMessages[6]["text"])
+	if !strings.Contains(unblockedMsg, "Блокировка снята") || !strings.Contains(unblockedMsg, "28 ms") {
+		t.Fatalf("unexpected unblocked alert text: %s", unblockedMsg)
 	}
 }
 
