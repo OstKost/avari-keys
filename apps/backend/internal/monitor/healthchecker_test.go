@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -396,5 +398,175 @@ func TestCascadeAutoFailover(t *testing.T) {
 	// Verify audit activity logged
 	if auditAction.Load().(string) != "admin_cascade_auto_failover" {
 		t.Fatalf("expected audit action admin_cascade_auto_failover, got '%s'", auditAction.Load().(string))
+	}
+}
+
+func TestCascadeEgressFrozenAndRecoveryFlow(t *testing.T) {
+	var sentMessages []map[string]any
+	var mu sync.Mutex
+
+	mockTG := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.Contains(r.URL.Path, "sendMessage") {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			sentMessages = append(sentMessages, payload)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok": true, "result": {"message_id": 123}}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok": true, "result": []}`))
+	}))
+	defer mockTG.Close()
+
+	var isFrozen atomic.Bool
+	isFrozen.Store(true)
+
+	mockSlave := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/health", "/api/v1/health":
+			_, _ = w.Write([]byte(`{"status":"ok","service":"avari-slave","version":"v1.6.0"}`))
+			return
+		case "/api/v1/stats":
+			_, _ = w.Write([]byte(`{"total_rx":100,"total_tx":100,"peers":[]}`))
+			return
+		case "/api/v1/cascade/egress":
+			frozen := isFrozen.Load()
+			resp := fmt.Sprintf(`{
+				"active_interface": "awg1",
+				"available_interfaces": ["awg1"],
+				"targets": [
+					{
+						"interface": "awg1",
+						"node": "S1",
+						"label": "S1 Амстердам",
+						"available": true,
+						"is_frozen": %v,
+						"handshake_age_sec": 200,
+						"recommendation": "systemctl restart awg-quick@awg1"
+					}
+				]
+			}`, frozen)
+			_, _ = w.Write([]byte(resp))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockSlave.Close()
+
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        12345,
+		Username:      "admin",
+		IsAdmin:       true,
+		AlertsEnabled: true,
+	})
+
+	_, err := store.CreateNode(ctx, "Cascade Freeze Test", "cascade", "NLD", "https://example.com", mockSlave.URL, "key", true, false, false)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	bot := telegram.NewBot(telegram.Config{
+		APIURL:      mockTG.URL,
+		Token:       "dummy_token",
+		BotUsername: "TestBot",
+		Storage:     store,
+	})
+
+	var loggedActivities []string
+	var actMu sync.Mutex
+
+	checker := monitor.NewHealthChecker(monitor.Config{
+		Storage:  store,
+		Bot:      bot,
+		Interval: 50 * time.Millisecond,
+		Timeout:  100 * time.Millisecond,
+		LogActivity: func(category models.AuditLogCategory, action string, details string) {
+			actMu.Lock()
+			loggedActivities = append(loggedActivities, action)
+			actMu.Unlock()
+		},
+	})
+
+	// Round 1: Target is frozen -> expect Frozen alert sent to TG
+	checker.CollectTelemetry(ctx)
+
+	mu.Lock()
+	count := len(sentMessages)
+	var firstMsg string
+	if count > 0 {
+		firstMsg = fmt.Sprintf("%v", sentMessages[0]["text"])
+	}
+	mu.Unlock()
+
+	if count != 1 {
+		t.Fatalf("expected 1 alert on initial freeze, got %d", count)
+	}
+	if !strings.Contains(firstMsg, "Завис") || !strings.Contains(firstMsg, "[АКТИВНЫЙ]") {
+		t.Fatalf("unexpected message content: %s", firstMsg)
+	}
+
+	// Round 2: Target is still frozen -> anti-spam suppresses duplicate alert
+	checker.CollectTelemetry(ctx)
+	mu.Lock()
+	count2 := len(sentMessages)
+	mu.Unlock()
+	if count2 != 1 {
+		t.Fatalf("expected no duplicate alert on continuous freeze, got %d", count2)
+	}
+
+	// Round 3: Target recovers (isFrozen = false) -> expect Recovery notification
+	isFrozen.Store(false)
+	checker.CollectTelemetry(ctx)
+
+	mu.Lock()
+	count3 := len(sentMessages)
+	var recoverMsg string
+	if count3 > 1 {
+		recoverMsg = fmt.Sprintf("%v", sentMessages[1]["text"])
+	}
+	mu.Unlock()
+
+	if count3 != 2 {
+		t.Fatalf("expected 2 total alerts (frozen + recovered), got %d", count3)
+	}
+	if !strings.Contains(recoverMsg, "восстановилась") || !strings.Contains(recoverMsg, "[АКТИВНЫЙ]") {
+		t.Fatalf("unexpected recovery message content: %s", recoverMsg)
+	}
+
+	// Round 4: Immediate re-freeze within 15 min anti-flapping window -> alert suppressed
+	isFrozen.Store(true)
+	checker.CollectTelemetry(ctx)
+
+	mu.Lock()
+	count4 := len(sentMessages)
+	mu.Unlock()
+	if count4 != 2 {
+		t.Fatalf("expected flapping alert to be suppressed by 15m cooldown, got %d messages", count4)
+	}
+
+	// Verify audit logs
+	actMu.Lock()
+	defer actMu.Unlock()
+	hasFrozenLog := false
+	hasRecoveredLog := false
+	for _, act := range loggedActivities {
+		if act == "cascade_egress_frozen" {
+			hasFrozenLog = true
+		}
+		if act == "cascade_egress_recovered" {
+			hasRecoveredLog = true
+		}
+	}
+	if !hasFrozenLog || !hasRecoveredLog {
+		t.Fatalf("expected both frozen and recovered audit logs, got: %v", loggedActivities)
 	}
 }
