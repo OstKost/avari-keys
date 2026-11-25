@@ -1102,7 +1102,7 @@ bandwidth:
         hysteria_available: Boolean(node.has_hysteria),
         mieru_available: Boolean(node.has_mieru),
         vless_available: Boolean(node.online && node.has_vless),
-        version: '1.10.3',
+        version: '1.10.4',
       },
       stats: {
         active_peers: matchedKeys.length,
