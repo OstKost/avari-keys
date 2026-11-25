@@ -224,3 +224,27 @@ func TestSaveAndRestoreState(t *testing.T) {
 		t.Fatalf("unexpected restored status: %+v", st)
 	}
 }
+
+func TestBlockableIP(t *testing.T) {
+	cases := []struct {
+		ip   string
+		want bool
+	}{
+		{"1.2.3.4", true},
+		{"8.8.8.8", true},
+		{"93.158.213.92", true},
+		{"127.0.0.1", false},
+		{"10.0.0.1", false},
+		{"192.168.1.1", false},
+		{"172.16.0.1", false},
+		{"169.254.1.1", false},
+		{"0.0.0.0", false},
+		{"224.0.0.1", false},
+	}
+	for _, c := range cases {
+		got := blockableIP(net.ParseIP(c.ip))
+		if got != c.want {
+			t.Errorf("blockableIP(%s) = %v, want %v", c.ip, got, c.want)
+		}
+	}
+}

@@ -267,7 +267,9 @@ func (m *Manager) ruleExists(ctx context.Context, args ...string) bool {
 	return err == nil && code == 0
 }
 
-// resolveIPs resolves the given domains to their IPv4 addresses (dedup + sorted).
+// resolveIPs resolves the given domains to their IPv4 addresses (dedup + sorted),
+// dropping non-routable addresses (loopback/private/link-local/multicast) that
+// must never be blocked (e.g. a sinkholed tracker domain resolving to 127.0.0.1).
 func (m *Manager) resolveIPs(ctx context.Context, domains []string) ([]string, error) {
 	seen := map[string]bool{}
 	var ips []string
@@ -277,6 +279,9 @@ func (m *Manager) resolveIPs(ctx context.Context, domains []string) ([]string, e
 			continue
 		}
 		for _, a := range addrs {
+			if !blockableIP(a) {
+				continue
+			}
 			ip := a.String()
 			if !seen[ip] {
 				seen[ip] = true
@@ -286,6 +291,17 @@ func (m *Manager) resolveIPs(ctx context.Context, domains []string) ([]string, e
 	}
 	sort.Strings(ips)
 	return ips, nil
+}
+
+// blockableIP reports whether an address is a public unicast IP that is safe to block.
+func blockableIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return false
+	}
+	return true
 }
 
 // State is the persisted local firewall state (mode + domains + timestamp).
