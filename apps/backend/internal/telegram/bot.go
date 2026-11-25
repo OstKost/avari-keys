@@ -1390,7 +1390,7 @@ func (b *Bot) BroadcastAlertWithMarkup(text string, markup any) error {
 	return lastErr
 }
 
-// NotifyNodeDown sends a critical downtime alert.
+// NotifyNodeDown sends a concise downtime alert.
 func (b *Bot) NotifyNodeDown(node models.Node, reason string) {
 	b.mu.RLock()
 	notify := b.notifyOnNodeDown
@@ -1401,27 +1401,17 @@ func (b *Bot) NotifyNodeDown(node models.Node, reason string) {
 	}
 
 	msg := fmt.Sprintf(
-		"🚨 <b>[Avari Alert] СЕРВЕР НЕДОСТУПЕН!</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"📍 <b>Сервер:</b> %s (ID #%d)\n"+
-			"🌐 <b>Тип:</b> %s\n"+
-			"🏳️ <b>Локация:</b> %s\n"+
-			"🔗 <b>API URL:</b> <code>%s</code>\n"+
-			"⚠️ <b>Ошибка:</b> <code>%s</code>\n"+
-			"⏱ <b>Время:</b> %s\n\n"+
-			"<i>Проверьте статус сервера или перезапустите службу AWG в панели управления.</i>",
+		"🚨 <b>[Avari] Сервер недоступен</b>\n"+
+			"Узел: <b>%s</b> (#%d)\n"+
+			"Причина: <code>%s</code>",
 		node.Name,
 		node.ID,
-		node.Type,
-		node.CountryCode,
-		node.APIURL,
 		reason,
-		time.Now().Format("02.01.2006 15:04:05"),
 	)
 	_ = b.BroadcastAlert(msg)
 }
 
-// NotifyNodeRecovered sends a recovery notification.
+// NotifyNodeRecovered sends a concise recovery notification.
 func (b *Bot) NotifyNodeRecovered(node models.Node, latencyMs int64) {
 	b.mu.RLock()
 	notify := b.notifyOnNodeRecover
@@ -1432,23 +1422,67 @@ func (b *Bot) NotifyNodeRecovered(node models.Node, latencyMs int64) {
 	}
 
 	msg := fmt.Sprintf(
-		"✅ <b>[Avari Alert] СЕРВЕР СНОВА ОНЛАЙН!</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"📍 <b>Сервер:</b> %s (ID #%d)\n"+
-			"🌐 <b>Тип:</b> %s\n"+
-			"⚡ <b>Задержка:</b> %d ms\n"+
-			"⏱ <b>Время восстановления:</b> %s\n\n"+
-			"<i>Сервер успешно отвечает на запросы и готов к обслуживанию клиентов.</i>",
+		"✅ <b>[Avari] Сервер снова онлайн</b>\n"+
+			"Узел: <b>%s</b> (#%d) · Пинг: %d ms",
 		node.Name,
 		node.ID,
-		node.Type,
 		latencyMs,
-		time.Now().Format("02.01.2006 15:04:05"),
 	)
 	_ = b.BroadcastAlert(msg)
 }
 
-// NotifyCascadeFailover sends an automatic cascade egress failover notification to admins.
+// NotifyNodeBlocked sends a concise alert when a server IP is blocked from Russia.
+func (b *Bot) NotifyNodeBlocked(node models.Node, reason string) {
+	if b == nil {
+		return
+	}
+	b.mu.RLock()
+	enabled := b.enabled
+	b.mu.RUnlock()
+
+	if !enabled {
+		return
+	}
+
+	if reason == "" {
+		reason = "прямой доступ из РФ недоступен (в Европе активен)"
+	}
+
+	msg := fmt.Sprintf(
+		"🚫 <b>[Avari] Сервер заблокирован</b>\n"+
+			"Узел: <b>%s</b> (#%d) · Опрос раз в 15 мин\n"+
+			"Причина: %s",
+		node.Name,
+		node.ID,
+		reason,
+	)
+	_ = b.BroadcastAlert(msg)
+}
+
+// NotifyNodeUnblocked sends a concise alert when a blocked server becomes reachable again.
+func (b *Bot) NotifyNodeUnblocked(node models.Node, latencyMs int64) {
+	if b == nil {
+		return
+	}
+	b.mu.RLock()
+	enabled := b.enabled
+	b.mu.RUnlock()
+
+	if !enabled {
+		return
+	}
+
+	msg := fmt.Sprintf(
+		"✅ <b>[Avari] Блокировка снята</b>\n"+
+			"Узел: <b>%s</b> (#%d) снова доступен · Пинг: %d ms",
+		node.Name,
+		node.ID,
+		latencyMs,
+	)
+	_ = b.BroadcastAlert(msg)
+}
+
+// NotifyCascadeFailover sends a concise cascade egress failover notification to admins.
 func (b *Bot) NotifyCascadeFailover(node models.Node, oldIf, newIf, oldLabel, newLabel, reason string) {
 	if b == nil {
 		return
@@ -1468,18 +1502,13 @@ func (b *Bot) NotifyCascadeFailover(node models.Node, oldIf, newIf, oldLabel, ne
 		newLabel = newIf
 	}
 	if reason == "" {
-		reason = "Шлюз не отвечает на запросы сетевого зонда"
+		reason = "шлюз не отвечает на запросы сетевого зонда"
 	}
 
 	msg := fmt.Sprintf(
-		"🔄 <b>[Avari Alert] АВТОПЕРЕКЛЮЧЕНИЕ КАСКАДА</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"📍 <b>Входной каскад:</b> %s (ID #%d)\n"+
-			"⚠️ <b>Прежний шлюз:</b> %s (<code>%s</code>) — <i>сбой!</i>\n"+
-			"🔀 <b>Новый шлюз:</b> %s (<code>%s</code>)\n"+
-			"📋 <b>Причина:</b> <code>%s</code>\n"+
-			"⏱ <b>Время:</b> %s\n\n"+
-			"<i>Auto-Failover успешно переключил Egress маршрутизацию на резервный канал. Период охлаждения (Cooldown): 5 минут.</i>",
+		"🔄 <b>[Avari] Автопереключение каскада</b>\n"+
+			"Каскад: <b>%s</b> (#%d): %s (<code>%s</code>) → <b>%s</b> (<code>%s</code>)\n"+
+			"Причина: %s",
 		node.Name,
 		node.ID,
 		oldLabel,
@@ -1487,7 +1516,6 @@ func (b *Bot) NotifyCascadeFailover(node models.Node, oldIf, newIf, oldLabel, ne
 		newLabel,
 		newIf,
 		reason,
-		time.Now().Format("02.01.2006 15:04:05"),
 	)
 	_ = b.BroadcastAlert(msg)
 }
@@ -1583,7 +1611,7 @@ func (b *Bot) NotifyCascadeEgressRecovered(node models.Node, target models.Egres
 	_ = b.BroadcastAlert(msg)
 }
 
-// NotifyNewUser sends an alert about new user registration pending approval with inline action buttons.
+// NotifyNewUser sends a concise alert about new user registration pending approval.
 func (b *Bot) NotifyNewUser(user models.User) {
 	b.mu.RLock()
 	notify := b.notifyOnNewUser
@@ -1594,15 +1622,10 @@ func (b *Bot) NotifyNewUser(user models.User) {
 	}
 
 	msg := fmt.Sprintf(
-		"👤 <b>[Avari Keys] Новый пользователь!</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"Пользователь: <b>@%s</b> (ID #%d)\n"+
-			"Статус: 🟡 <b>Ожидает модерации</b>\n"+
-			"Дата: %s\n\n"+
-			"<i>Нажмите кнопку ниже или используйте веб-панель для модерации.</i>",
+		"👤 <b>[Avari] Новый пользователь: @%s</b> (#%d)\n"+
+			"Ожидает модерации.",
 		user.Username,
 		user.ID,
-		user.CreatedAt.Format("02.01.2006 15:04:05"),
 	)
 
 	keyboard := InlineKeyboardMarkup{
@@ -1617,22 +1640,17 @@ func (b *Bot) NotifyNewUser(user models.User) {
 	_ = b.BroadcastAlertWithMarkup(msg, keyboard)
 }
 
-// NotifyPasswordReset sends an alert to admins about a user requesting a password reset.
+// NotifyPasswordReset sends a concise alert about user password reset request.
 func (b *Bot) NotifyPasswordReset(req models.PasswordResetRequest, user models.User) {
 	if !b.IsEnabled() {
 		return
 	}
 
 	msg := fmt.Sprintf(
-		"🔑 <b>[Avari Keys] Запрос на сброс пароля!</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"Пользователь: <b>@%s</b> (ID #%d)\n"+
-			"Статус: 🟡 <b>Ожидает подтверждения</b>\n"+
-			"Дата: %s\n\n"+
-			"<i>Пользователь запросил установку нового пароля. Нажмите кнопку ниже или используйте веб-панель для подтверждения.</i>",
+		"🔑 <b>[Avari] Запрос сброса пароля: @%s</b> (#%d)\n"+
+			"Ожидает подтверждения.",
 		user.Username,
 		user.ID,
-		req.CreatedAt.Format("02.01.2006 15:04:05"),
 	)
 
 	keyboard := InlineKeyboardMarkup{
@@ -1669,21 +1687,16 @@ func (b *Bot) NotifyUserPasswordResetRejected(user models.User) {
 	}
 }
 
-// SendTestAlert sends a test message to a specific chat or broadcasts.
+// SendTestAlert sends a concise test alert.
 func (b *Bot) SendTestAlert(chatID int64) error {
 	b.mu.RLock()
 	botUsername := b.botUsername
 	b.mu.RUnlock()
 
 	msg := fmt.Sprintf(
-		"🔔 <b>[Avari Test Alert] Проверка связи с ботом @%s</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"✅ Бот успешно подключен к Master-серверу.\n"+
-			"📡 Оповещения о статусе серверов и падениях настроены.\n"+
-			"💳 Напоминания о взносах активны.\n"+
-			"⏱ <b>Время:</b> %s",
+		"🔔 <b>[Avari] Тестовое уведомление</b>\n"+
+			"Связь с ботом @%s работает корректно.",
 		botUsername,
-		time.Now().Format("02.01.2006 15:04:05"),
 	)
 
 	if chatID != 0 {
@@ -1713,24 +1726,16 @@ func (b *Bot) SendBillingReminder(chatID int64, userID int64, username string, k
 		}
 	}
 
-	dueText := "срок оплаты наступил!"
+	dueText := "срок наступил"
 	if daysRemaining > 0 {
-		dueText = fmt.Sprintf("осталось <b>%d дн.</b>", daysRemaining)
+		dueText = fmt.Sprintf("осталось %d дн.", daysRemaining)
 	}
 
 	msg := fmt.Sprintf(
-		"🌿 <b>[Avari Keys] Напоминание о кооперативном взносе</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"Здравствуйте, <b>%s</b>!\n\n"+
-			"Подходит срок ежемесячного взноса за серверную инфраструктуру Avari Keys (%s).\n\n"+
-			"🔑 Ваших активных ключей: <b>%d</b>\n"+
-			"💳 Рекомендуемый взнос: <b>%.0f ₽</b>\n"+
-			"<i>(Базовый тариф: 200 ₽ за 3 ключа + 30 ₽ за каждый доп. ключ)</i>\n\n"+
-			"📱 <b>Реквизиты для взноса (СБП):</b>\n"+
-			"├ Телефон: <code>%s</code>\n"+
-			"└ Банк: <b>%s</b>\n\n"+
-			"<i>Взнос является добровольной поддержкой серверной инфраструктуры. Спасибо за участие в сети! ✨</i>",
-		username, dueText, keyCount, amount, phone, bank,
+		"🌿 <b>[Avari] Напоминание о взносе</b>\n"+
+			"Пользователь: <b>%s</b> · Ключей: <b>%d</b> · Сумма: <b>%.0f ₽</b> (%s)\n"+
+			"СБП: <code>%s</code> (%s)",
+		username, keyCount, amount, dueText, phone, bank,
 	)
 
 	var markup any

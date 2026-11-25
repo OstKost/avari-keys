@@ -32,6 +32,7 @@ type HealthChecker struct {
 	nodeTimeout      time.Duration
 	failureThreshold int
 	fastRetryDelay   time.Duration
+	unblockInterval  time.Duration
 	logActivity      func(category models.AuditLogCategory, action string, details string)
 
 	serverStatuses  map[int64]models.StatusDetail
@@ -60,6 +61,7 @@ type Config struct {
 	Timeout          time.Duration
 	FailureThreshold int
 	FastRetryDelay   time.Duration
+	UnblockInterval  time.Duration
 	LogActivity      func(category models.AuditLogCategory, action string, details string)
 }
 
@@ -81,6 +83,10 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 	if fastRetry <= 0 {
 		fastRetry = 15 * time.Second
 	}
+	unblockInterval := cfg.UnblockInterval
+	if unblockInterval <= 0 {
+		unblockInterval = 15 * time.Minute
+	}
 
 	return &HealthChecker{
 		storage:          cfg.Storage,
@@ -89,6 +95,7 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 		nodeTimeout:      timeout,
 		failureThreshold: failThreshold,
 		fastRetryDelay:   fastRetry,
+		unblockInterval:  unblockInterval,
 		logActivity:      cfg.LogActivity,
 		nodeStates:       make(map[int64]bool),
 		serverStatuses:   make(map[int64]models.StatusDetail),
@@ -134,6 +141,10 @@ func (h *HealthChecker) run(ctx context.Context) {
 	ticker := time.NewTicker(h.interval)
 	defer ticker.Stop()
 
+	// Periodic unblock check for blocked servers (every 15 minutes by default)
+	unblockTicker := time.NewTicker(h.unblockInterval)
+	defer unblockTicker.Stop()
+
 	// Periodic billing reminder check (every 12 hours)
 	billingTicker := time.NewTicker(12 * time.Hour)
 	defer billingTicker.Stop()
@@ -146,6 +157,8 @@ func (h *HealthChecker) run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			h.collectTelemetryAndHealth(ctx, false)
+		case <-unblockTicker.C:
+			h.ProbeBlockedNodes(ctx)
 		case <-billingTicker.C:
 			if h.bot != nil {
 				_ = h.bot.BroadcastBillingReminders(ctx)
@@ -205,6 +218,16 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 
 	for _, node := range nodes {
 		if !node.IsActive {
+			continue
+		}
+
+		if node.IsBlocked {
+			resultsChan <- nodeResult{
+				node:      node,
+				online:    false,
+				latencyMs: 0,
+				err:       fmt.Errorf("server is blocked"),
+			}
 			continue
 		}
 
@@ -500,7 +523,13 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 
 		h.mu.Lock()
 		status := models.StatusDetail{State: "green", CheckedAt: time.Now().UTC()}
-		if !isOnline {
+		if n.IsBlocked {
+			status.State = "blocked"
+			status.Reason = n.BlockedReason
+			if status.Reason == "" {
+				status.Reason = "Прямой доступ к узлу заблокирован из РФ"
+			}
+		} else if !isOnline {
 			status.State = "red"
 			status.Reason = "API ноды недоступен; работа сервера не подтверждена"
 		} else if res.health != nil && (!res.health.AWGAvailable || (n.HasHysteria && !res.health.HysteriaAvailable) || (n.HasMieru && !res.health.MieruAvailable) || (n.HasVless && !res.health.VlessAvailable)) {
@@ -515,7 +544,12 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 		var shouldNotifyRecover bool
 		var currentOnline bool
 
-		if isOnline {
+		if n.IsBlocked {
+			h.nodeStates[n.ID] = false
+			h.nodeLatencies[n.ID] = 0
+			h.nodeFailures[n.ID] = 0
+			currentOnline = false
+		} else if isOnline {
 			h.nodeFailures[n.ID] = 0
 			h.nodeStates[n.ID] = true
 			h.nodeLatencies[n.ID] = latency
@@ -694,6 +728,7 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 			Type:                  n.Type,
 			CountryCode:           n.CountryCode,
 			IsBackup:              n.IsBackup,
+			IsBlocked:             n.IsBlocked,
 			Online:                isOnline,
 			LatencyMs:             latency,
 			PeerCount:             nodePeerCount,
@@ -814,14 +849,25 @@ func (h *HealthChecker) CheckAllNodes(ctx context.Context) ([]models.NodeWithSta
 			status, hasStatus := h.serverStatuses[node.ID]
 			probes := append([]models.NetworkProbe{}, h.networkProbes[node.ID]...)
 			h.mu.RUnlock()
-			if !hasStatus {
+			if node.IsBlocked {
+				status = models.StatusDetail{
+					State:     "blocked",
+					CheckedAt: time.Now().UTC(),
+					Reason:    node.BlockedReason,
+				}
+				if status.Reason == "" {
+					status.Reason = "Прямой доступ к узлу заблокирован из РФ"
+				}
+				isOnline = false
+				latency = 0
+			} else if !hasStatus {
 				status = models.StatusDetail{State: "unknown", Reason: "Нет результатов фоновой проверки сервера"}
 			} else if time.Since(status.CheckedAt) > 3*h.interval {
 				status.State = "yellow"
 				status.Reason = "Результат проверки сервера устарел"
 			}
 
-			if !exists {
+			if !exists && !node.IsBlocked {
 				pingCtx, cancel := context.WithTimeout(ctx, h.nodeTimeout)
 				defer cancel()
 
@@ -958,12 +1004,29 @@ func (h *HealthChecker) DiagnoseNode(ctx context.Context, id int64) (*models.Nod
 		latency = 0
 	}
 
+	if isOnline && node.IsBlocked {
+		_ = h.UnblockNode(ctx, node.ID, latency)
+		if updated, uErr := h.storage.GetNodeByID(ctx, id); uErr == nil && updated != nil {
+			node = updated
+		}
+	}
+
 	var status models.StatusDetail
 	if isOnline {
 		status = models.StatusDetail{
 			State:     "green",
 			CheckedAt: time.Now().UTC(),
 			Reason:    fmt.Sprintf("Служба активна, время отклика API %d ms", latency),
+		}
+	} else if node.IsBlocked {
+		errMsg := "нет ответа по прямому маршруту из РФ"
+		if hErr != nil {
+			errMsg = hErr.Error()
+		}
+		status = models.StatusDetail{
+			State:     "blocked",
+			CheckedAt: time.Now().UTC(),
+			Reason:    fmt.Sprintf("Узел заблокирован: %s (%s)", node.BlockedReason, errMsg),
 		}
 	} else {
 		errMsg := "Сервер не отвечает на запросы Slave API"
@@ -1124,4 +1187,165 @@ func (h *HealthChecker) refreshPublicNetwork(ctx context.Context, nodes []models
 	h.mu.Lock()
 	h.networkProbes = grouped
 	h.mu.Unlock()
+}
+
+// BlockNode manually or automatically transitions a node into Blocked state.
+func (h *HealthChecker) BlockNode(ctx context.Context, id int64, reason string) error {
+	if reason == "" {
+		reason = "Прямой доступ к узлу заблокирован из РФ"
+	}
+	if err := h.storage.SetNodeBlockedStatus(ctx, id, true, reason); err != nil {
+		return err
+	}
+	node, err := h.storage.GetNodeByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	h.mu.Lock()
+	h.nodeStates[id] = false
+	h.nodeLatencies[id] = 0
+	h.nodeFailures[id] = 0
+	h.serverStatuses[id] = models.StatusDetail{
+		State:     "blocked",
+		CheckedAt: time.Now().UTC(),
+		Reason:    reason,
+	}
+	h.mu.Unlock()
+
+	// Auto-publish incident announcement (anti-spam: check if already active)
+	existingNews, _ := h.storage.FindActiveIncidentNewsForNode(ctx, node.Name)
+	if existingNews == nil {
+		_, _ = h.storage.CreateNews(ctx, &models.NewsItem{
+			Title:      fmt.Sprintf("⚠️ [Ограничение доступа] Сервер «%s» временно заблокирован", node.Name),
+			Content:    fmt.Sprintf("Зафиксировано ограничение прямого доступа к серверу «%s» из сетей РФ. Другие узлы кластера и каскадные маршруты работают в штатном режиме. Система выполняет автоматическую проверку доступности каждые 15 минут.", node.Name),
+			Category:   models.NewsCategoryIncident,
+			IsPinned:   true,
+			AuthorName: "System Sentinel",
+		})
+	}
+
+	if h.logActivity != nil {
+		h.logActivity(models.CategorySystem, "node_blocked", fmt.Sprintf("Узел «%s» (#%d) переведен в статус «Заблокирован»: %s", node.Name, node.ID, reason))
+	}
+	if h.bot != nil && h.bot.IsEnabled() {
+		h.bot.NotifyNodeBlocked(*node, reason)
+	}
+
+	return nil
+}
+
+// UnblockNode transitions a node out of Blocked state and restores normal healthcheck.
+func (h *HealthChecker) UnblockNode(ctx context.Context, id int64, latencyMs int64) error {
+	if err := h.storage.SetNodeBlockedStatus(ctx, id, false, ""); err != nil {
+		return err
+	}
+	node, err := h.storage.GetNodeByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	h.mu.Lock()
+	h.nodeStates[id] = true
+	h.nodeLatencies[id] = latencyMs
+	h.nodeFailures[id] = 0
+	h.serverStatuses[id] = models.StatusDetail{
+		State:     "green",
+		CheckedAt: time.Now().UTC(),
+		Reason:    fmt.Sprintf("Связь восстановлена, отклик API %d ms", latencyMs),
+	}
+	h.mu.Unlock()
+
+	// Auto-remove incident announcement for this node
+	_ = h.storage.RemoveIncidentNewsForNode(ctx, node.Name)
+
+	if h.logActivity != nil {
+		h.logActivity(models.CategorySystem, "node_unblocked", fmt.Sprintf("Снята блокировка узла «%s» (#%d). Сервер возвращен в штатный мониторинг", node.Name, node.ID))
+	}
+	if h.bot != nil && h.bot.IsEnabled() {
+		h.bot.NotifyNodeUnblocked(*node, latencyMs)
+	}
+
+	return nil
+}
+
+// CheckNodeUnblockNow runs an immediate lightweight probe to check if a blocked node has become reachable.
+func (h *HealthChecker) CheckNodeUnblockNow(ctx context.Context, id int64) (*models.CheckUnblockResponse, error) {
+	node, err := h.storage.GetNodeByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	slaveCli := client.NewSlaveClient(node.APIURL, node.APIKey)
+	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	start := time.Now()
+	health, hErr := slaveCli.CheckHealth(probeCtx)
+	latency := time.Since(start).Milliseconds()
+	cancel()
+
+	if hErr == nil && health != nil && health.Status == "ok" {
+		_ = h.UnblockNode(ctx, id, latency)
+		return &models.CheckUnblockResponse{
+			Unblocked: true,
+			Message:   fmt.Sprintf("Узел «%s» успешно ответил на проверочный запрос (%d ms). Блокировка снята!", node.Name, latency),
+			LatencyMs: latency,
+		}, nil
+	}
+
+	_ = h.storage.UpdateNodeUnblockCheckTime(ctx, id)
+	errMsg := "нет отклика по прямому маршруту из РФ"
+	if hErr != nil {
+		errMsg = hErr.Error()
+	}
+	return &models.CheckUnblockResponse{
+		Unblocked: false,
+		Message:   fmt.Sprintf("Узел «%s» по-прежнему недоступен: %s", node.Name, errMsg),
+	}, nil
+}
+
+// ProbeBlockedNodes is the background worker called periodically to check for unblocked servers.
+func (h *HealthChecker) ProbeBlockedNodes(ctx context.Context) {
+	if h.storage == nil {
+		return
+	}
+	nodes, err := h.storage.ListNodes(ctx)
+	if err != nil {
+		return
+	}
+
+	for _, n := range nodes {
+		if !n.IsActive || !n.IsBlocked {
+			continue
+		}
+
+		slaveCli := client.NewSlaveClient(n.APIURL, n.APIKey)
+		probeCtx1, cancel1 := context.WithTimeout(ctx, 3*time.Second)
+		health1, err1 := slaveCli.CheckHealth(probeCtx1)
+		cancel1()
+
+		if err1 == nil && health1 != nil && health1.Status == "ok" {
+			// Anti-flapping: 3-second debounce check before declaring unblocked
+			select {
+			case <-time.After(3 * time.Second):
+			case <-h.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			}
+
+			probeCtx2, cancel2 := context.WithTimeout(ctx, 3*time.Second)
+			start := time.Now()
+			health2, err2 := slaveCli.CheckHealth(probeCtx2)
+			latency := time.Since(start).Milliseconds()
+			cancel2()
+
+			if err2 == nil && health2 != nil && health2.Status == "ok" {
+				log.Printf("[MONITOR] ✅ Blocked node #%d (%s) is reachable again! Unblocking...", n.ID, n.Name)
+				_ = h.UnblockNode(ctx, n.ID, latency)
+				continue
+			}
+		}
+
+		_ = h.storage.UpdateNodeUnblockCheckTime(ctx, n.ID)
+	}
 }

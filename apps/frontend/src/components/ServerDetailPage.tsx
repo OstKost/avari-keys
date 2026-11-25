@@ -82,6 +82,12 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
   const [savingFailover, setSavingFailover] = useState(false);
   const [isEditingSubmitting, setIsEditingSubmitting] = useState(false);
 
+  // Block/Unblock state
+  const [isCheckingUnblock, setIsCheckingUnblock] = useState(false);
+  const [isUnblocking, setIsUnblocking] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+
   // Fetch node detail
   const fetchDetail = useCallback(async (silent = false) => {
     try {
@@ -111,6 +117,59 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
       toast.error(err.message || 'Ошибка выполнения диагностики');
     } finally {
       setDiagnosing(false);
+    }
+  };
+
+  // Check unblock status
+  const handleCheckUnblock = async () => {
+    if (!node || isCheckingUnblock) return;
+    try {
+      setIsCheckingUnblock(true);
+      const res = await api.checkAdminNodeUnblock(node.id);
+      if (res.unblocked) {
+        toast.success(res.message || 'Сервер разблокирован и возвращен в рабочий пул!');
+      } else {
+        toast.info(res.message || 'Сервер по-прежнему недоступен из РФ');
+      }
+      fetchDetail(true);
+      if (onNodeUpdated) onNodeUpdated();
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка проверки снятия блокировки');
+    } finally {
+      setIsCheckingUnblock(false);
+    }
+  };
+
+  // Manual unblock
+  const handleUnblockNode = async () => {
+    if (!node || isUnblocking) return;
+    try {
+      setIsUnblocking(true);
+      const res = await api.unblockAdminNode(node.id);
+      toast.success(res.message || 'Сервер успешно разблокирован');
+      fetchDetail(true);
+      if (onNodeUpdated) onNodeUpdated();
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка снятия блокировки');
+    } finally {
+      setIsUnblocking(false);
+    }
+  };
+
+  // Manual block
+  const handleBlockNode = async () => {
+    if (!node || isBlocking) return;
+    try {
+      setIsBlocking(true);
+      const res = await api.blockAdminNode(node.id, 'Блокировка IP сетевыми провайдерами РФ');
+      toast.success(res.message || 'Сервер помечен как заблокированный');
+      setShowBlockConfirm(false);
+      fetchDetail(true);
+      if (onNodeUpdated) onNodeUpdated();
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка блокировки сервера');
+    } finally {
+      setIsBlocking(false);
     }
   };
 
@@ -358,11 +417,12 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
     }
   };
 
-  const renderStatusBadge = (state?: 'green' | 'yellow' | 'red' | 'unknown', label?: string) => {
+  const renderStatusBadge = (state?: 'green' | 'yellow' | 'red' | 'blocked' | 'unknown', label?: string) => {
     const map = {
       green: { icon: CheckCircle2, text: 'В порядке', bg: 'bg-emerald-950/80 text-emerald-300 border-emerald-600/40' },
       yellow: { icon: AlertTriangle, text: 'Замечания', bg: 'bg-amber-950/80 text-amber-300 border-amber-600/40' },
       red: { icon: XCircle, text: 'Недоступен', bg: 'bg-rose-950/80 text-rose-400 border-rose-600/40' },
+      blocked: { icon: ShieldAlert, text: 'Заблокирован', bg: 'bg-rose-950/80 text-amber-300 border-rose-500/50' },
       unknown: { icon: HelpCircle, text: 'Нет данных', bg: 'bg-slate-900/80 text-slate-400 border-slate-700/40' },
     };
     const current = map[state || 'unknown'];
@@ -398,7 +458,11 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
   const country = getCountryInfo(node.country_code);
   const latency = typeof node.latency_ms === 'number' ? node.latency_ms : null;
   const isStaleServer = !!node.server_status?.checked_at && Date.now() - new Date(node.server_status.checked_at).getTime() > 180_000;
-  const serverState = isStaleServer ? 'yellow' : (node.server_status?.state || (node.online ? 'green' : 'red'));
+  const serverState = node.is_blocked
+    ? 'blocked'
+    : isStaleServer
+    ? 'yellow'
+    : (node.server_status?.state || (node.online ? 'green' : 'red'));
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fadeIn pb-12">
@@ -508,6 +572,13 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                   <span>PRO / Запасной</span>
                 </span>
               )}
+
+              {node.is_blocked && (
+                <span className="inline-flex items-center space-x-1 bg-rose-950/80 text-amber-300 border border-rose-500/50 text-xs font-mono px-2.5 py-1 rounded-full font-bold">
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Заблокирован в РФ</span>
+                </span>
+              )}
             </div>
           </div>
 
@@ -556,6 +627,36 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
               <Pencil className="w-4 h-4" />
             </button>
 
+            {node.is_blocked ? (
+              <>
+                <button
+                  onClick={handleCheckUnblock}
+                  disabled={isCheckingUnblock}
+                  className="p-2.5 rounded-xl border border-amber-500/40 bg-[#102833] text-amber-300 hover:text-[#F2F0E8] hover:border-amber-400 transition cursor-pointer disabled:opacity-50"
+                  title="Проверить снятие блокировки IP прямо сейчас"
+                >
+                  <RotateCw className={`w-4 h-4 ${isCheckingUnblock ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={handleUnblockNode}
+                  disabled={isUnblocking}
+                  className="p-2.5 rounded-xl border border-emerald-600/40 bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900 transition cursor-pointer disabled:opacity-50"
+                  title="Снять статус блокировки"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setShowBlockConfirm(true)}
+                disabled={isBlocking}
+                className="p-2.5 rounded-xl border border-rose-600/40 bg-rose-950/40 text-rose-400 hover:text-rose-200 hover:border-rose-500 transition cursor-pointer disabled:opacity-50"
+                title="Пометить сервер как заблокированный в РФ"
+              >
+                <ShieldAlert className="w-4 h-4" />
+              </button>
+            )}
+
             {node.provider_url && (
               <a
                 href={formatUrl(node.provider_url)}
@@ -572,6 +673,64 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
           </div>
         </div>
       </div>
+
+      {/* Blocked State Alert Banner */}
+      {node.is_blocked && (
+        <div className="bg-rose-950/40 border border-rose-500/50 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start space-x-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-rose-900/60 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0 shadow-sm">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2 flex-wrap">
+                  <h4 className="font-serif font-bold text-base sm:text-lg text-[#F2F0E8]">
+                    Прямой доступ к серверу заблокирован из РФ
+                  </h4>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-rose-900/80 text-amber-300 border border-rose-600/40">
+                    Ограничение IP
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-[#A8B4B7] mt-1 font-sans max-w-3xl leading-relaxed">
+                  Сетевые операторы РФ фильтруют прямой доступ к IP-адресу данного сервера. Сервер исключен из активных списков для пользователей. Система опрашивает сервер на предмет снятия ограничений каждые 15 минут.
+                </p>
+                <div className="flex items-center space-x-4 text-xs font-mono text-[#718187] mt-2.5 flex-wrap gap-y-1">
+                  {node.blocked_at && (
+                    <span>Заблокирован: <strong className="text-[#A8B4B7]">{new Date(node.blocked_at).toLocaleString('ru-RU')}</strong></span>
+                  )}
+                  {node.unblock_check_at && (
+                    <span>Посл. проверка: <strong className="text-[#A8B4B7]">{new Date(node.unblock_check_at).toLocaleTimeString('ru-RU')}</strong></span>
+                  )}
+                  {node.blocked_reason && (
+                    <span>Причина: <strong className="text-[#A8B4B7]">{node.blocked_reason}</strong></span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0 self-end md:self-center">
+              <button
+                onClick={handleCheckUnblock}
+                disabled={isCheckingUnblock}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-[#102833] hover:bg-[#1C3945] border border-amber-500/40 text-amber-300 text-xs font-mono uppercase tracking-wider transition cursor-pointer disabled:opacity-50"
+                title="Проверить прямо сейчас, снята ли блокировка"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${isCheckingUnblock ? 'animate-spin' : ''}`} />
+                <span>{isCheckingUnblock ? 'Проверка...' : 'Проверить снятие'}</span>
+              </button>
+              <button
+                onClick={handleUnblockNode}
+                disabled={isUnblocking}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/40 text-emerald-300 text-xs font-mono uppercase tracking-wider transition cursor-pointer disabled:opacity-50"
+                title="Снять статус блокировки вручную"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>{isUnblocking ? 'Разблокировка...' : 'Разблокировать'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SECTION 1: Status & Diagnostics Overview Grid */}
       <div>
@@ -1600,6 +1759,18 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
             </form>
           </div>
         </div>
+      )}
+      {showBlockConfirm && (
+        <ConfirmModal
+          isOpen={showBlockConfirm}
+          title="Пометить сервер как заблокированный?"
+          message={`Прямой IP-адрес сервера «${node.name}» будет помечен как заблокированный провайдерами РФ. Сервер будет исключен из обычного быстрого опроса и из создания новых клиентских ключей. Система будет проверять доступность сервера каждые 15 минут.`}
+          confirmText="Пометить как заблокированный"
+          onConfirm={handleBlockNode}
+          onClose={() => setShowBlockConfirm(false)}
+          variant="danger"
+          isLoading={isBlocking}
+        />
       )}
     </div>
   );

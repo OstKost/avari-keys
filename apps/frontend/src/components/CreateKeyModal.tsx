@@ -20,8 +20,9 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
     : /Android/i.test(navigator.userAgent)
       ? 'Android'
       : '';
-  const defaultNode = (mobileOS && safeNodes.find((n) => n.is_mobile_optimized && (!n.is_backup || isUserProOrAdmin)))
-    || safeNodes.find((n) => !n.is_backup || isUserProOrAdmin)
+  const defaultNode = (mobileOS && safeNodes.find((n) => !n.is_blocked && n.is_mobile_optimized && (!n.is_backup || isUserProOrAdmin)))
+    || safeNodes.find((n) => !n.is_blocked && (!n.is_backup || isUserProOrAdmin))
+    || safeNodes.find((n) => !n.is_blocked)
     || safeNodes[0];
   const [selectedNodeId, setSelectedNodeId] = useState<number>(defaultNode?.id || 0);
   const selectedNode = safeNodes.find((n) => n.id === selectedNodeId);
@@ -51,6 +52,10 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
   };
 
   const handleSelectNode = (node: NodePublic) => {
+    if (node.is_blocked) {
+      setError(`Сервер «${node.name}» заблокирован: прямой доступ из РФ ограничен. Создание ключей временно приостановлено.`);
+      return;
+    }
     if (node.is_backup && !isUserProOrAdmin) {
       setError(`Сервер «${node.name}» является запасным и доступен только для тарифа PRO.`);
       return;
@@ -73,6 +78,10 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
     }
 
     const targetNode = safeNodes.find((n) => n.id === selectedNodeId);
+    if (targetNode?.is_blocked) {
+      setError('Выбранный сервер временно заблокирован для прямых подключений из РФ');
+      return;
+    }
     if (targetNode?.is_backup && !isUserProOrAdmin) {
       setError('Выбранный сервер доступен только для тарифа PRO');
       return;
@@ -205,14 +214,17 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
                   const isExpanded = !!expandedNodeIds[node.id];
                   const isSelected = selectedNodeId === node.id;
                   const routing = formatNodeRouting(node.type, node.country_code);
-                  const isNodeLocked = Boolean(node.is_backup) && !isUserProOrAdmin;
+                  const isNodeBlocked = Boolean(node.is_blocked);
+                  const isNodeLocked = isNodeBlocked || (Boolean(node.is_backup) && !isUserProOrAdmin);
 
                   return (
                     <div
                       key={node.id}
                       onClick={() => handleSelectNode(node)}
                       className={`p-3 sm:p-4 rounded-2xl border transition-all duration-200 ${
-                        isNodeLocked
+                        isNodeBlocked
+                          ? 'opacity-60 bg-[#160b10] border-rose-900/40 hover:border-rose-700/50 cursor-pointer'
+                          : isNodeLocked
                           ? 'opacity-65 bg-[#091820] border-[#1C3945]/60 hover:border-purple-800/50 cursor-pointer'
                           : isSelected
                           ? 'border-[#D9B96E] bg-[#102833] shadow-lg shadow-[#D9B96E]/10 cursor-pointer'
@@ -238,6 +250,14 @@ export function CreateKeyModal({ nodes, currentUser, onClose, onCreate }: Props)
 
                         {/* Badges & Pulsing Info Button */}
                         <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+                          {node.is_blocked && (
+                            <span
+                              className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-950/80 text-amber-300 border border-rose-500/50 shadow-sm whitespace-nowrap shrink-0"
+                              title="Прямой доступ к IP заблокирован из РФ"
+                            >
+                              <span>🚫 Заблокирован</span>
+                            </span>
+                          )}
                           {node.is_backup && (
                             <span
                               className="inline-flex items-center space-x-1 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-600/40 shadow-sm whitespace-nowrap shrink-0"

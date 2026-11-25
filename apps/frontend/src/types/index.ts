@@ -34,6 +34,8 @@ export interface NodePublic {
   has_mieru?: boolean;
   has_vless?: boolean;
   is_active: boolean;
+  is_blocked?: boolean;
+  blocked_reason?: string;
   created_at: string;
 }
 
@@ -54,6 +56,10 @@ export interface AdminNode {
   latency_ms?: number;
   auto_failover_enabled?: boolean;
   failover_priority?: string[];
+  is_blocked?: boolean;
+  blocked_reason?: string;
+  blocked_at?: string;
+  unblock_check_at?: string;
   created_at: string;
   server_status?: NodeStatus;
   network_status?: NodeStatus;
@@ -200,6 +206,7 @@ export interface NodeDashboardInfo {
   type: 'cascade' | 'direct';
   country_code?: string;
   is_backup?: boolean;
+  is_blocked?: boolean;
   online: boolean;
   latency_ms: number;
   peer_count: number;
@@ -390,9 +397,15 @@ export interface UpdateNewsPayload {
 
 
 export interface NodeStatus {
-  state: 'green' | 'yellow' | 'red' | 'unknown';
+  state: 'green' | 'yellow' | 'red' | 'blocked' | 'unknown';
   checked_at?: string;
   reason?: string;
+}
+
+export interface CheckUnblockResponse {
+  unblocked: boolean;
+  message: string;
+  latency_ms?: number;
 }
 export interface NetworkProbe extends NodeStatus {
   interface?: string;

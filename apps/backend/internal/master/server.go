@@ -304,6 +304,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/egress", auth.RequireAdmin(s.handleAdminSwitchNodeEgress))
 	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/egress/restart", auth.RequireAdmin(s.handleAdminRestartNodeEgress))
 	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/failover", auth.RequireAdmin(s.handleAdminUpdateNodeFailover))
+	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/block", auth.RequireAdmin(s.handleAdminBlockNode))
+	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/unblock", auth.RequireAdmin(s.handleAdminUnblockNode))
+	s.mux.HandleFunc("POST /api/v1/admin/nodes/{id}/check-unblock", auth.RequireAdmin(s.handleAdminCheckNodeUnblock))
 
 	s.mux.HandleFunc("GET /api/v1/admin/keys", auth.RequireAdmin(s.handleAdminListAllKeys))
 
