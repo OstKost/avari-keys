@@ -250,7 +250,7 @@ jobs:
         run: rm -rf ~/.ssh/id_deploy
 
   # ==========================================
-  # 4. Подготовка списка Slave-нод (парсинг секрета)
+  # 4. Подготовка списка Slave-нод (безопасные индексы без вывода секретов)
   # ==========================================
   prepare-slaves:
     name: 📋 Prepare Slave Hosts
@@ -260,7 +260,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'all-slaves' || github.event.inputs.target == 'slave-api'))
     runs-on: ubuntu-latest
     outputs:
-      hosts: ${{ steps.parse.outputs.hosts }}
+      indices: ${{ steps.parse.outputs.indices }}
     steps:
       - name: Parse host list
         id: parse
@@ -274,16 +274,20 @@ jobs:
           else
             HOSTS="${SLAVE_HOSTS}"
           fi
-          JSON=$(printf '%s\n' ${HOSTS} | grep -v '^$' | jq -R . | jq -s -c .)
-          if [ "$JSON" = "[]" ]; then JSON='["__none__"]'; fi
-          echo "hosts=${JSON}" >> "$GITHUB_OUTPUT"
-          echo "Parsed hosts: ${JSON}"
+          COUNT=$(printf '%s\n' ${HOSTS} | grep -v '^$' | wc -l | tr -d ' ')
+          if [ "${COUNT}" -eq 0 ]; then
+            JSON='["__none__"]'
+          else
+            JSON=$(seq 0 $((COUNT - 1)) | jq -R . | jq -s -c .)
+          fi
+          echo "indices=${JSON}" >> "$GITHUB_OUTPUT"
+          echo "Prepared ${COUNT} slave deployment slot(s)."
 
   # ==========================================
   # 5. Деплой каждой Slave-ноды (независимый, неблокирующий)
   # ==========================================
   deploy-slave:
-    name: ⚡ Deploy Slave (${{ matrix.host }})
+    name: ⚡ Deploy Slave (#${{ matrix.idx }})
     needs: prepare-slaves
     if: >-
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
@@ -291,10 +295,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJSON(needs.prepare-slaves.outputs.hosts) }}
+        idx: ${{ fromJSON(needs.prepare-slaves.outputs.indices) }}
     runs-on: ubuntu-latest
     concurrency:
-      group: production-slave-deploy-${{ matrix.host }}
+      group: production-slave-deploy-${{ matrix.idx }}
       cancel-in-progress: false
     steps:
       - name: 📥 Download Build Artifacts
@@ -317,7 +321,10 @@ jobs:
 
       - name: 🚀 Deploy & Restart
         env:
-          TARGET: ${{ matrix.host }}
+          HOST_INDEX: ${{ matrix.idx }}
+          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS }}
+          SINGLE_TARGET_HOST: ${{ github.event.inputs.target_host }}
+          TARGET_MODE: ${{ github.event.inputs.target }}
           SSH_JUMP_HOST: ${{ secrets.SSH_JUMP_HOST }}
           CASCADE_GATEWAY_HOST: ${{ secrets.CASCADE_GATEWAY_HOST }}
           NETWORK_PROBE_INTERFACE: ${{ secrets.CASCADE_PUBLIC_INTERFACE }}
@@ -329,9 +336,19 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          if [ "${TARGET}" = "__none__" ]; then
+          if [ "${HOST_INDEX}" = "__none__" ]; then
             echo "No slave hosts configured; skipping."
             exit 0
+          fi
+          if [ "${TARGET_MODE}" = "slave-api" ] && [ -n "${SINGLE_TARGET_HOST}" ]; then
+            HOSTS="${SINGLE_TARGET_HOST}"
+          else
+            HOSTS="${SLAVE_HOSTS}"
+          fi
+          TARGET=$(printf '%s\n' ${HOSTS} | grep -v '^$' | sed -n "$((HOST_INDEX + 1))p")
+          if [ -z "${TARGET}" ]; then
+            echo "❌ Could not resolve host for slot #${HOST_INDEX}"
+            exit 1
           fi
           echo "::add-mask::${TARGET}"
           DEPLOY_TMP="/tmp/avari-slave-${RUN_ID}"
