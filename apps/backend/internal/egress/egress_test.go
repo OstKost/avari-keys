@@ -630,7 +630,7 @@ func TestCheckInterfaceDump_AmneziaWGMultiFieldHeader(t *testing.T) {
 
 	realEpoch := time.Now().Unix() - 15 // 15 seconds ago
 	// Real AmneziaWG dump where interface line has 27 fields with obfuscation params (jc, jmin=47, jmax=80, etc.)
-	awgDumpOutput := fmt.Sprintf("IOu0AlthoHWujDWrJsV3ZbbhKLTQiK6Hq12+1VybUmw=\tYDO9q9dcgYdc87Ys+iauGkgXQkvC0xizwRXU4tnp2Gg=\t42087\t3\t47\t80\t54\t76\t43\t7\t132200558-676543149\t946292926-1382049066\t1382606711-1506630850\t1584797855-1785459093\t<r 94>\t(null)\t(null)\t(null)\t(null)\t(none)\t0\t0\t0\t0\t0\t0\toff\toff\toff\nTs/lE26ELlPoxrcCvWCCqE/A20mQqGGDtuJcBdFUPyA=\t(none)\t109.107.176.224:443\t0.0.0.0/0,::/0\t%d\t1048576\t2097152\t15\n", realEpoch)
+	awgDumpOutput := fmt.Sprintf("IOu0AlthoHWujDWrJsV3ZbbhKLTQiK6Hq12+1VybUmw=\tYDO9q9dcgYdc87Ys+iauGkgXQkvC0xizwRXU4tnp2Gg=\t42087\t3\t47\t80\t54\t76\t43\t7\t132200558-676543149\t946292926-1382049066\t1382606711-1506630850\t1584797855-1785459093\t<r 94>\t(null)\t(null)\t(null)\t(null)\t(none)\t0\t0\t0\t0\t0\t0\toff\toff\toff\nTs/lE26ELlPoxrcCvWCCqE/A20mQqGGDtuJcBdFUPyA=\t(none)\t192.0.2.4:443\t0.0.0.0/0,::/0\t%d\t1048576\t2097152\t15\n", realEpoch)
 
 	exec := newMockExecutor()
 	exec.runHandler = func(name string, args ...string) (string, error) {
