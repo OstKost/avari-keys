@@ -118,6 +118,10 @@ func ensureColumns(db *sql.DB) error {
 		{"nodes", "has_vless", "INTEGER NOT NULL DEFAULT 0"},
 		{"nodes", "auto_failover_enabled", "INTEGER NOT NULL DEFAULT 0"},
 		{"nodes", "failover_priority", "TEXT NOT NULL DEFAULT '[]'"},
+		{"nodes", "is_blocked", "INTEGER NOT NULL DEFAULT 0"},
+		{"nodes", "blocked_reason", "TEXT NOT NULL DEFAULT ''"},
+		{"nodes", "blocked_at", "DATETIME DEFAULT NULL"},
+		{"nodes", "unblock_check_at", "DATETIME DEFAULT NULL"},
 		{"users", "is_pro", "INTEGER NOT NULL DEFAULT 0"},
 		{"users", "billing_snoozed_until", "DATETIME DEFAULT NULL"},
 		{"telegram_chats", "user_id", "INTEGER DEFAULT NULL"},
@@ -369,6 +373,24 @@ CREATE TABLE IF NOT EXISTS torrent_blocklist (
 			}
 			for _, d := range defaults {
 				if _, err := db.Exec(`INSERT OR IGNORE INTO torrent_blocklist (domain, added_by) VALUES (?, 'system')`, d); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		version:     5,
+		description: "node_blocked_state",
+		apply: func(db *sql.DB) error {
+			cols := []struct{ table, col, def string }{
+				{"nodes", "is_blocked", "INTEGER NOT NULL DEFAULT 0"},
+				{"nodes", "blocked_reason", "TEXT NOT NULL DEFAULT ''"},
+				{"nodes", "blocked_at", "DATETIME DEFAULT NULL"},
+				{"nodes", "unblock_check_at", "DATETIME DEFAULT NULL"},
+			}
+			for _, c := range cols {
+				if err := addColumnIfNotExists(db, c.table, c.col, c.def); err != nil {
 					return err
 				}
 			}
@@ -882,12 +904,13 @@ func (s *Storage) UpdateNode(ctx context.Context, id int64, name, nodeType, coun
 
 func (s *Storage) GetNodeByID(ctx context.Context, id int64) (*models.Node, error) {
 	var n models.Node
-	var isActive, isMobile, isBackup, hasHysteria, hasMieru, autoFailover int
-	var failoverPriorityRaw string
+	var isActive, isMobile, isBackup, hasHysteria, hasMieru, autoFailover, isBlocked int
+	var failoverPriorityRaw, blockedReason string
+	var blockedAt, unblockCheckAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, has_mieru, has_vless, auto_failover_enabled, failover_priority, is_active, created_at
+		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, has_mieru, has_vless, auto_failover_enabled, failover_priority, is_active, is_blocked, blocked_reason, blocked_at, unblock_check_at, created_at
 		FROM nodes WHERE id = ?
-	`, id).Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &hasMieru, &n.HasVless, &autoFailover, &failoverPriorityRaw, &isActive, &n.CreatedAt)
+	`, id).Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &hasMieru, &n.HasVless, &autoFailover, &failoverPriorityRaw, &isActive, &isBlocked, &blockedReason, &blockedAt, &unblockCheckAt, &n.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -901,12 +924,20 @@ func (s *Storage) GetNodeByID(ctx context.Context, id int64) (*models.Node, erro
 		_ = json.Unmarshal([]byte(failoverPriorityRaw), &n.FailoverPriority)
 	}
 	n.IsActive = isActive == 1
+	n.IsBlocked = isBlocked == 1
+	n.BlockedReason = blockedReason
+	if blockedAt.Valid {
+		n.BlockedAt = &blockedAt.Time
+	}
+	if unblockCheckAt.Valid {
+		n.UnblockCheckAt = &unblockCheckAt.Time
+	}
 	return &n, nil
 }
 
 func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, has_mieru, has_vless, auto_failover_enabled, failover_priority, is_active, created_at
+		SELECT id, name, type, country_code, provider_url, api_url, api_key, is_mobile_optimized, is_backup, has_hysteria, has_mieru, has_vless, auto_failover_enabled, failover_priority, is_active, is_blocked, blocked_reason, blocked_at, unblock_check_at, created_at
 		FROM nodes ORDER BY id ASC
 	`)
 	if err != nil {
@@ -917,9 +948,10 @@ func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 	list := []models.Node{}
 	for rows.Next() {
 		var n models.Node
-		var isActive, isMobile, isBackup, hasHysteria, hasMieru, autoFailover int
-		var failoverPriorityRaw string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &hasMieru, &n.HasVless, &autoFailover, &failoverPriorityRaw, &isActive, &n.CreatedAt); err != nil {
+		var isActive, isMobile, isBackup, hasHysteria, hasMieru, autoFailover, isBlocked int
+		var failoverPriorityRaw, blockedReason string
+		var blockedAt, unblockCheckAt sql.NullTime
+		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &n.ProviderURL, &n.APIURL, &n.APIKey, &isMobile, &isBackup, &hasHysteria, &hasMieru, &n.HasVless, &autoFailover, &failoverPriorityRaw, &isActive, &isBlocked, &blockedReason, &blockedAt, &unblockCheckAt, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		n.IsMobileOptimized = isMobile == 1
@@ -932,6 +964,14 @@ func (s *Storage) ListNodes(ctx context.Context) ([]models.Node, error) {
 			_ = json.Unmarshal([]byte(failoverPriorityRaw), &n.FailoverPriority)
 		}
 		n.IsActive = isActive == 1
+		n.IsBlocked = isBlocked == 1
+		n.BlockedReason = blockedReason
+		if blockedAt.Valid {
+			n.BlockedAt = &blockedAt.Time
+		}
+		if unblockCheckAt.Valid {
+			n.UnblockCheckAt = &unblockCheckAt.Time
+		}
 		list = append(list, n)
 	}
 	return list, nil
@@ -957,9 +997,34 @@ func (s *Storage) UpdateNodeFailoverSettings(ctx context.Context, id int64, enab
 	return s.GetNodeByID(ctx, id)
 }
 
+func (s *Storage) SetNodeBlockedStatus(ctx context.Context, id int64, isBlocked bool, reason string) error {
+	isBlockedVal := 0
+	var blockedAt *string
+	if isBlocked {
+		isBlockedVal = 1
+		nowStr := time.Now().UTC().Format(time.RFC3339)
+		blockedAt = &nowStr
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE nodes
+		SET is_blocked = ?, blocked_reason = ?, blocked_at = ?, unblock_check_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END
+		WHERE id = ?
+	`, isBlockedVal, reason, blockedAt, isBlockedVal, id)
+	return err
+}
+
+func (s *Storage) UpdateNodeUnblockCheckTime(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE nodes
+		SET unblock_check_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, id)
+	return err
+}
+
 func (s *Storage) ListActiveNodesPublic(ctx context.Context) ([]models.NodePublic, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, country_code, is_mobile_optimized, is_backup, has_hysteria, has_mieru, has_vless, is_active, created_at
+		SELECT id, name, type, country_code, is_mobile_optimized, is_backup, has_hysteria, has_mieru, has_vless, is_active, is_blocked, blocked_reason, created_at
 		FROM nodes WHERE is_active = 1 ORDER BY id ASC
 	`)
 	if err != nil {
@@ -970,8 +1035,9 @@ func (s *Storage) ListActiveNodesPublic(ctx context.Context) ([]models.NodePubli
 	list := []models.NodePublic{}
 	for rows.Next() {
 		var n models.NodePublic
-		var isActive, isMobile, isBackup, hasHysteria, hasMieru int
-		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &isMobile, &isBackup, &hasHysteria, &hasMieru, &n.HasVless, &isActive, &n.CreatedAt); err != nil {
+		var isActive, isMobile, isBackup, hasHysteria, hasMieru, isBlocked int
+		var blockedReason string
+		if err := rows.Scan(&n.ID, &n.Name, &n.Type, &n.CountryCode, &isMobile, &isBackup, &hasHysteria, &hasMieru, &n.HasVless, &isActive, &isBlocked, &blockedReason, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		n.IsMobileOptimized = isMobile == 1
@@ -979,6 +1045,8 @@ func (s *Storage) ListActiveNodesPublic(ctx context.Context) ([]models.NodePubli
 		n.HasHysteria = hasHysteria == 1
 		n.HasMieru = hasMieru == 1
 		n.IsActive = isActive == 1
+		n.IsBlocked = isBlocked == 1
+		n.BlockedReason = blockedReason
 		list = append(list, n)
 	}
 	return list, nil
@@ -2429,4 +2497,39 @@ func (s *Storage) DeleteTorrentBlocklistDomain(ctx context.Context, id int64) er
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// FindActiveIncidentNewsForNode checks if an active incident announcement exists for the given node.
+func (s *Storage) FindActiveIncidentNewsForNode(ctx context.Context, nodeName string) (*models.NewsItem, error) {
+	needle := fmt.Sprintf("%%%s%%", nodeName)
+	var item models.NewsItem
+	var isPinned int
+	var categoryStr string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, title, content, category, is_pinned, author_name, created_at, updated_at
+		FROM announcements
+		WHERE category = 'incident' AND is_pinned = 1 AND title LIKE ?
+		ORDER BY id DESC LIMIT 1
+	`, needle).Scan(
+		&item.ID, &item.Title, &item.Content, &categoryStr, &isPinned, &item.AuthorName, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	item.Category = models.NewsCategory(categoryStr)
+	item.IsPinned = isPinned == 1
+	return &item, nil
+}
+
+// RemoveIncidentNewsForNode unpins/deletes active incident announcements for a node when access is restored.
+func (s *Storage) RemoveIncidentNewsForNode(ctx context.Context, nodeName string) error {
+	needle := fmt.Sprintf("%%%s%%", nodeName)
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM announcements
+		WHERE category = 'incident' AND is_pinned = 1 AND title LIKE ?
+	`, needle)
+	return err
 }

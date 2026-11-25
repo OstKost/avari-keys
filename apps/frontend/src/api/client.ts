@@ -27,6 +27,7 @@ import {
   TrafficPolicyView,
   TrafficPolicyFanoutResponse,
   TorrentBlocklistEntry,
+  CheckUnblockResponse,
 } from '../types';
 
 import { mockApi } from './mockClient';
@@ -477,6 +478,40 @@ const realApi = {
       }),
     });
     return handleResponse<AdminNode>(res);
+  },
+
+  async blockAdminNode(id: number, reason?: string): Promise<{ success: boolean; message: string }> {
+    if (isMockMode()) {
+      return mockApi.blockAdminNode(id, reason);
+    }
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/block`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ reason: reason || 'Прямой доступ заблокирован из РФ' }),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async unblockAdminNode(id: number): Promise<{ success: boolean; message: string }> {
+    if (isMockMode()) {
+      return mockApi.unblockAdminNode(id);
+    }
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/unblock`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<{ success: boolean; message: string }>(res);
+  },
+
+  async checkAdminNodeUnblock(id: number): Promise<CheckUnblockResponse> {
+    if (isMockMode()) {
+      return mockApi.checkAdminNodeUnblock(id);
+    }
+    const res = await fetch(`${API_BASE}/admin/nodes/${id}/check-unblock`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<CheckUnblockResponse>(res);
   },
 
   async getAdminKeys(params?: {

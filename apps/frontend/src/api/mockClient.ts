@@ -29,6 +29,7 @@ import {
   TrafficPolicyView,
   TrafficPolicyFanoutResponse,
   TorrentBlocklistEntry,
+  CheckUnblockResponse,
 } from '../types';
 
 const cyrillicToLatinMap: Record<string, string> = {
@@ -297,8 +298,17 @@ let mockNodes: AdminNode[] = [
     has_mieru: true,
     has_vless: true,
     is_active: true,
-    online: true,
-    latency_ms: 38,
+    online: false,
+    latency_ms: undefined,
+    is_blocked: true,
+    blocked_reason: 'Прямой доступ к узлу заблокирован из РФ',
+    blocked_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+    unblock_check_at: new Date(Date.now() - 60000 * 5).toISOString(),
+    server_status: {
+      state: 'blocked',
+      checked_at: new Date().toISOString(),
+      reason: 'Прямой доступ к узлу заблокирован из РФ',
+    },
     created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
   },
   {
@@ -1338,6 +1348,77 @@ bandwidth:
     return { ...node };
   },
 
+  async blockAdminNode(id: number, reason?: string): Promise<{ success: boolean; message: string }> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const node = mockNodes.find((n) => n.id === id);
+    if (!node) {
+      throw new Error(`Node #${id} not found`);
+    }
+    const finalReason = reason || 'Прямой доступ к узлу заблокирован из РФ';
+    node.is_blocked = true;
+    node.blocked_reason = finalReason;
+    node.blocked_at = new Date().toISOString();
+    node.unblock_check_at = new Date().toISOString();
+    node.online = false;
+    node.server_status = {
+      state: 'blocked',
+      checked_at: new Date().toISOString(),
+      reason: finalReason,
+    };
+
+    if (!mockNews.some((news) => news.category === 'incident' && news.title.includes(node.name))) {
+      mockNews.unshift({
+        id: Math.max(...mockNews.map((n) => n.id), 0) + 1,
+        title: `⚠️ [Ограничение доступа] Сервер «${node.name}» временно заблокирован`,
+        content: `Зафиксировано ограничение прямого доступа к серверу «${node.name}» из сетей РФ. Другие узлы кластера и каскадные маршруты работают в штатном режиме. Система выполняет автоматическую проверку доступности каждые 15 минут.`,
+        category: 'incident',
+        is_pinned: true,
+        author_name: 'System Sentinel',
+        notify_telegram: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    return { success: true, message: 'Узел помечен как заблокированный' };
+  },
+
+  async unblockAdminNode(id: number): Promise<{ success: boolean; message: string }> {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const node = mockNodes.find((n) => n.id === id);
+    if (!node) {
+      throw new Error(`Node #${id} not found`);
+    }
+    node.is_blocked = false;
+    node.blocked_reason = undefined;
+    node.blocked_at = undefined;
+    node.online = true;
+    node.latency_ms = 28;
+    node.server_status = {
+      state: 'green',
+      checked_at: new Date().toISOString(),
+      reason: 'Связь восстановлена, отклик API 28 ms',
+    };
+
+    mockNews = mockNews.filter((news) => !(news.category === 'incident' && news.title.includes(node.name)));
+
+    return { success: true, message: 'Блокировка с узла снята' };
+  },
+
+  async checkAdminNodeUnblock(id: number): Promise<CheckUnblockResponse> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const node = mockNodes.find((n) => n.id === id);
+    if (!node) {
+      throw new Error(`Node #${id} not found`);
+    }
+    await this.unblockAdminNode(id);
+    return {
+      unblocked: true,
+      message: `Узел «${node.name}» успешно ответил на проверочный запрос (28 ms). Блокировка снята!`,
+      latency_ms: 28,
+    };
+  },
+
   async getAdminKeys(params?: {
     search?: string;
     nodeId?: number;
@@ -1522,6 +1603,9 @@ bandwidth:
         name: n.name,
         type: n.type,
         country_code: n.country_code,
+        is_backup: n.is_backup,
+        is_blocked: n.is_blocked || false,
+        active_egress: n.type === 'cascade' ? 'awg3' : undefined,
         online: n.online,
         latency_ms: n.latency_ms || 25,
         peer_count: nodeKeys.length,
@@ -1876,6 +1960,17 @@ bandwidth:
 };
 
 let mockNews: NewsItem[] = [
+  {
+    id: 99,
+    title: '⚠️ [Ограничение доступа] Сервер «Прямой туннель S2 (Франкфурт)» временно заблокирован',
+    content: 'Зафиксировано ограничение прямого доступа к серверу «Прямой туннель S2 (Франкфурт)» из сетей РФ. Другие узлы кластера и каскадные маршруты работают в штатном режиме. Система выполняет автоматическую проверку доступности каждые 15 минут.',
+    category: 'incident',
+    is_pinned: true,
+    author_name: 'System Sentinel',
+    notify_telegram: false,
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+  },
   {
     id: 1,
     title: 'Горячее переключение каскада: выбор выходного узла на лету',

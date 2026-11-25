@@ -944,3 +944,84 @@ func TestUserAndKeyMonthTrafficAccounting(t *testing.T) {
 	}
 }
 
+func TestNodeBlockedStorageAndIncidentNews(t *testing.T) {
+	store, cleanup := createTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// 1. Create a node
+	node, err := store.CreateNode(ctx, "S2 Germany", "direct", "DEU", "https://hetzner.com", "http://127.0.0.1:8082", "secret", false, false, true)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	if node.IsBlocked {
+		t.Fatalf("new node should not be blocked by default")
+	}
+
+	// 2. Set node blocked
+	blockReason := "Прямой доступ к узлу заблокирован из РФ"
+	if err := store.SetNodeBlockedStatus(ctx, node.ID, true, blockReason); err != nil {
+		t.Fatalf("failed to set node blocked: %v", err)
+	}
+
+	fetched, err := store.GetNodeByID(ctx, node.ID)
+	if err != nil {
+		t.Fatalf("failed to get node: %v", err)
+	}
+	if !fetched.IsBlocked || fetched.BlockedReason != blockReason || fetched.BlockedAt == nil || fetched.UnblockCheckAt == nil {
+		t.Fatalf("expected node to be blocked with timestamps, got: %+v", fetched)
+	}
+
+	// 3. Update unblock check time
+	time.Sleep(10 * time.Millisecond)
+	if err := store.UpdateNodeUnblockCheckTime(ctx, node.ID); err != nil {
+		t.Fatalf("failed to update unblock check time: %v", err)
+	}
+
+	fetchedAfterCheck, _ := store.GetNodeByID(ctx, node.ID)
+	if fetchedAfterCheck.UnblockCheckAt == nil {
+		t.Fatalf("expected non-nil UnblockCheckAt")
+	}
+
+	// 4. Test Incident News integration
+	news, err := store.CreateNews(ctx, &models.NewsItem{
+		Title:      fmt.Sprintf("⚠️ [Ограничение доступа] Сервер «%s» временно заблокирован", node.Name),
+		Content:    "Зафиксировано ограничение прямого доступа к серверу",
+		Category:   models.NewsCategoryIncident,
+		IsPinned:   true,
+		AuthorName: "System Sentinel",
+	})
+	if err != nil {
+		t.Fatalf("failed to create incident news: %v", err)
+	}
+
+	// Find active incident news for node
+	foundNews, err := store.FindActiveIncidentNewsForNode(ctx, node.Name)
+	if err != nil {
+		t.Fatalf("failed to find active incident news: %v", err)
+	}
+	if foundNews == nil || foundNews.ID != news.ID {
+		t.Fatalf("expected to find news ID %d, got %+v", news.ID, foundNews)
+	}
+
+	// 5. Unblock node and remove incident news
+	if err := store.SetNodeBlockedStatus(ctx, node.ID, false, ""); err != nil {
+		t.Fatalf("failed to unblock node: %v", err)
+	}
+	if err := store.RemoveIncidentNewsForNode(ctx, node.Name); err != nil {
+		t.Fatalf("failed to remove incident news: %v", err)
+	}
+
+	unblockedNode, _ := store.GetNodeByID(ctx, node.ID)
+	if unblockedNode.IsBlocked || unblockedNode.BlockedAt != nil {
+		t.Fatalf("expected node to be unblocked, got: %+v", unblockedNode)
+	}
+
+	foundNewsAfterRemove, _ := store.FindActiveIncidentNewsForNode(ctx, node.Name)
+	if foundNewsAfterRemove != nil {
+		t.Fatalf("expected incident news to be removed, got: %+v", foundNewsAfterRemove)
+	}
+}
+

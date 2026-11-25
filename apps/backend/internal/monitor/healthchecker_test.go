@@ -570,3 +570,110 @@ func TestCascadeEgressFrozenAndRecoveryFlow(t *testing.T) {
 		t.Fatalf("expected both frozen and recovered audit logs, got: %v", loggedActivities)
 	}
 }
+
+func TestBlockedNodeLifecycleAndUnblockProber(t *testing.T) {
+	store, cleanup := setupTestStorage(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	var isOnline atomic.Bool
+	isOnline.Store(false)
+
+	mockSlave := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !isOnline.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status": "error"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status": "ok", "service": "amneziawg", "awg_available": true}`))
+	}))
+	defer mockSlave.Close()
+
+	node, err := store.CreateNode(ctx, "Direct S2", "direct", "DEU", "https://hetzner.com", mockSlave.URL, "testkey", false, false, true)
+	if err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	checker := monitor.NewHealthChecker(monitor.Config{
+		Storage:          store,
+		Interval:         100 * time.Millisecond,
+		Timeout:          200 * time.Millisecond,
+		FailureThreshold: 2,
+		UnblockInterval:  100 * time.Millisecond,
+	})
+
+	// 1. Block node manually
+	blockReason := "Прямой доступ к узлу заблокирован из РФ"
+	if err := checker.BlockNode(ctx, node.ID, blockReason); err != nil {
+		t.Fatalf("failed to block node: %v", err)
+	}
+
+	// Verify DB state
+	dbNode, err := store.GetNodeByID(ctx, node.ID)
+	if err != nil || !dbNode.IsBlocked {
+		t.Fatalf("expected node to be blocked in DB, got: %+v", dbNode)
+	}
+
+	// Verify incident news was auto-created
+	news, err := store.FindActiveIncidentNewsForNode(ctx, node.Name)
+	if err != nil || news == nil {
+		t.Fatalf("expected active incident news to be auto-published, got: %+v", news)
+	}
+
+	// Verify CheckAllNodes reflects blocked status without making slow requests
+	nodesWithStatus, err := checker.CheckAllNodes(ctx)
+	if err != nil {
+		t.Fatalf("CheckAllNodes failed: %v", err)
+	}
+	if len(nodesWithStatus) != 1 || nodesWithStatus[0].ServerStatus.State != "blocked" || nodesWithStatus[0].Online {
+		t.Fatalf("expected node to be in blocked state in CheckAllNodes, got: %+v", nodesWithStatus[0])
+	}
+
+	// 2. Fast-path bypass in CollectTelemetry
+	checker.CollectTelemetry(ctx)
+
+	// 3. Test CheckNodeUnblockNow when still offline
+	resFail, err := checker.CheckNodeUnblockNow(ctx, node.ID)
+	if err != nil {
+		t.Fatalf("CheckNodeUnblockNow error: %v", err)
+	}
+	if resFail.Unblocked {
+		t.Fatalf("expected unblock to fail when slave is down")
+	}
+
+	// 4. Bring mock slave online and test CheckNodeUnblockNow
+	isOnline.Store(true)
+	resSuccess, err := checker.CheckNodeUnblockNow(ctx, node.ID)
+	if err != nil {
+		t.Fatalf("CheckNodeUnblockNow error: %v", err)
+	}
+	if !resSuccess.Unblocked {
+		t.Fatalf("expected unblock to succeed when slave is online, got: %+v", resSuccess)
+	}
+
+	// Verify node is no longer blocked in DB
+	unblockedDbNode, _ := store.GetNodeByID(ctx, node.ID)
+	if unblockedDbNode.IsBlocked {
+		t.Fatalf("expected node to be unblocked in DB")
+	}
+
+	// Verify news was auto-removed
+	newsAfterUnblock, _ := store.FindActiveIncidentNewsForNode(ctx, node.Name)
+	if newsAfterUnblock != nil {
+		t.Fatalf("expected incident news to be removed upon unblock")
+	}
+
+	// 5. Test probeBlockedNodes background worker
+	// Block again
+	_ = checker.BlockNode(ctx, node.ID, "Вторичная блокировка")
+	isOnline.Store(true) // node is ready to respond
+	checker.ProbeBlockedNodes(ctx)
+
+	recoveredDbNode, _ := store.GetNodeByID(ctx, node.ID)
+	if recoveredDbNode.IsBlocked {
+		t.Fatalf("expected probeBlockedNodes to auto-unblock node")
+	}
+}
