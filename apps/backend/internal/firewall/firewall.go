@@ -196,15 +196,15 @@ func (m *Manager) applySoft(ctx context.Context) error {
 		}
 	}
 
-	// Resolve blocklist domains and populate the ipset.
-	ips, _ := m.resolveIPs(ctx, m.domains)
-	if err := m.syncIPSet(ctx, ips); err != nil {
-		return err
-	}
-	if len(ips) > 0 {
-		args := []string{"-A", chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "DROP"}
-		if _, err := m.exec.Run(ctx, "iptables", args...); err != nil {
-			return fmt.Errorf("add ipset match rule: %w", err)
+	// Resolve blocklist domains and populate the ipset (best-effort: if ipset is
+	// absent or resolution fails, the port rules above still apply and block
+	// the bulk of torrent traffic).
+	if ips, err := m.resolveIPs(ctx, m.domains); err == nil && len(ips) > 0 {
+		if err := m.syncIPSet(ctx, ips); err == nil {
+			args := []string{"-A", chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "DROP"}
+			if _, err := m.exec.Run(ctx, "iptables", args...); err != nil {
+				return fmt.Errorf("add ipset match rule: %w", err)
+			}
 		}
 	}
 
