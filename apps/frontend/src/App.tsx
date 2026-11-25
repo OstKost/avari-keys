@@ -129,6 +129,13 @@ export default function App() {
 
   // Check existing session
   useEffect(() => {
+    // If in TMA mode, skip root session validation to avoid race conditions
+    // where api.logout() wipes the fresh Telegram Mini App token
+    if (activeTab === 'miniapp') {
+      setAuthLoading(false);
+      return;
+    }
+
     const token = localStorage.getItem('token');
     const mock = isMockMode();
     if (!token && !mock) {
@@ -148,7 +155,7 @@ export default function App() {
         setMockMode(false);
       })
       .finally(() => setAuthLoading(false));
-  }, []);
+  }, [activeTab]);
 
   // Check billing status whenever user is set
   useEffect(() => {

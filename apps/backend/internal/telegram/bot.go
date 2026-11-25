@@ -1492,8 +1492,8 @@ func (b *Bot) NotifyCascadeFailover(node models.Node, oldIf, newIf, oldLabel, ne
 	_ = b.BroadcastAlert(msg)
 }
 
-// NotifyCascadeEgressFrozen sends an alert about frozen WireGuard cascade egress session and recommendations.
-func (b *Bot) NotifyCascadeEgressFrozen(node models.Node, target models.EgressTarget) {
+// NotifyCascadeEgressFrozen sends a concise alert about frozen WireGuard cascade egress session.
+func (b *Bot) NotifyCascadeEgressFrozen(node models.Node, target models.EgressTarget, isActive bool) {
 	if b == nil {
 		return
 	}
@@ -1518,26 +1518,67 @@ func (b *Bot) NotifyCascadeEgressFrozen(node models.Node, target models.EgressTa
 		recommendation = fmt.Sprintf("systemctl restart awg-quick@%s", target.Interface)
 	}
 
-	ageStr := "более 3 минут"
+	ageStr := "более 3 мин"
 	if target.HandshakeAgeSec > 0 {
 		ageStr = fmt.Sprintf("%d мин", target.HandshakeAgeSec/60)
 	}
 
+	tag := "РЕЗЕРВ"
+	if isActive {
+		tag = "АКТИВНЫЙ"
+	}
+
 	msg := fmt.Sprintf(
-		"❄️ <b>[Avari Alert] ЗАВИСЛА СЕССИЯ ШЛЮЗА ВЫХОДА</b>\n"+
-			"━━━━━━━━━━━━━━━━━━━━━\n"+
-			"📍 <b>Входной каскад:</b> %s (ID #%d)\n"+
-			"🌐 <b>Шлюз выхода:</b> %s (<code>%s</code>)\n"+
-			"⏱ <b>Последнее рукопожатие:</b> %s назад (0 B получено)\n"+
-			"⚠️ <b>Проблема:</b> Потеряна связь по туннелю, промежуточный NAT хостера заблокировал сессию.\n\n"+
-			"💡 <b>Рекомендация:</b>\n<code>%s</code>\n"+
-			"<i>Или воспользуйтесь кнопкой ручной проверки/перезапуска в панели управления.</i>",
+		"❄️ <b>[Avari] Зависла сессия шлюза [%s]</b>\n"+
+			"Каскад: <b>%s</b> (#%d) → Выход: <b>%s</b> (<code>%s</code>)\n"+
+			"Хэндшейк: %s назад (0 B получено)\n"+
+			"💡 <code>%s</code>",
+		tag,
 		node.Name,
 		node.ID,
 		label,
 		target.Interface,
 		ageStr,
 		recommendation,
+	)
+	_ = b.BroadcastAlert(msg)
+}
+
+// NotifyCascadeEgressRecovered sends a concise notification when a frozen cascade egress session recovers.
+func (b *Bot) NotifyCascadeEgressRecovered(node models.Node, target models.EgressTarget, isActive bool) {
+	if b == nil {
+		return
+	}
+	b.mu.RLock()
+	enabled := b.enabled
+	b.mu.RUnlock()
+
+	if !enabled {
+		return
+	}
+
+	label := target.Label
+	if label == "" {
+		label = target.Node
+	}
+	if label == "" {
+		label = target.Interface
+	}
+
+	tag := "РЕЗЕРВ"
+	if isActive {
+		tag = "АКТИВНЫЙ"
+	}
+
+	msg := fmt.Sprintf(
+		"✅ <b>[Avari] Сессия шлюза восстановилась [%s]</b>\n"+
+			"Каскад: <b>%s</b> (#%d) → Выход: <b>%s</b> (<code>%s</code>)\n"+
+			"Связь в норме, рукопожатие обновлено.",
+		tag,
+		node.Name,
+		node.ID,
+		label,
+		target.Interface,
 	)
 	_ = b.BroadcastAlert(msg)
 }

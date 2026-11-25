@@ -104,6 +104,40 @@ func TestTelegramBotSendMessageAndAlerts(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 	bot.NotifyNewUser(user)
+
+	// 4. Test Cascade Egress Frozen Notification (Active gateway)
+	targetActive := models.EgressTarget{
+		Interface:       "awg1",
+		Node:            "S1",
+		Label:           "S1 Амстердам",
+		HandshakeAgeSec: 240,
+		Recommendation:  "systemctl restart awg-quick@awg1",
+	}
+	bot.NotifyCascadeEgressFrozen(node, targetActive, true)
+
+	// 5. Test Cascade Egress Recovered Notification (Standby gateway)
+	targetBackup := models.EgressTarget{
+		Interface: "awg3",
+		Node:      "S2",
+		Label:     "S2 Финляндия",
+	}
+	bot.NotifyCascadeEgressRecovered(node, targetBackup, false)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sentMessages) < 5 {
+		t.Fatalf("expected at least 5 messages, got %d", len(sentMessages))
+	}
+
+	frozenMsg := fmt.Sprintf("%v", sentMessages[3]["text"])
+	if !strings.Contains(frozenMsg, "[АКТИВНЫЙ]") || !strings.Contains(frozenMsg, "Зависла сессия шлюза") || !strings.Contains(frozenMsg, "awg1") {
+		t.Fatalf("unexpected frozen alert text: %s", frozenMsg)
+	}
+
+	recoveredMsg := fmt.Sprintf("%v", sentMessages[4]["text"])
+	if !strings.Contains(recoveredMsg, "[РЕЗЕРВ]") || !strings.Contains(recoveredMsg, "Сессия шлюза восстановилась") || !strings.Contains(recoveredMsg, "awg3") {
+		t.Fatalf("unexpected recovered alert text: %s", recoveredMsg)
+	}
 }
 
 func TestTelegramBotSecurityAndLinking(t *testing.T) {

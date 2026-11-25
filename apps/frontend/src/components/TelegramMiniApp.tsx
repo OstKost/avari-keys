@@ -148,6 +148,30 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
     }
   }, [mock, mockRole]);
 
+  const ensureAuthenticated = useCallback(async (): Promise<boolean> => {
+    try {
+      const initData = getTelegramInitData();
+      if (mock) {
+        if (mockRole === 'unlinked') return false;
+        const resp = await api.authenticateTelegramMiniApp(
+          mockRole === 'admin' ? 'role=admin' : 'role=user'
+        );
+        setCurrentUser(resp.user);
+        setIsAdmin(resp.is_admin);
+        return true;
+      }
+      if (initData) {
+        const resp = await api.authenticateTelegramMiniApp(initData);
+        setCurrentUser(resp.user);
+        setIsAdmin(resp.is_admin);
+        return true;
+      }
+    } catch (err) {
+      console.warn('[Telegram Mini App] Auto re-authentication failed:', err);
+    }
+    return false;
+  }, [mock, mockRole]);
+
   useEffect(() => {
     authenticate();
   }, [authenticate]);
@@ -179,13 +203,39 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
     if (!isAdmin) return;
     try {
       setRefreshingNodes(true);
-      const nodesList = await api.getAdminNodes();
+      let nodesList: AdminNode[];
+      try {
+        nodesList = await api.getAdminNodes();
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        if (msg.includes('Unauthorized') || msg.includes('authentication required')) {
+          const ok = await ensureAuthenticated();
+          if (ok) {
+            nodesList = await api.getAdminNodes();
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
       setAdminNodes(nodesList);
 
       // Find cascade node and fetch its egress status
       const cascade = nodesList.find((n) => n.type === 'cascade');
       if (cascade) {
-        const egress = await api.getNodeEgress(cascade.id).catch(() => null);
+        let egress: EgressStatusResponse | null = null;
+        try {
+          egress = await api.getNodeEgress(cascade.id);
+        } catch (err: any) {
+          const msg = String(err?.message || '');
+          if (msg.includes('Unauthorized') || msg.includes('authentication required')) {
+            const ok = await ensureAuthenticated();
+            if (ok) {
+              egress = await api.getNodeEgress(cascade.id).catch(() => null);
+            }
+          }
+        }
         setEgressStatus(egress);
       }
     } catch (err) {
@@ -193,7 +243,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
     } finally {
       setRefreshingNodes(false);
     }
-  }, [isAdmin]);
+  }, [isAdmin, ensureAuthenticated]);
 
   useEffect(() => {
     if (currentUser) {
@@ -299,7 +349,22 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
     setSwitchingEgress(true);
     setEgressSuccessMsg(null);
     try {
-      const res = await api.switchNodeEgress(cascadeNodeId, targetInterface);
+      let res: { success: boolean; message: string };
+      try {
+        res = await api.switchNodeEgress(cascadeNodeId, targetInterface);
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        if (msg.includes('Unauthorized') || msg.includes('authentication required')) {
+          const ok = await ensureAuthenticated();
+          if (ok) {
+            res = await api.switchNodeEgress(cascadeNodeId, targetInterface);
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
       triggerNotificationHaptic('success');
       setEgressSuccessMsg(res.message || `Каскад успешно переключен на ${targetLabel}!`);
       await loadAdminData();
@@ -316,7 +381,22 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
     triggerHaptic('medium');
     setCheckingEgress(true);
     try {
-      const egress = await api.getNodeEgress(cascadeNodeId);
+      let egress: EgressStatusResponse;
+      try {
+        egress = await api.getNodeEgress(cascadeNodeId);
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        if (msg.includes('Unauthorized') || msg.includes('authentication required')) {
+          const ok = await ensureAuthenticated();
+          if (ok) {
+            egress = await api.getNodeEgress(cascadeNodeId);
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
       setEgressStatus(egress);
       triggerNotificationHaptic('success');
     } catch (err: any) {

@@ -19,6 +19,11 @@ type rawCounters struct {
 	tx int64
 }
 
+type frozenAlertState struct {
+	alerted   bool      // Currently notified as frozen
+	lastAlert time.Time // When the alert was sent
+}
+
 // HealthChecker periodically verifies node availability, collects telemetry deltas, and updates in-memory metrics.
 type HealthChecker struct {
 	storage          *storage.Storage
@@ -38,9 +43,9 @@ type HealthChecker struct {
 	prevNodeRaw     map[int64]rawCounters  // nodeID -> raw counters
 	cachedDashboard *models.DashboardStatsResponse
 
-	failoverFailures map[int64]int        // nodeID -> consecutive egress failure count
-	failoverCooldown map[int64]time.Time  // nodeID -> cooldown expiration
-	frozenAlerts     map[string]time.Time // "nodeID:iface" -> last frozen alert time
+	failoverFailures map[int64]int              // nodeID -> consecutive egress failure count
+	failoverCooldown map[int64]time.Time        // nodeID -> cooldown expiration
+	frozenAlerts     map[string]frozenAlertState // "nodeID:iface" -> alert state
 
 	mu       sync.RWMutex
 	stopChan chan struct{}
@@ -94,7 +99,7 @@ func NewHealthChecker(cfg Config) *HealthChecker {
 		prevNodeRaw:      make(map[int64]rawCounters),
 		failoverFailures: make(map[int64]int),
 		failoverCooldown: make(map[int64]time.Time),
-		frozenAlerts:     make(map[string]time.Time),
+		frozenAlerts:     make(map[string]frozenAlertState),
 		stopChan:         make(chan struct{}),
 	}
 }
@@ -265,26 +270,72 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 					// Check for frozen WireGuard egress sessions and alert admin
 					for _, target := range status.Targets {
 						alertKey := fmt.Sprintf("%d:%s", n.ID, target.Interface)
+						isActive := target.Interface == status.ActiveInterface
 						if target.IsFrozen {
 							h.mu.Lock()
-							lastAlert, alerted := h.frozenAlerts[alertKey]
-							shouldAlert := !alerted || time.Since(lastAlert) > 1*time.Hour
+							state := h.frozenAlerts[alertKey]
+							// Anti-flapping:
+							// If not currently alerted: wait at least 15m since last alert before alerting again.
+							// If already alerted: send a reminder every 2h.
+							cooldown := 2 * time.Hour
+							if !state.alerted {
+								cooldown = 15 * time.Minute
+							}
+							shouldAlert := (!state.alerted && (state.lastAlert.IsZero() || time.Since(state.lastAlert) > cooldown)) ||
+								(state.alerted && time.Since(state.lastAlert) > cooldown)
 							if shouldAlert {
-								h.frozenAlerts[alertKey] = time.Now()
+								h.frozenAlerts[alertKey] = frozenAlertState{
+									alerted:   true,
+									lastAlert: time.Now(),
+								}
 							}
 							h.mu.Unlock()
 
 							if shouldAlert {
-								log.Printf("[MONITOR] ❄️ Cascade egress %s (%s) on node #%d is frozen (handshake age: %ds). Alerting admin.",
-									target.Interface, target.Label, n.ID, target.HandshakeAgeSec)
+								log.Printf("[MONITOR] ❄️ Cascade egress %s (%s) on node #%d is frozen (handshake age: %ds, active=%v). Alerting admin.",
+									target.Interface, target.Label, n.ID, target.HandshakeAgeSec, isActive)
+								if h.logActivity != nil {
+									roleStr := "резервный"
+									if isActive {
+										roleStr = "активный"
+									}
+									h.logActivity(models.CategorySystem, "cascade_egress_frozen",
+										fmt.Sprintf("Зависла сессия шлюза выхода %s (%s, %s) на узле «%s» (#%d)",
+											target.Interface, target.Label, roleStr, n.Name, n.ID))
+								}
 								if h.bot != nil {
-									h.bot.NotifyCascadeEgressFrozen(n, target)
+									h.bot.NotifyCascadeEgressFrozen(n, target, isActive)
 								}
 							}
 						} else {
 							h.mu.Lock()
-							delete(h.frozenAlerts, alertKey)
+							state, exists := h.frozenAlerts[alertKey]
+							shouldNotifyRecover := exists && state.alerted
+							if shouldNotifyRecover {
+								// Mark as recovered, keep lastAlert for anti-flapping debounce
+								h.frozenAlerts[alertKey] = frozenAlertState{
+									alerted:   false,
+									lastAlert: state.lastAlert,
+								}
+							}
 							h.mu.Unlock()
+
+							if shouldNotifyRecover {
+								log.Printf("[MONITOR] ✅ Cascade egress %s (%s) on node #%d recovered (active=%v). Alerting admin.",
+									target.Interface, target.Label, n.ID, isActive)
+								if h.logActivity != nil {
+									roleStr := "резервный"
+									if isActive {
+										roleStr = "активный"
+									}
+									h.logActivity(models.CategorySystem, "cascade_egress_recovered",
+										fmt.Sprintf("Шлюз выхода %s (%s, %s) на узле «%s» (#%d) восстановил работу",
+											target.Interface, target.Label, roleStr, n.Name, n.ID))
+								}
+								if h.bot != nil {
+									h.bot.NotifyCascadeEgressRecovered(n, target, isActive)
+								}
+							}
 						}
 					}
 
