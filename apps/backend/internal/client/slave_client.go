@@ -19,7 +19,7 @@ var (
 		IdleConnTimeout:     90 * time.Second,
 	}
 	sharedHTTPClient = &http.Client{
-		Timeout:   15 * time.Second,
+		Timeout:   35 * time.Second,
 		Transport: defaultTransport,
 	}
 )

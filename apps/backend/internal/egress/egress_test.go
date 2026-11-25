@@ -625,6 +625,34 @@ func TestCheckInterfaceDump_Frozen(t *testing.T) {
 	}
 }
 
+func TestCheckInterfaceDump_AmneziaWGMultiFieldHeader(t *testing.T) {
+	ctx := context.Background()
+
+	realEpoch := time.Now().Unix() - 15 // 15 seconds ago
+	// Real AmneziaWG dump where interface line has 27 fields with obfuscation params (jc, jmin=47, jmax=80, etc.)
+	awgDumpOutput := fmt.Sprintf("IOu0AlthoHWujDWrJsV3ZbbhKLTQiK6Hq12+1VybUmw=\tYDO9q9dcgYdc87Ys+iauGkgXQkvC0xizwRXU4tnp2Gg=\t42087\t3\t47\t80\t54\t76\t43\t7\t132200558-676543149\t946292926-1382049066\t1382606711-1506630850\t1584797855-1785459093\t<r 94>\t(null)\t(null)\t(null)\t(null)\t(none)\t0\t0\t0\t0\t0\t0\toff\toff\toff\nTs/lE26ELlPoxrcCvWCCqE/A20mQqGGDtuJcBdFUPyA=\t(none)\t109.107.176.224:443\t0.0.0.0/0,::/0\t%d\t1048576\t2097152\t15\n", realEpoch)
+
+	exec := newMockExecutor()
+	exec.runHandler = func(name string, args ...string) (string, error) {
+		if (name == "awg" || name == "wg") && len(args) == 3 && args[0] == "show" && args[1] == "awg4" && args[2] == "dump" {
+			return awgDumpOutput, nil
+		}
+		return "", errors.New("command not found")
+	}
+
+	info := CheckInterfaceDump(ctx, exec, "awg4")
+	if !info.Found {
+		t.Fatal("expected dump info to be found")
+	}
+	// Must NOT parse field 4 of line 0 (which is 47). It MUST parse realEpoch from line 1.
+	if info.LatestHandshakeEpoch != realEpoch {
+		t.Fatalf("expected realEpoch %d, got %d (likely parsed interface line 0)", realEpoch, info.LatestHandshakeEpoch)
+	}
+	if info.RxBytes != 1048576 || info.TxBytes != 2097152 {
+		t.Fatalf("expected rx=1048576 tx=2097152, got rx=%d tx=%d", info.RxBytes, info.TxBytes)
+	}
+}
+
 func TestRestartInterface(t *testing.T) {
 	ctx := context.Background()
 
