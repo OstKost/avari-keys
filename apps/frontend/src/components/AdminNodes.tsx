@@ -186,6 +186,7 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
   const [loadingEgress, setLoadingEgress] = useState(false);
   const [switchingEgress, setSwitchingEgress] = useState(false);
   const [targetEgressIf, setTargetEgressIf] = useState<string>('awg3');
+  const [restartingEgressIf, setRestartingEgressIf] = useState<string | null>(null);
 
   const handleOpenEgress = async (node: AdminNode) => {
     setEgressNode(node);
@@ -200,6 +201,22 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
       toast.error(err.message || 'Ошибка получения данных Egress');
     } finally {
       setLoadingEgress(false);
+    }
+  };
+
+  const handleRestartEgressInModal = async (targetIface: string) => {
+    if (!egressNode || restartingEgressIf) return;
+    try {
+      setRestartingEgressIf(targetIface);
+      const res = await api.restartNodeEgress(egressNode.id, targetIface);
+      toast.success(res.message || `Туннель ${targetIface} успешно перезапущен`);
+      const updatedStatus = await api.getNodeEgress(egressNode.id);
+      setEgressStatus(updatedStatus);
+      setEgressByNode(prev => ({ ...prev, [egressNode.id]: updatedStatus }));
+    } catch (err: any) {
+      toast.error(err.message || `Ошибка перезапуска туннеля ${targetIface}`);
+    } finally {
+      setRestartingEgressIf(null);
     }
   };
 
@@ -2290,26 +2307,24 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                             </span>
                           </div>
 
-                          {/* Micro-badges for checks */}
-                          {target.checks && target.checks.length > 0 && (
-                            <div className="flex items-center justify-between flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-[#1C3945]/60 text-[10px]">
-                              <div className="flex flex-wrap gap-1">
-                                {target.checks.map((c) => (
-                                  <span
-                                    key={c.name}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5 ${
-                                      c.ok
-                                        ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
-                                        : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
-                                    }`}
-                                    title={c.error || `HTTP ${c.status || 200}`}
-                                  >
-                                    <span>{c.name.toUpperCase()}</span>
-                                    <span>{c.ok ? '✓' : '✗'}</span>
-                                  </span>
-                                ))}
-                              </div>
-                              {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && (
+                          {/* Micro-badges for checks and restart button */}
+                          <div className="flex items-center justify-between flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-[#1C3945]/60 text-[10px]">
+                            <div className="flex flex-wrap gap-1 items-center">
+                              {target.checks && target.checks.map((c) => (
+                                <span
+                                  key={c.name}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5 ${
+                                    c.ok
+                                      ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-700/40'
+                                      : 'bg-rose-950/50 text-rose-300 border border-rose-700/40'
+                                  }`}
+                                  title={c.error || `HTTP ${c.status || 200}`}
+                                >
+                                  <span>{c.name.toUpperCase()}</span>
+                                  <span>{c.ok ? '✓' : '✗'}</span>
+                                </span>
+                              ))}
+                              {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && target.handshake_age_sec < 86400 * 365 && (
                                 <span className={`text-[10px] font-mono ${target.is_frozen ? 'text-cyan-400 font-bold' : 'text-[#718187]'}`}>
                                   {target.handshake_age_sec < 60
                                     ? `${target.handshake_age_sec}с`
@@ -2317,7 +2332,17 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                                 </span>
                               )}
                             </div>
-                          )}
+                            <button
+                              type="button"
+                              onClick={() => handleRestartEgressInModal(target.interface)}
+                              disabled={Boolean(restartingEgressIf) || switchingEgress}
+                              title="Перезапустить туннель (systemctl restart awg-quick@...)"
+                              className="text-[10px] font-mono font-medium text-[#A8B4B7] hover:text-[#D9B96E] uppercase tracking-wider px-2 py-0.5 rounded bg-[#102833] hover:bg-[#1C3945] border border-[#1C3945] transition cursor-pointer disabled:opacity-50 flex items-center space-x-1"
+                            >
+                              <RefreshCw className={`w-2.5 h-2.5 ${restartingEgressIf === target.interface ? 'animate-spin text-[#D9B96E]' : ''}`} />
+                              <span>Перезапуск</span>
+                            </button>
+                          </div>
 
                           {!target.available && target.reason && (
                             <div className="text-[11px] text-rose-400 font-sans mt-1 leading-snug">
@@ -2360,8 +2385,18 @@ export function AdminNodes({ onSelectNode }: AdminNodesProps = {}) {
                   </div>
                 </div>
               ) : (
-                <div className="py-4 text-xs sm:text-sm text-rose-400 font-mono">
-                  Не удалось получить статус Egress с узла.
+                <div className="py-6 text-center space-y-3">
+                  <div className="text-xs sm:text-sm text-rose-400 font-mono">
+                    Не удалось получить статус Egress с узла.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => egressNode && handleOpenEgress(egressNode)}
+                    className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono bg-[#102833] text-[#D9B96E] border border-[#D9B96E]/40 hover:bg-[#1C3945] transition cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Попробовать снова</span>
+                  </button>
                 </div>
               )}
 

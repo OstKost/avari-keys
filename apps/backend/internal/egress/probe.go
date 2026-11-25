@@ -290,14 +290,24 @@ func RunTargetProbe(ctx context.Context, cfg Config, target TargetConfig, prober
 		var detectedIP string
 		ipMatched := false
 
+		// Overall timeout for IP probes group so dead interfaces don't block for 16s
+		ipGroupCtx, cancelGroup := context.WithTimeout(ctx, 5*time.Second)
+		defer cancelGroup()
+
 		for _, providerURL := range providers {
-			ipCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			if ipGroupCtx.Err() != nil {
+				break
+			}
+			ipCtx, cancel := context.WithTimeout(ipGroupCtx, 2500*time.Millisecond)
 			rawBody, statusCode, err := prober.FetchIP(ipCtx, target.Interface, providerURL)
 			cancel()
 
 			lastStatusCode = statusCode
 			if err != nil {
 				lastErr = err
+				if ipGroupCtx.Err() != nil {
+					break
+				}
 				continue
 			}
 			if statusCode < 200 || statusCode >= 400 {

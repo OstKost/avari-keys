@@ -50,10 +50,15 @@ func CheckInterfaceDump(ctx context.Context, exec CommandExecutor, iface string)
 		if err != nil || out == "" {
 			continue
 		}
-		lines := strings.Split(out, "\n")
-		for _, line := range lines {
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		// Line 0 is ALWAYS the interface definition (in wg it has 4 fields, in awg it has >20 fields).
+		// Peer lines start strictly from line index 1.
+		for idx, line := range lines {
+			if idx == 0 {
+				continue
+			}
 			fields := strings.Fields(line)
-			// Peer line in WireGuard dump:
+			// Peer line in WireGuard / AmneziaWG dump:
 			// 0: public_key, 1: preshared_key, 2: endpoint, 3: allowed_ips, 4: latest_handshake, 5: rx, 6: tx, 7: persistent_keepalive
 			if len(fields) >= 8 {
 				handshake, _ := strconv.ParseInt(fields[4], 10, 64)
@@ -151,7 +156,7 @@ func (m *Manager) GetStatus(ctx context.Context) (*models.EgressStatusResponse, 
 					}
 				} else if dumpInfo.TxBytes > 0 && dumpInfo.RxBytes == 0 {
 					isFrozen = true
-					handshakeAge = -1
+					handshakeAge = 0
 					recommendation = fmt.Sprintf("Сессия WireGuard не установила рукопожатие (0 B получено). Рекомендуется перезапустить службу туннеля: systemctl restart awg-quick@%s", target.Interface)
 				}
 			}
