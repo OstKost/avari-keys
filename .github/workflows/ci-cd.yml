@@ -365,6 +365,9 @@ jobs:
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || return 1
             scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave || return 1
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave" || return 1
+            if [ "$TARGET" = "$CASCADE_GATEWAY_HOST" ]; then
+              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "if systemctl list-unit-files avari-slave-premium.service 2>/dev/null | grep -q avari-slave-premium.service; then install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave-premium; fi" || return 1
+            fi
 
             scp ${SCP_OPTS} deploy-artifacts/deploy/systemd/avari-slave.service ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave.service || return 1
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "[ -f /etc/systemd/system/avari-slave.service ] || install -m 644 ${DEPLOY_TMP}/avari-slave.service /etc/systemd/system/avari-slave.service" || return 1
@@ -390,7 +393,7 @@ jobs:
               ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "if [ -f /root/awg/awg-routing.sh ]; then bash ${DEPLOY_TMP}/install_egress.sh >/dev/null; else echo 'WARN: AmneziaWG not provisioned, skipping egress routing install'; fi" || return 1
             fi
 
-            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && (systemctl is-active --quiet avari-slave && systemctl restart avari-slave || systemctl enable --now avari-slave) && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && (systemctl is-active --quiet avari-slave && systemctl restart avari-slave || systemctl enable --now avari-slave) && systemctl is-active --quiet avari-slave && (if systemctl list-unit-files avari-slave-premium.service 2>/dev/null | grep -q avari-slave-premium.service; then (systemctl is-active --quiet avari-slave-premium && systemctl restart avari-slave-premium || systemctl enable --now avari-slave-premium) && systemctl is-active --quiet avari-slave-premium; fi) && echo 'Slave deployed and active'" || return 1
             return 0
           }
 

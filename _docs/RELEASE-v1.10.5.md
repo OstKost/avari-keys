@@ -32,4 +32,4 @@
 - `go test -race ./...` — PASS.
 - Zero-CGO сборки `avari-master` и `avari-slave` (linux amd64) — PASS.
 - `npm run build` — PASS.
-- Боевой деплой на M0 (`176.53.174.118`) и S0 (`157.22.252.225`): вызовы `GET /api/v1/admin/nodes/1/egress` отдают **HTTP 200 OK за ~6.3 секунды**, каскад зафиксирован на шлюзе `awg1` (S1 Германия).
+- Боевой деплой на Master и Cascade Gateway S0: вызовы `GET /api/v1/admin/nodes/1/egress` отдают **HTTP 200 OK за ~6.3 секунды**, каскад зафиксирован на шлюзе `awg1` (S1 Германия).
