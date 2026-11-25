@@ -1116,7 +1116,7 @@ export function ServerDetailPage({ nodeId, onBack, onNodeUpdated }: ServerDetail
                           <span className="text-[#718187]">Эндпоинт:</span>
                           <span className="text-[#A8B4B7] truncate max-w-[120px]">{target.endpoint}</span>
                         </div>
-                        {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && (
+                        {target.handshake_age_sec !== undefined && target.handshake_age_sec > 0 && target.handshake_age_sec < 86400 * 365 && (
                           <div className="flex justify-between">
                             <span className="text-[#718187]">Хэндшейк:</span>
                             <span className={target.is_frozen ? 'text-cyan-400 font-bold' : 'text-[#A8B4B7]'}>
