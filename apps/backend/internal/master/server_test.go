@@ -1994,6 +1994,50 @@ func TestTelegramMiniAppAuthFlow(t *testing.T) {
 	if !adminResp.IsAdmin {
 		t.Errorf("expected Forve to be recognized as admin in TMA")
 	}
+
+	// 6. Test Admin TMA login when chat is admin but linked user was initially RoleUser
+	promotedUser, err := store.CreateUser(ctx, "admin_promoted", "pass123")
+	if err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	_ = store.SetUserActive(ctx, promotedUser.ID, true)
+	promotedChatID := int64(888777666)
+	_ = store.SaveTelegramChat(ctx, models.TelegramChat{
+		ChatID:        promotedChatID,
+		UserID:        &promotedUser.ID,
+		Username:      "promoted_tg",
+		FirstName:     "Promoted",
+		IsAdmin:       true,
+		AlertsEnabled: true,
+	})
+
+	promotedParams := map[string]string{
+		"auth_date": fmt.Sprintf("%d", now),
+		"user":      fmt.Sprintf(`{"id":%d,"first_name":"Promoted","username":"promoted_tg"}`, promotedChatID),
+	}
+	promotedInitData := generateMiniAppInitData(botToken, promotedParams)
+	authBody, _ = json.Marshal(models.TelegramMiniAppAuthRequest{InitData: promotedInitData})
+	req = httptest.NewRequest("POST", "/api/v1/auth/telegram-miniapp", bytes.NewReader(authBody))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for Promoted Admin TMA auth, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var promotedResp models.TelegramMiniAppAuthResponse
+	_ = json.NewDecoder(rec.Body).Decode(&promotedResp)
+	if !promotedResp.IsAdmin {
+		t.Errorf("expected promotedUser to be recognized as admin in TMA")
+	}
+
+	// Verify that the JWT token grants access to admin endpoints
+	adminReq := httptest.NewRequest("GET", "/api/v1/admin/nodes", nil)
+	adminReq.Header.Set("Authorization", "Bearer "+promotedResp.Token)
+	adminRec := httptest.NewRecorder()
+	handler.ServeHTTP(adminRec, adminReq)
+	if adminRec.Code != http.StatusOK {
+		t.Errorf("expected 200 OK for admin endpoint using promoted token, got %d (body: %s)", adminRec.Code, adminRec.Body.String())
+	}
 }
 
 func TestMeEndpointMonthTrafficAndAdminUserTraffic(t *testing.T) {

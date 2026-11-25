@@ -54,8 +54,42 @@ export const loginAsDemoUser = async (username: string): Promise<User> => {
   return mockApi.setDemoUser(username);
 };
 
+let inMemoryToken: string | null = null;
+try {
+  inMemoryToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+} catch {
+  // Ignore localStorage access errors
+}
+
+export const setAuthToken = (token: string | null) => {
+  inMemoryToken = token;
+  try {
+    if (token) {
+      localStorage.setItem('token', token);
+    } else {
+      localStorage.removeItem('token');
+    }
+  } catch (e) {
+    console.warn('[API Client] localStorage write failed:', e);
+  }
+};
+
+export const getAuthToken = (): string | null => {
+  if (inMemoryToken) return inMemoryToken;
+  try {
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+    if (stored) {
+      inMemoryToken = stored;
+      return stored;
+    }
+  } catch (e) {
+    console.warn('[API Client] localStorage read failed:', e);
+  }
+  return null;
+};
+
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('token');
+  const token = getAuthToken();
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
@@ -90,7 +124,7 @@ const realApi = {
       body: JSON.stringify({ username, password }),
     });
     const data = await handleResponse<{ token: string; user: User }>(res);
-    localStorage.setItem('token', data.token);
+    setAuthToken(data.token);
     return data;
   },
 
@@ -101,7 +135,7 @@ const realApi = {
       body: JSON.stringify({ init_data: initData }),
     });
     const data = await handleResponse<TelegramMiniAppAuthResponse>(res);
-    localStorage.setItem('token', data.token);
+    setAuthToken(data.token);
     return data;
   },
 
@@ -138,13 +172,13 @@ const realApi = {
     });
     const result = await handleResponse<{ token: string; user: User }>(res);
     if (result.token) {
-      localStorage.setItem('token', result.token);
+      setAuthToken(result.token);
     }
     return result;
   },
 
   logout() {
-    localStorage.removeItem('token');
+    setAuthToken(null);
   },
 
   // User: Nodes & Keys

@@ -169,6 +169,10 @@ func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Reques
 		u, err := s.storage.GetUserByID(r.Context(), *chat.UserID)
 		if err == nil && u != nil {
 			user = u
+			if chat.IsAdmin && user.Role != models.RoleAdmin {
+				_ = s.storage.SetUserRole(r.Context(), user.ID, models.RoleAdmin)
+				user.Role = models.RoleAdmin
+			}
 		}
 	} else if chat.IsAdmin {
 		// Admin chat without explicit user_id binding -> bind to default admin (Forve or first active admin)
