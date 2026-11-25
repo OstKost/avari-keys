@@ -364,10 +364,10 @@ jobs:
               print("Environment=\"NETWORK_PROBE_TARGETS=" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("%", "%%") + "\"")
               ' | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf' || return 1
               scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/ || return 1
-              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null" || return 1
+              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "if [ -f /root/awg/awg-routing.sh ]; then bash ${DEPLOY_TMP}/install_egress.sh >/dev/null; else echo 'WARN: AmneziaWG not provisioned, skipping egress routing install'; fi" || return 1
             fi
 
-            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && systemctl is-active --quiet avari-slave && systemctl restart avari-slave && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && (systemctl is-active --quiet avari-slave && systemctl restart avari-slave || systemctl enable --now avari-slave) && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
             return 0
           }
 
