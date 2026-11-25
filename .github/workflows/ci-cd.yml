@@ -250,19 +250,52 @@ jobs:
         run: rm -rf ~/.ssh/id_deploy
 
   # ==========================================
-  # 4. Автоматический деплой на ВСЕ Slave сервера
+  # 4. Подготовка списка Slave-нод (парсинг секрета)
   # ==========================================
-  deploy-slaves:
-    name: ⚡ Deploy All Slave Nodes (Automated)
+  prepare-slaves:
+    name: 📋 Prepare Slave Hosts
     needs: test-and-build
     if: >-
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
       (github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'all-slaves' || github.event.inputs.target == 'slave-api'))
     runs-on: ubuntu-latest
-    concurrency:
-      group: production-slaves-deploy
-      cancel-in-progress: false
+    outputs:
+      hosts: ${{ steps.parse.outputs.hosts }}
+    steps:
+      - name: Parse host list
+        id: parse
+        env:
+          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS }}
+          SINGLE_TARGET_HOST: ${{ github.event.inputs.target_host }}
+          TARGET_MODE: ${{ github.event.inputs.target }}
+        run: |
+          if [ "${TARGET_MODE}" = "slave-api" ] && [ -n "${SINGLE_TARGET_HOST}" ]; then
+            HOSTS="${SINGLE_TARGET_HOST}"
+          else
+            HOSTS="${SLAVE_HOSTS}"
+          fi
+          JSON=$(printf '%s\n' ${HOSTS} | grep -v '^$' | jq -R . | jq -s -c .)
+          if [ "$JSON" = "[]" ]; then JSON='["__none__"]'; fi
+          echo "hosts=${JSON}" >> "$GITHUB_OUTPUT"
+          echo "Parsed hosts: ${JSON}"
 
+  # ==========================================
+  # 5. Деплой каждой Slave-ноды (независимый, неблокирующий)
+  # ==========================================
+  deploy-slave:
+    name: ⚡ Deploy Slave (${{ matrix.host }})
+    needs: prepare-slaves
+    if: >-
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'all-slaves' || github.event.inputs.target == 'slave-api'))
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(needs.prepare-slaves.outputs.hosts) }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-slave-deploy-${{ matrix.host }}
+      cancel-in-progress: false
     steps:
       - name: 📥 Download Build Artifacts
         uses: actions/download-artifact@v4
@@ -282,34 +315,28 @@ jobs:
           echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
 
-      - name: 🚀 Deploy avari-slave to All Nodes & Restart
+      - name: 🚀 Deploy & Restart
         env:
-          SLAVE_HOSTS: ${{ secrets.SLAVE_HOSTS }}
+          TARGET: ${{ matrix.host }}
           SSH_JUMP_HOST: ${{ secrets.SSH_JUMP_HOST }}
           CASCADE_GATEWAY_HOST: ${{ secrets.CASCADE_GATEWAY_HOST }}
           NETWORK_PROBE_INTERFACE: ${{ secrets.CASCADE_PUBLIC_INTERFACE }}
           CASCADE_EGRESS_CONFIG: ${{ secrets.CASCADE_EGRESS_CONFIG }}
           NETWORK_PROBE_TARGETS: ${{ secrets.NETWORK_PROBE_TARGETS }}
-          SINGLE_TARGET_HOST: ${{ github.event.inputs.target_host }}
-          TARGET_MODE: ${{ github.event.inputs.target }}
           SSH_USER: ${{ secrets.SSH_USER || 'root' }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           RUN_ID: ${{ github.run_id }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          if [ "${TARGET}" = "__none__" ]; then
+            echo "No slave hosts configured; skipping."
+            exit 0
+          fi
+          echo "::add-mask::${TARGET}"
           DEPLOY_TMP="/tmp/avari-slave-${RUN_ID}"
           SSH_BASE_OPTS="-i ~/.ssh/id_deploy -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes"
           SCP_BASE_OPTS="-O -i ~/.ssh/id_deploy -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
-
-          : "${SLAVE_HOSTS:?SLAVE_HOSTS secret is required}"
-          # Determine which hosts to deploy to
-          if [ "${TARGET_MODE}" = "slave-api" ] && [ -n "${SINGLE_TARGET_HOST}" ]; then
-            HOSTS_TO_DEPLOY="${SINGLE_TARGET_HOST}"
-          else
-            HOSTS_TO_DEPLOY="${SLAVE_HOSTS}"
-          fi
-
-          for MASKED_HOST in ${HOSTS_TO_DEPLOY}; do echo "::add-mask::${MASKED_HOST}"; done
-          echo "==> Deploying configured Slave nodes"
 
           printf '%s\n' \
             'Host *' \
@@ -336,18 +363,14 @@ jobs:
             fi
 
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "mkdir -p ${DEPLOY_TMP} /usr/local/bin /opt/avari-keys/data" || return 1
-
-            # Upload and install the new avari-slave binary first so any CLI helper or daemon uses the updated binary
             scp ${SCP_OPTS} deploy-artifacts/dist/linux-amd64/avari-slave ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave || return 1
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "install -m 755 ${DEPLOY_TMP}/avari-slave /usr/local/bin/avari-slave" || return 1
 
-            # Install the canonical systemd unit on first deploy (never overwrite a node-local override)
             scp ${SCP_OPTS} deploy-artifacts/deploy/systemd/avari-slave.service ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/avari-slave.service || return 1
             ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "[ -f /etc/systemd/system/avari-slave.service ] || install -m 644 ${DEPLOY_TMP}/avari-slave.service /etc/systemd/system/avari-slave.service" || return 1
 
-            # If deploying to the cascade gateway (M0 / S0), also install egress configs and routing scripts
             if [ "$TARGET" = "$CASCADE_GATEWAY_HOST" ]; then
-              echo "==> Configuring Network Probe targets and egress routing for cascade gateway..."
+              echo "==> Configuring egress routing for cascade gateway..."
               : "${NETWORK_PROBE_TARGETS:?Missing probe targets secret}"
               : "${CASCADE_EGRESS_CONFIG:?Missing cascade registry secret}"
               printf '%s' "$CASCADE_EGRESS_CONFIG" | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/avari-keys; cat > /etc/avari-keys/egress.json' || return 1
@@ -364,42 +387,40 @@ jobs:
               print("Environment=\"NETWORK_PROBE_TARGETS=" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("%", "%%") + "\"")
               ' | ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} 'umask 077; mkdir -p /etc/systemd/system/avari-slave.service.d; cat > /etc/systemd/system/avari-slave.service.d/network.conf' || return 1
               scp ${SCP_OPTS} deploy-artifacts/scripts/avari-egress.py deploy-artifacts/scripts/install_egress.sh ${SSH_USER}@${TARGET}:${DEPLOY_TMP}/ || return 1
-              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "bash ${DEPLOY_TMP}/install_egress.sh >/dev/null" || return 1
+              ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "if [ -f /root/awg/awg-routing.sh ]; then bash ${DEPLOY_TMP}/install_egress.sh >/dev/null; else echo 'WARN: AmneziaWG not provisioned, skipping egress routing install'; fi" || return 1
             fi
 
-            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && systemctl is-active --quiet avari-slave && systemctl restart avari-slave && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
+            ssh ${SSH_OPTS} ${SSH_USER}@${TARGET} "rm -rf ${DEPLOY_TMP} && systemctl daemon-reload && (systemctl is-active --quiet avari-slave && systemctl restart avari-slave || systemctl enable --now avari-slave) && systemctl is-active --quiet avari-slave && echo 'Slave deployed and active'" || return 1
             return 0
           }
 
-          for HOST in ${HOSTS_TO_DEPLOY}; do
-            echo ""
-            echo "=================================================="
-            echo "==> [Node: ${HOST}] Connecting & Deploying avari-slave..."
-            echo "=================================================="
-
-            DEPLOYED=0
-            MAX_ATTEMPTS=3
-            for ATTEMPT in $(seq 1 ${MAX_ATTEMPTS}); do
-              if [ ${ATTEMPT} -gt 1 ]; then
-                echo "⏳ Retrying [Node: ${HOST}] in 10s (Attempt ${ATTEMPT}/${MAX_ATTEMPTS})..."
-                sleep 10
-              fi
-              if deploy_slave_node "${HOST}"; then
-                DEPLOYED=1
-                break
-              else
-                echo "⚠️ Attempt ${ATTEMPT}/${MAX_ATTEMPTS} for [Node: ${HOST}] failed."
-              fi
-            done
-
-            if [ ${DEPLOYED} -ne 1 ]; then
-              echo "❌ Error: configured Slave host ${HOST} is unreachable after ${MAX_ATTEMPTS} attempts; deployment failed"
-              exit 1
+          echo "==> [Node: ${TARGET}] Connecting & Deploying avari-slave..."
+          DEPLOYED=0
+          MAX_ATTEMPTS=3
+          for ATTEMPT in $(seq 1 ${MAX_ATTEMPTS}); do
+            if [ ${ATTEMPT} -gt 1 ]; then
+              echo "⏳ Retrying [Node: ${TARGET}] in 10s (Attempt ${ATTEMPT}/${MAX_ATTEMPTS})..."
+              sleep 10
+            fi
+            if deploy_slave_node "${TARGET}"; then
+              DEPLOYED=1
+              break
+            else
+              echo "⚠️ Attempt ${ATTEMPT}/${MAX_ATTEMPTS} for [Node: ${TARGET}] failed."
             fi
           done
 
-          echo ""
-          echo "🎉 All designated Slave nodes have been processed!"
+          if [ ${DEPLOYED} -ne 1 ]; then
+            echo "❌ Node ${TARGET} unreachable after ${MAX_ATTEMPTS} attempts — deployment failed (non-blocking)"
+            if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+              curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+                --data-urlencode "text=⚠️ CI/CD: не удалось обновить ноду ${TARGET} (${MAX_ATTEMPTS} попыток)" >/dev/null || true
+            fi
+            # Ошибка одной ноды не останавливает пайплайн.
+          else
+            echo "✅ Node ${TARGET} deployed and active"
+          fi
 
       - name: 🧹 Cleanup SSH Credentials
         if: always()

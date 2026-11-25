@@ -196,15 +196,15 @@ func (m *Manager) applySoft(ctx context.Context) error {
 		}
 	}
 
-	// Resolve blocklist domains and populate the ipset.
-	ips, _ := m.resolveIPs(ctx, m.domains)
-	if err := m.syncIPSet(ctx, ips); err != nil {
-		return err
-	}
-	if len(ips) > 0 {
-		args := []string{"-A", chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "DROP"}
-		if _, err := m.exec.Run(ctx, "iptables", args...); err != nil {
-			return fmt.Errorf("add ipset match rule: %w", err)
+	// Resolve blocklist domains and populate the ipset (best-effort: if ipset is
+	// absent or resolution fails, the port rules above still apply and block
+	// the bulk of torrent traffic).
+	if ips, err := m.resolveIPs(ctx, m.domains); err == nil && len(ips) > 0 {
+		if err := m.syncIPSet(ctx, ips); err == nil {
+			args := []string{"-A", chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "DROP"}
+			if _, err := m.exec.Run(ctx, "iptables", args...); err != nil {
+				return fmt.Errorf("add ipset match rule: %w", err)
+			}
 		}
 	}
 
@@ -267,7 +267,9 @@ func (m *Manager) ruleExists(ctx context.Context, args ...string) bool {
 	return err == nil && code == 0
 }
 
-// resolveIPs resolves the given domains to their IPv4 addresses (dedup + sorted).
+// resolveIPs resolves the given domains to their IPv4 addresses (dedup + sorted),
+// dropping non-routable addresses (loopback/private/link-local/multicast) that
+// must never be blocked (e.g. a sinkholed tracker domain resolving to 127.0.0.1).
 func (m *Manager) resolveIPs(ctx context.Context, domains []string) ([]string, error) {
 	seen := map[string]bool{}
 	var ips []string
@@ -277,6 +279,9 @@ func (m *Manager) resolveIPs(ctx context.Context, domains []string) ([]string, e
 			continue
 		}
 		for _, a := range addrs {
+			if !blockableIP(a) {
+				continue
+			}
 			ip := a.String()
 			if !seen[ip] {
 				seen[ip] = true
@@ -286,6 +291,17 @@ func (m *Manager) resolveIPs(ctx context.Context, domains []string) ([]string, e
 	}
 	sort.Strings(ips)
 	return ips, nil
+}
+
+// blockableIP reports whether an address is a public unicast IP that is safe to block.
+func blockableIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return false
+	}
+	return true
 }
 
 // State is the persisted local firewall state (mode + domains + timestamp).

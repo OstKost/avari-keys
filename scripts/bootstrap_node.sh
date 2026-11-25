@@ -53,6 +53,9 @@ case "$ROLE" in
     install -m 644 "$ROOT_DIR/deploy/systemd/avari-slave.service" /etc/systemd/system/avari-slave.service
     mkdir -p /etc/systemd/system/avari-slave.service.d /etc/avari-keys /opt/avari-keys/data
 
+    # ipset требуется для блокировки торрент-доменов (режим soft)
+    command -v ipset >/dev/null 2>&1 || apt-get install -y ipset
+
     # Node-specific secret goes into a drop-in (keeps the base unit canonical).
     if [[ -n "${SLAVE_API_KEY:-}" ]]; then
       umask 077
