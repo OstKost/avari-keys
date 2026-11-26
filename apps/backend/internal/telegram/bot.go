@@ -1257,7 +1257,7 @@ func (b *Bot) SendMessageWithMarkup(chatID int64, text string, parseMode string,
 	url := fmt.Sprintf("%s/bot%s/sendMessage", apiBase, token)
 	resp, err := b.httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to send telegram message: %w", err)
+		return fmt.Errorf("failed to send telegram message: %s", strings.ReplaceAll(err.Error(), token, "[REDACTED]"))
 	}
 	defer resp.Body.Close()
 
@@ -1302,7 +1302,7 @@ func (b *Bot) AnswerCallbackQuery(callbackQueryID, text string, showAlert bool) 
 	url := fmt.Sprintf("%s/bot%s/answerCallbackQuery", apiBase, token)
 	resp, err := b.httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to answer callback query: %w", err)
+		return fmt.Errorf("failed to answer callback query: %s", strings.ReplaceAll(err.Error(), token, "[REDACTED]"))
 	}
 	defer resp.Body.Close()
 
@@ -1349,7 +1349,7 @@ func (b *Bot) EditMessageText(chatID, messageID int64, text, parseMode string, m
 	url := fmt.Sprintf("%s/bot%s/editMessageText", apiBase, token)
 	resp, err := b.httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to edit message text: %w", err)
+		return fmt.Errorf("failed to edit message text: %s", strings.ReplaceAll(err.Error(), token, "[REDACTED]"))
 	}
 	defer resp.Body.Close()
 

@@ -35,6 +35,20 @@ func setupTestStorage(t *testing.T) (*storage.Storage, func()) {
 	}
 }
 
+func TestSendMessageRedactsTokenOnTransportError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Close()
+	const token = "test-secret-token"
+	bot := telegram.NewBot(telegram.Config{APIURL: server.URL, Token: token})
+	err := bot.SendMessage(1, "test", "")
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatalf("transport error contains token: %s", err)
+	}
+}
+
 func TestTelegramBotSendMessageAndAlerts(t *testing.T) {
 	var sentMessages []map[string]any
 	var mu sync.Mutex

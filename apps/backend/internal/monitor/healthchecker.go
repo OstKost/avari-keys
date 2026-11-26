@@ -497,9 +497,10 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 		}(node)
 	}
 
-	wg.Wait()
-	close(resultsChan)
-	h.refreshPublicNetwork(ctx, nodes)
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
 
 	// Process results & compute telemetry deltas
 	onlineNodesCount := 0
@@ -735,6 +736,8 @@ func (h *HealthChecker) collectTelemetryAndHealth(ctx context.Context, isInitial
 			TotalTrafficFormatted: formatBytes(nodeTrafficTotal),
 		})
 	}
+
+	h.refreshPublicNetwork(ctx, nodes)
 
 	var avgLatencyMs int64
 	if latencyCount > 0 {

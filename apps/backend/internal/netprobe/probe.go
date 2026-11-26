@@ -240,3 +240,8 @@ func pingArguments(iface, host string) []string {
 	}
 	return append(args, host)
 }
+
+// InterfaceDialer returns a dialer restricted to the named interface.
+func InterfaceDialer(iface string) (*net.Dialer, error) {
+	return interfaceDialer(iface)
+}
