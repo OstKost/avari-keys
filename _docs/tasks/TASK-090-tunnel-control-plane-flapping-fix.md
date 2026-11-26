@@ -14,8 +14,8 @@
 
 ## 2. Затронутые модули и компоненты
 - **Инфраструктура и сеть**:
-  - Сервер S1 (`185.213.240.136`): правило UFW `allow in on awg0 to any port 8081 proto tcp`.
-  - Сервер M0 (`176.53.174.118`): `nodes.api_url = 'http://172.16.61.1:8081'` для узла #4.
+  - Сервер S1: правило UFW `allow in on awg0 to any port 8081 proto tcp`.
+  - Сервер M0: `nodes.api_url = 'http://172.16.61.1:8081'` для узла #4.
 - **Документация и архитектура**:
   - `_docs/TASKS.md` (обновление канбан-доски).
   - `_docs/architecture/INDEX.md` / `BACKEND_STRUCTURE.md` (фиксация изолированного туннельного Control Plane).
