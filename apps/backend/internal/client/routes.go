@@ -72,6 +72,7 @@ func boundClient(iface string) (*http.Client, error) {
 	}
 	transport := defaultTransport.Clone()
 	transport.DialContext = dialer.DialContext
+	transport.ForceAttemptHTTP2 = true
 	return &http.Client{Timeout: sharedHTTPClient.Timeout, Transport: transport, CheckRedirect: rejectRedirect}, nil
 }
 
