@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/client"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/logger"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/master"
 	"github.com/OstKost/avari-keys-mvp/apps/backend/internal/storage"
@@ -19,6 +20,10 @@ import (
 func main() {
 	// Initialize structured logging (slog + standard log bridge)
 	logger.Init("avari-master")
+	if err := client.ConfigureSlaveRoutes(os.Getenv("SLAVE_ROUTES_JSON")); err != nil {
+		slog.Error("Invalid Slave routing configuration", "error", err)
+		os.Exit(1)
+	}
 
 	port := os.Getenv("MASTER_PORT")
 	if port == "" {

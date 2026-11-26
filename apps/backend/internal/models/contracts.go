@@ -4,6 +4,7 @@ import "time"
 
 // HealthResponse represents system and service health status.
 type HealthResponse struct {
+	ViaBackup         bool   `json:"via_backup,omitempty"`
 	Status            string `json:"status"`
 	Service           string `json:"service"`
 	AWGAvailable      bool   `json:"awg_available"`
