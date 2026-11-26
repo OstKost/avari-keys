@@ -1,6 +1,11 @@
-.PHONY: all build test lint clean dev-ui dev-ui-mock dev-master dev-slave-mock
+.PHONY: all build test lint clean dev-ui dev-ui-mock dev-master dev-slave-mock check-ci
 
 all: build
+
+check-ci: lint test build-linux build-frontend
+	@echo "==> Checking private deployment inventory scan..."
+	python3 scripts/check_private_inventory.py
+	@echo "==> All pre-flight CI checks PASSED!"
 
 build: build-backend build-linux build-frontend
 

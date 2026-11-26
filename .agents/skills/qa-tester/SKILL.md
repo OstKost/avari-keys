@@ -30,6 +30,17 @@ cd apps/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null .
 
 # Step 4: Frontend TypeScript check & production bundling
 cd apps/frontend && npm run build
+
+# Step 5: Check private deployment inventory (Zero-Leakage Sanitization)
+python3 scripts/check_private_inventory.py
+
+# Or run the complete automated check suite:
+make check-ci
+
+# Step 6: Post-Push Remote CI Verification Gate
+# After pushing to GitHub (main/develop/tags), monitor the workflow:
+gh run list --limit 3
+# An agent is STRICTLY PROHIBITED from reporting task completion until GitHub Actions CI passes (green checkmark).
 ```
 
 ---

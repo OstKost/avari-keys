@@ -74,13 +74,11 @@ When delegating implementation to the Developer role, use the standard handoff f
 
 When all tasks for a milestone are completed:
 
-1. **Verify Integrity**:
+1. **Verify Integrity (Pre-flight CI Gate)**:
    - Run full verification:
      ```bash
-     make test
-     make lint
-     make build-linux
-     cd apps/frontend && npm run build
+     make check-ci
+     # или: make test && make lint && make build-linux && cd apps/frontend && npm run build && python3 scripts/check_private_inventory.py
      ```
 2. **Create Release Branch**:
    ```bash
@@ -91,6 +89,7 @@ When all tasks for a milestone are completed:
    - Update version strings in `README.md` and UI banners if applicable.
 4. **Draft Release Notes**:
    - Create `_docs/RELEASE-vX.Y.Z.md` summarizing new features, architectural improvements, and bugfixes.
+   - **Внимание**: строго запрещено указывать реальные боевые IP-адреса, закрытые хосты и секреты серверов!
 5. **Merge to Main & Develop**:
    ```bash
    git checkout main
@@ -99,4 +98,11 @@ When all tasks for a milestone are completed:
    git checkout develop
    git merge --no-ff release/vX.Y.Z -m "chore(release): merge release/vX.Y.Z into develop"
    git branch -d release/vX.Y.Z
+   git push origin main develop --tags
    ```
+6. **Post-Push GitHub Actions Monitoring**:
+   - Отследить статус выполнения удаленного пайплайна:
+     ```bash
+     gh run list --limit 3
+     ```
+   - Запрещено докладывать пользователю о готовности релиза, пока CI в GitHub Actions не завершится со статусом `success`.
