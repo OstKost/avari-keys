@@ -1,12 +1,13 @@
 {
   "name": "avari-keys-frontend",
   "private": true,
-  "version": "1.12.2",
+  "version": "1.13.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:mock": "VITE_USE_MOCK=true vite",
     "build": "tsc && vite build",
+    "test:e2e": "playwright test",
     "preview": "vite preview",
     "screenshots": "node scripts/generate_all_showcase.mjs"
   },
@@ -19,6 +20,7 @@
     "tailwind-merge": "^2.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/node": "^22.5.4",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.5",
