@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import QRCode from 'qrcode';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -10,7 +9,6 @@ import {
   RefreshCw,
   Copy,
   Check,
-  Download,
   Plus,
   Smartphone,
   ChevronRight,
@@ -27,7 +25,6 @@ import {
   NodePublic,
   AdminNode,
   ClientConfigSummary,
-  ClientConfigDetail,
   BillingStatus,
   BillingRequisites,
   EgressStatusResponse,
@@ -40,6 +37,7 @@ import {
   triggerHaptic,
   triggerNotificationHaptic,
 } from '../utils/telegram';
+import { TmaSwipeableKeyCards } from './TmaSwipeableKeyCards';
 
 type TmaUserTab = 'status' | 'keys' | 'billing';
 type TmaAdminTab = 'servers' | 'cascade' | 'user_view';
@@ -63,10 +61,7 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
   // User Mode Data
   const [keys, setKeys] = useState<ClientConfigSummary[]>([]);
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null);
-  const [keyDetail, setKeyDetail] = useState<ClientConfigDetail | null>(null);
-  const [keyDetailLoading, setKeyDetailLoading] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
-  const [copiedConfig, setCopiedConfig] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState(false);
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [requisites, setRequisites] = useState<BillingRequisites | null>(null);
   const [billingPaidSent, setBillingPaidSent] = useState(false);
@@ -254,61 +249,12 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
     }
   }, [currentUser, isAdmin, loadUserData, loadAdminData]);
 
-  // 4. Fetch Selected Key Detail & generate QR code
-  useEffect(() => {
-    if (!selectedKeyId) {
-      setKeyDetail(null);
-      setQrCodeUrl('');
-      return;
-    }
-
-    setKeyDetailLoading(true);
-    api.getKey(selectedKeyId)
-      .then(async (detail) => {
-        setKeyDetail(detail);
-        const qrContent = detail.vpn_uri || detail.config;
-        if (qrContent) {
-          try {
-            const url = await QRCode.toDataURL(qrContent, {
-              width: 300,
-              margin: 2,
-              color: { dark: '#06141B', light: '#FFFFFF' },
-            });
-            setQrCodeUrl(url);
-          } catch (e) {
-            console.error('Failed to generate QR code', e);
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch key details', err);
-      })
-      .finally(() => {
-        setKeyDetailLoading(false);
-      });
-  }, [selectedKeyId]);
-
   // Actions
-  const handleCopy = (text: string) => {
+  const handleCopyPhone = (text: string) => {
     triggerHaptic('medium');
     navigator.clipboard.writeText(text);
-    setCopiedConfig(true);
-    setTimeout(() => setCopiedConfig(false), 2000);
-  };
-
-  const handleDownloadConf = (key: ClientConfigDetail) => {
-    triggerHaptic('light');
-    const isMieruKey = key.protocol === 'mieru' || key.protocol === 'vless';
-    const isHysteriaKey = key.protocol === 'hysteria2';
-    const ext = isMieruKey ? 'json' : isHysteriaKey ? 'yaml' : 'conf';
-    const mime = isMieruKey ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8';
-    const blob = new Blob([key.config || key.vpn_uri || ''], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${key.client_name || 'avari-vpn'}.${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setCopiedPhone(true);
+    setTimeout(() => setCopiedPhone(false), 2000);
   };
 
   const handleNotifyPaid = async () => {
@@ -684,135 +630,18 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
 
         {/* TAB 2: KEYS */}
         {userTab === 'keys' && (
-          <div className="space-y-4">
-            {/* Key Selector if multiple keys */}
-            {keys.length > 1 && (
-              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {keys.map((k) => (
-                  <button
-                    key={k.id}
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setSelectedKeyId(k.id);
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition-all ${
-                      selectedKeyId === k.id
-                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-semibold'
-                        : 'bg-slate-900/80 text-slate-400 border border-slate-800'
-                    }`}
-                  >
-                    <span>{getCountryFlag(k.node_country_code || 'NLD')}</span>
-                    <span>{k.client_name || k.device_name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Active Key Detail Card */}
-            {activeKey ? (
-              <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{getCountryFlag(activeKey.node_country_code || 'NLD')}</span>
-                    <div>
-                      <div className="text-sm font-bold text-white">
-                        {activeKey.client_name || activeKey.device_name}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {formatCountry(activeKey.node_country_code || 'NLD')} • {activeKey.node_name || 'Кластер'}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                      (activeKey.protocol === 'mieru' || activeKey.protocol === 'vless')
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : activeKey.protocol === 'hysteria2'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                    }`}
-                  >
-                    {activeKey.protocol === 'vless' ? 'VLESS+Reality' : activeKey.protocol === 'mieru' ? 'Mieru' : activeKey.protocol === 'hysteria2' ? 'Hysteria 2' : 'AmneziaWG'}
-                  </span>
-                </div>
-
-                {/* QR Code Container */}
-                <div className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-inner my-2">
-                  {keyDetailLoading ? (
-                    <div className="w-48 h-48 flex items-center justify-center text-slate-400 text-xs">
-                      <RefreshCw className="w-6 h-6 animate-spin text-slate-600" />
-                    </div>
-                  ) : qrCodeUrl ? (
-                    <img
-                      src={qrCodeUrl}
-                      alt="VPN QR Code"
-                      className="w-48 h-48 rounded-lg select-none"
-                    />
-                  ) : (
-                    <div className="w-48 h-48 flex items-center justify-center text-slate-400 text-xs text-center p-4">
-                      Не удалось сформировать QR-код
-                    </div>
-                  )}
-                  <span className="text-[11px] text-slate-600 mt-1 font-medium">
-                    {(activeKey.protocol === 'mieru' || activeKey.protocol === 'vless')
-                      ? 'Сканируйте в Hiddify / NekoBox'
-                      : activeKey.protocol === 'hysteria2'
-                      ? 'Сканируйте в v2rayNG / NekoBox'
-                      : 'Сканируйте в приложении AmneziaVPN'}
-                  </span>
-                </div>
-
-                {/* Actions: Copy & Download */}
-                {keyDetail && (
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      onClick={() => handleCopy(keyDetail.vpn_uri || keyDetail.config)}
-                      className="py-2.5 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      {copiedConfig ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedConfig ? 'Скопировано!' : 'Скопировать'}</span>
-                    </button>
-                    <button
-                      onClick={() => handleDownloadConf(keyDetail)}
-                      className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>
-                        {keyDetail.protocol === 'mieru' || keyDetail.protocol === 'vless'
-                          ? 'Скачать .json'
-                          : keyDetail.protocol === 'hysteria2'
-                          ? 'Скачать .yaml'
-                          : 'Скачать .conf'}
-                      </span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-8 text-center bg-slate-900/60 border border-slate-800 rounded-2xl">
-                <Key className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                <div className="text-sm font-medium text-slate-300">У вас пока нет ключей</div>
-                <div className="text-xs text-slate-500 mt-1 mb-4">
-                  Создайте первый ключ для подключения к защищенной сети.
-                </div>
-              </div>
-            )}
-
-            {/* Create Key Button */}
-            <button
-              onClick={() => {
-                triggerHaptic('light');
-                setShowCreateKey(true);
-                if (availableNodes.length > 0 && selectedNodeId === null) {
-                  setSelectedNodeId(availableNodes[0].id);
-                }
-              }}
-              className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20 transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Создать новый ключ</span>
-            </button>
-          </div>
+          <TmaSwipeableKeyCards
+            keys={keys}
+            selectedKeyId={selectedKeyId}
+            onSelectKey={(id) => setSelectedKeyId(id)}
+            onCreateKeyClick={() => {
+              triggerHaptic('light');
+              setShowCreateKey(true);
+              if (availableNodes.length > 0 && selectedNodeId === null) {
+                setSelectedNodeId(availableNodes[0].id);
+              }
+            }}
+          />
         )}
 
         {/* TAB 3: BILLING */}
@@ -869,10 +698,11 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
                   </span>
                 </div>
                 <button
-                  onClick={() => handleCopy(requisites?.sbp_phone || '')}
+                  onClick={() => handleCopyPhone(requisites?.sbp_phone || '')}
                   className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-medium flex items-center gap-1 border border-slate-700 transition-colors"
                 >
-                  <Copy className="w-3.5 h-3.5" /> Копировать
+                  {copiedPhone ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedPhone ? 'Скопировано!' : 'Копировать'}</span>
                 </button>
               </div>
 
