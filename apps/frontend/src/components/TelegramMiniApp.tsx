@@ -1330,69 +1330,103 @@ export const TelegramMiniApp: React.FC<TelegramMiniAppProps> = ({ onExitToWeb })
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Сервер / Локация</label>
-                <select
-                  value={selectedNodeId || ''}
-                  onChange={(e) => {setSelectedNodeId(Number(e.target.value)); setSelectedProtocol("awg");}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-cyan-500"
-                >
-                  {availableNodes.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {getCountryFlag(n.country_code || 'NLD')} {n.name} (
-                      {formatCountry(n.country_code || 'NLD')})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-slate-400 block mb-1">Протокол</label>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="text-slate-400 block mb-1">1. Протокол подключения</label>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setSelectedProtocol('awg')}
-                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
+                    onClick={() => {
+                      setSelectedProtocol('awg');
+                      const supported = availableNodes.find((n) => !n.is_blocked);
+                      if (supported) setSelectedNodeId(supported.id);
+                    }}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition-all ${
                       selectedProtocol === 'awg'
-                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     AmneziaWG
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSelectedProtocol('hysteria2')}
-                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
+                    onClick={() => {
+                      setSelectedProtocol('hysteria2');
+                      const supported = availableNodes.find((n) => n.has_hysteria && !n.is_blocked);
+                      if (supported) setSelectedNodeId(supported.id);
+                    }}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition-all ${
                       selectedProtocol === 'hysteria2'
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     Hysteria 2
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSelectedProtocol('mieru')}
-                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
+                    onClick={() => {
+                      setSelectedProtocol('mieru');
+                      const supported = availableNodes.find((n) => n.has_mieru && !n.is_blocked);
+                      if (supported) setSelectedNodeId(supported.id);
+                    }}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition-all ${
                       selectedProtocol === 'mieru'
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    Mieru
+                    Mieru (TCP)
                   </button>
-                <button
-                    type="button" disabled={!availableNodes.some(node => node.id === selectedNodeId && node.has_vless && node.type === "direct")}
-                    onClick={() => setSelectedProtocol('vless')}
-                    className={`py-2 px-2 rounded-xl border text-xs font-semibold ${
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProtocol('vless');
+                      const supported = availableNodes.find((n) => n.has_vless && n.type === 'direct' && !n.is_blocked);
+                      if (supported) setSelectedNodeId(supported.id);
+                    }}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-semibold text-center transition-all ${
                       selectedProtocol === 'vless'
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                        : 'bg-slate-950 text-slate-400 border-slate-800'
+                        ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     VLESS+Reality
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">2. Сервер / Локация</label>
+                <select
+                  value={selectedNodeId || ''}
+                  onChange={(e) => setSelectedNodeId(Number(e.target.value))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-cyan-500 text-xs"
+                >
+                  {availableNodes.map((n) => {
+                    const isSupported =
+                      selectedProtocol === 'awg'
+                        ? true
+                        : selectedProtocol === 'hysteria2'
+                        ? Boolean(n.has_hysteria)
+                        : selectedProtocol === 'mieru'
+                        ? Boolean(n.has_mieru)
+                        : selectedProtocol === 'vless'
+                        ? Boolean(n.has_vless && n.type === 'direct')
+                        : true;
+                    const isDisabled = !isSupported || Boolean(n.is_blocked);
+
+                    return (
+                      <option key={n.id} value={n.id} disabled={isDisabled}>
+                        {getCountryFlag(n.country_code || 'NLD')} {n.name}
+                        {n.is_blocked
+                          ? ' [🚫 Заблокирован]'
+                          : !isSupported
+                          ? ` [Нет ${selectedProtocol.toUpperCase()}]`
+                          : ''}
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
             </div>
 
